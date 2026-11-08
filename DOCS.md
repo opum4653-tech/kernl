@@ -128,7 +128,31 @@ Kernel/Kernel/
 
 ---
 
-## 6. Automated CI Build & Release Pipeline
+## 6. Dedicated Server Download Specifications (Strict Subfolders)
+
+All mod packages and drivers MUST be downloaded exclusively from the backend server (`https://ninmods.smmtor.com`).
+
+### 6.1 Production Download URL Matrix
+- **External Mod:** `https://ninmods.smmtor.com/downloads/external/gemini-cli.zip`
+  - Local path: `app_backend/downloads/external/gemini-cli.zip`
+  - Content: `gemini-cli` (pure native ARM64 ELF executable)
+- **Kernel Mod:** `https://ninmods.smmtor.com/downloads/kernel/ninmods-kernel.zip`
+  - Local path: `app_backend/downloads/kernel/ninmods-kernel.zip`
+  - Content: `ninmods-kernel` (pure native ARM64 ELF executable)
+- **Kernel Drivers:** `https://ninmods.smmtor.com/downloads/Kernel_Drivers.zip`
+  - Local path: `app_backend/downloads/Kernel_Drivers.zip`
+  - Content: Compiled `.ko` kernel modules and driver assets
+- **App Release APK:** `https://ninmods.smmtor.com/downloads/app-release.apk`
+  - Local path: `app_backend/downloads/app-release.apk`
+
+### 6.2 Prohibited Actions (Never Deviate)
+- **NO GITHUB DOWNLOAD LINKS:** Never use GitHub releases or raw GitHub URLs for mod/driver downloads in the app.
+- **NO BUNDLED ASSETS IN APK:** Mod packages must never be bundled into the APK `assets/` folder. All mods are downloaded on demand.
+- **NO FLAT ROOT DOWNLOAD PATHS:** Never store or request mod packages at the root of downloads (e.g. `/downloads/gemini-cli.zip` or `/downloads/ninmods-kernel.zip` are strictly FORBIDDEN). Subdirectories (`external/` and `kernel/`) are mandatory.
+
+---
+
+## 7. Automated CI Build & Release Pipeline
 
 Compilation is automated on GitHub Actions using Android NDK `r25c`:
 1. **Trigger:** Automatically invoked on every `push` or `pull_request` to the `main` branch.
@@ -137,7 +161,7 @@ Compilation is automated on GitHub Actions using Android NDK `r25c`:
 
 ---
 
-## 7. Codebase Style & Commenting Invariants
+## 8. Codebase Style & Commenting Invariants
 
 1. **Strict Prohibition of Decorative Box-Drawing Comment Banners:**
    - Decorative unicode box-drawing banners (e.g. `// ══════════════...`, `// ──────────────...`, or fancy ASCII separators) are strictly prohibited.
