@@ -62,7 +62,7 @@ bool   g_LogoDragging = false;
 ImVec2 g_LogoDragOffset(0, 0);
 ImVec2 g_LogoDragStart(0, 0);
 float  g_LogoSize = 130.0f;
-float  g_LogoDragThreshold = 8.0f;
+float  g_LogoDragThreshold = 24.0f;
 
 // Drag / Tap state machine
 static bool s_logoWasDraggingLastFrame = false;
@@ -280,12 +280,13 @@ void RenderFloatingLogo() {
 
 // Drag release — check tap vs drag completion
     if (ImGui::IsItemDeactivated()) {
-        if (!g_LogoDragging && !s_logoJustMoved && hovered) {
+        if (!s_logoJustMoved) {
             g_ShowNexusMenu = !g_ShowNexusMenu;
         } else if (g_LogoDragging) {
             SaveLogoPosition();
         }
         g_LogoDragging  = false;
+        s_logoJustMoved = false;
         s_logoWasDraggingLastFrame = false;
     }
 
@@ -1022,17 +1023,12 @@ bool isProcessAlive(int pid) {
 
 int main(int argc, char *argv[]) {
     crash_guard::install();
-    game_pid = getProcessID(packageName);
-    while (game_pid <= 0) {
-        game_pid = getProcessID(packageName);
-        sleep(1);
-    }
+    game_pid = 0;
+    lib_base = 0;
+    lib_base2 = 0;
 
-    Memory::g_pid = (pid_t)game_pid;
-    driver->initialize((pid_t)game_pid);
-
-    lib_base  = get_module_base(targetaLibName,  PERM_EXEC);
-    lib_base2 = get_module_base(targetaLibName2, PERM_EXEC);
+    printf("[*] Probing display dimensions and screen orientation...\n");
+    fflush(stdout);
 
     screen_config();
 
@@ -1041,9 +1037,23 @@ int main(int argc, char *argv[]) {
     ::native_window_screen_x = (displayInfo.height > displayInfo.width ? displayInfo.height : displayInfo.width);
     ::native_window_screen_y = (displayInfo.height < displayInfo.width ? displayInfo.height : displayInfo.width);
 
+    printf("[*] Screen dimensions: %dx%d (Orientation: %u)\n", native_window_screen_x, native_window_screen_y, displayInfo.orientation);
+    printf("[*] Configuring Android system touch security policies...\n");
+    fflush(stdout);
+    system("settings put global block_untrusted_touches 0 2>/dev/null; settings put system block_untrusted_touches 0 2>/dev/null");
+
+    printf("[*] Creating SurfaceComposerClient Native Window and initializing EGL...\n");
+    fflush(stdout);
+
     if (!initGUI_draw(native_window_screen_x, native_window_screen_y, true)) {
+        printf("[-] Failed to initialize overlay GUI\n");
+        fflush(stdout);
         return -1;
     }
+    printf("[+] Floating overlay engine initialized successfully!\n");
+    printf("[*] Attaching Linux input touch listener...\n");
+    printf("[+] Kernel engine active. Awaiting target attach...\n");
+    fflush(stdout);
 
     ImGuiIO& io = ImGui::GetIO();
     LoadCustomIconFonts(io);
@@ -1068,9 +1078,13 @@ int main(int argc, char *argv[]) {
                     driver->initialize((pid_t)game_pid);
                     lib_base = 0;
                     lib_base2 = 0;
+                    printf("[+] Runtime subsystem attached (PID: %d)\n", game_pid);
+                    fflush(stdout);
                 }
             } else {
                 if (!isProcessAlive(game_pid)) {
+                    printf("[*] Session detached. Waiting for reconnect...\n");
+                    fflush(stdout);
                     game_pid = 0;
                     lib_base = 0;
                     lib_base2 = 0;
