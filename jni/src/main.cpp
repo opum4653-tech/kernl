@@ -57,16 +57,16 @@ bool  g_ShowNexusMenu = false;
 // UI-only Aim Magnet toggle; does not alter game aiming or memory.
 bool  g_AimMagnetUi = false;
 
-// ★ ফ্লোটিং লোগোর পজিশন (drag করে সরানো যাবে) ★
-float  g_LogoX = 30.0f;        // পিক্সেল (x position)
-float  g_LogoY = 0.38f;        // screen.y এর অনুপাত (0.0 - 1.0)
+// Floating logo position (draggable overlay anchor)
+float  g_LogoX = 30.0f;        // Pixel (X position)
+float  g_LogoY = 0.38f;        // Ratio of screen.y (0.0 - 1.0)
 bool   g_LogoDragging = false;
 ImVec2 g_LogoDragOffset(0, 0);
 ImVec2 g_LogoDragStart(0, 0);
 float  g_LogoSize = 130.0f;
 float  g_LogoDragThreshold = 8.0f;
 
-// Drag/Tap স্টেট
+// Drag / Tap state machine
 static bool s_logoWasDraggingLastFrame = false;
 static bool s_logoJustMoved            = false;
 
@@ -216,7 +216,7 @@ void ApplyCustomTheme(float scale_y = 1.0f) {
 
 // ═══════════════════════════════════════════════════════════
 //  FLOATING LOGO BUTTON — FULLY DRAGGABLE
-//  ট্যাপ = মেনু টগল | drag = যেকোনো জায়গায় সরান
+//  Tap = Toggle Menu | Drag = Relocate anywhere on screen
 // ═══════════════════════════════════════════════════════════
 
 void RenderFloatingLogo() {
@@ -226,10 +226,10 @@ void RenderFloatingLogo() {
     const float logoSize = g_LogoSize;
     const float margin   = 10.0f;
 
-    // পজিশন হিসাব (g_LogoX = pixel, g_LogoY = 0..1 ratio)
+    // Position calculation (g_LogoX = pixel, g_LogoY = 0..1 ratio)
     ImVec2 logoPos(g_LogoX, screen.y * g_LogoY);
 
-    // Screen এর ভেতরে ক্ল্যাম্প
+    // Clamp within viewport bounds
     logoPos.x = std::max(margin, std::min(logoPos.x, screen.x - logoSize - margin));
     logoPos.y = std::max(margin, std::min(logoPos.y, screen.y - logoSize - margin));
 
@@ -251,7 +251,7 @@ void RenderFloatingLogo() {
     ImVec2 ctr = ImVec2(wp.x + logoSize * 0.5f, wp.y + logoSize * 0.5f);
     float  rad = logoSize * 0.44f;
 
-    // ক্লিকেবল / ড্র্যাগেবল ইনপুট
+    // Clickable / Draggable hit-test bounds
     ImGui::SetCursorScreenPos(wp);
     ImGui::InvisibleButton("##logoClick", ImVec2(logoSize, logoSize));
 
@@ -259,7 +259,7 @@ void RenderFloatingLogo() {
     const bool active  = ImGui::IsItemActive();
     const ImVec2 mouse = ImGui::GetMousePos();
 
-    // ── Drag আর Tap আলাদা করার লজিক ─────────────────
+    // ── Drag vs Tap discrimination logic ─────────────────
     if (ImGui::IsItemActivated()) {
         g_LogoDragStart  = mouse;
         g_LogoDragOffset = ImVec2(mouse.x - logoPos.x, mouse.y - logoPos.y);
@@ -267,7 +267,7 @@ void RenderFloatingLogo() {
         s_logoJustMoved  = false;
     }
 
-    // threshold পার হলে drag শুরু
+    // Initiate dragging past motion threshold
     if (active && !g_LogoDragging) {
         const float dx = mouse.x - g_LogoDragStart.x;
         const float dy = mouse.y - g_LogoDragStart.y;
@@ -277,7 +277,7 @@ void RenderFloatingLogo() {
         }
     }
 
-    // drag চলছে — position আপডেট
+    // Dragging in progress — update anchor position
     if (g_LogoDragging && active) {
         float newX = mouse.x - g_LogoDragOffset.x;
         float newY = mouse.y - g_LogoDragOffset.y;
@@ -289,7 +289,7 @@ void RenderFloatingLogo() {
         g_LogoY = newY / screen.y;
     }
 
-    // ── Drag শেষ — tap ছিল কিনা চেক ─────────────────
+    // ── Drag release — check tap vs drag completion ─────────────────
     if (ImGui::IsItemDeactivated()) {
         if (!g_LogoDragging && !s_logoJustMoved && hovered) {
             g_ShowNexusMenu = !g_ShowNexusMenu;
@@ -302,7 +302,7 @@ void RenderFloatingLogo() {
 
     s_logoWasDraggingLastFrame = g_LogoDragging;
 
-    // ── রঙ ─────────────────────────────────────────
+    // ── Color palette ─────────────────────────────────────────
     ImU32 accent = ImGui::ColorConvertFloat4ToU32(g_ThemeColor);
     ImU32 cyan   = IM_COL32(80, 220, 255, 255);
     ImU32 purple = IM_COL32(180, 120, 255, 255);
@@ -334,7 +334,7 @@ void RenderFloatingLogo() {
     draw->AddCircle(ctr, r * 0.66f, (cyan   & 0x00FFFFFF) | (150 << 24), 44, 1.5f);
     draw->AddCircle(ctr, r * 0.50f, (purple & 0x00FFFFFF) | (130 << 24), 40, 1.5f);
 
-    // ঘুরন্ত arcs
+    // Rotating accent arcs
     float spin = g_LogoDragging ? 3.2f : 1.6f;
     float ang  = t * spin;
     for (int i = 0; i < 6; i++) {
@@ -346,7 +346,7 @@ void RenderFloatingLogo() {
         draw->AddLine(pa, pb, arcCol, 4.0f);
     }
 
-    // ভেতরের "N"
+    // Internal brand icon "N"
     ImFont* bold = g_BoldFont ? g_BoldFont : ImGui::GetFont();
     const char* txt = "N";
     float txtSize = 54.0f;
@@ -371,7 +371,7 @@ void RenderFloatingLogo() {
     draw->AddCircleFilled(stDot,  7.0f, (stCol & 0x00FFFFFF) | (150 << 24));
     draw->AddCircleFilled(stDot,  4.5f, stCol);
 
-    // Drag হলে "MOVE"
+    // Render "MOVE" tooltip during active drag
     if (g_LogoDragging) {
         const char* moveTxt = "MOVE";
         float mSize = 14.0f;
@@ -1071,7 +1071,7 @@ int main(int argc, char *argv[]) {
 
     InitTouchAimbot();
 
-    // ★ সেভ করা লোগো পজিশন লোড করুন
+    // Load persisted logo coordinates
     LoadLogoPosition();
 
     while (main_thread_flag) {
@@ -1105,10 +1105,10 @@ int main(int argc, char *argv[]) {
 
         drawBegin();
         {
-            // ফ্লোটিং লোগো সবসময় দৃশ্যমান (drag করে সরানো যাবে)
+            // Floating logo button remains visible (draggable overlay button)
             RenderFloatingLogo();
 
-            // মেনু শুধু টগল অন হলে
+            // Render main menu when toggled visible
             if (g_ShowNexusMenu) RenderMenu();
 
             // ESP / Aimbot
@@ -1122,7 +1122,7 @@ int main(int argc, char *argv[]) {
         usleep(16000);
     }
 
-    // ★ বন্ধ হওয়ার আগে পজিশন সেভ করুন
+    // Persist anchor position on shutdown
     SaveLogoPosition();
 
     shutdown();
