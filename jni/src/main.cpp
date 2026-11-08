@@ -1058,6 +1058,7 @@ int main(int argc, char *argv[]) {
     }
     printf("[+] Floating overlay engine initialized successfully!\n");
     printf("[*] Attaching Linux input touch listener...\n");
+    printf("[+] ninmods starting - daemon active in RAM\n");
     printf("[+] Kernel engine active. Awaiting target attach...\n");
     fflush(stdout);
 
