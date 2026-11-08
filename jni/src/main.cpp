@@ -2,7 +2,7 @@
 #include "display_manager.hpp"
 #include "main.h"
 
-// ── FONTS ──────────────────────────────────────────────
+// FONTS
 #include "ImGui/FONTS/MAIN_FONT.h"
 #include "ImGui/FONTS/ICONS.h"
 #include "ImGui/FONTS/SPECIAL.h"
@@ -36,9 +36,7 @@
 #include "ENC/oxorany.h"
 #include "driver.h"
 
-// ═══════════════════════════════════════════════════════════
 //  GLOBALS
-// ═══════════════════════════════════════════════════════════
 
 float g_ThemeColorArr[4] = { 0.68f, 0.28f, 0.98f, 1.00f }; // NinMods Cyber Purple
 #define g_ThemeColor ImVec4(g_ThemeColorArr[0], g_ThemeColorArr[1], g_ThemeColorArr[2], g_ThemeColorArr[3])
@@ -83,13 +81,10 @@ static const ImVec4 g_ThemeSwatches[6] = {
     ImVec4(1.00f, 0.20f, 0.20f, 1.00f), // Crimson
 };
 
-// ═══════════════════════════════════════════════════════════
 
 #include "Scarecrow/hook.h"
 
-// ═══════════════════════════════════════════════════════════
 //  LOGO POSITION SAVE / LOAD
-// ═══════════════════════════════════════════════════════════
 
 static const char* LOGO_POS_FILE = "/dev/.nin_logo_pos.txt";
 
@@ -114,9 +109,7 @@ void LoadLogoPosition() {
     }
 }
 
-// ═══════════════════════════════════════════════════════════
 //  COLOR HELPER
-// ═══════════════════════════════════════════════════════════
 
 ImU32 GetESPColor(int colorMode, ImVec4* customColor, float health = 100.0f, float distance = 0.0f) {
     float r = 0, g = 0, b = 0, a = 1.0f;
@@ -155,9 +148,7 @@ ImU32 GetESPColor(int colorMode, ImVec4* customColor, float health = 100.0f, flo
     return IM_COL32((int)(r * 255), (int)(g * 255), (int)(b * 255), (int)(a * 255));
 }
 
-// ═══════════════════════════════════════════════════════════
 //  THEME
-// ═══════════════════════════════════════════════════════════
 
 void ApplyCustomTheme(float scale_y = 1.0f) {
     ImGuiStyle& style = ImGui::GetStyle();
@@ -214,10 +205,8 @@ void ApplyCustomTheme(float scale_y = 1.0f) {
     colors[ImGuiCol_HeaderActive]  = g_ThemeColor;
 }
 
-// ═══════════════════════════════════════════════════════════
 //  FLOATING LOGO BUTTON — FULLY DRAGGABLE
 //  Tap = Toggle Menu | Drag = Relocate anywhere on screen
-// ═══════════════════════════════════════════════════════════
 
 void RenderFloatingLogo() {
     ImGuiIO& io = ImGui::GetIO();
@@ -259,7 +248,7 @@ void RenderFloatingLogo() {
     const bool active  = ImGui::IsItemActive();
     const ImVec2 mouse = ImGui::GetMousePos();
 
-    // ── Drag vs Tap discrimination logic ─────────────────
+// Drag vs Tap discrimination logic
     if (ImGui::IsItemActivated()) {
         g_LogoDragStart  = mouse;
         g_LogoDragOffset = ImVec2(mouse.x - logoPos.x, mouse.y - logoPos.y);
@@ -289,7 +278,7 @@ void RenderFloatingLogo() {
         g_LogoY = newY / screen.y;
     }
 
-    // ── Drag release — check tap vs drag completion ─────────────────
+// Drag release — check tap vs drag completion
     if (ImGui::IsItemDeactivated()) {
         if (!g_LogoDragging && !s_logoJustMoved && hovered) {
             g_ShowNexusMenu = !g_ShowNexusMenu;
@@ -302,7 +291,7 @@ void RenderFloatingLogo() {
 
     s_logoWasDraggingLastFrame = g_LogoDragging;
 
-    // ── Color palette ─────────────────────────────────────────
+// Color palette
     ImU32 accent = ImGui::ColorConvertFloat4ToU32(g_ThemeColor);
     ImU32 cyan   = IM_COL32(80, 220, 255, 255);
     ImU32 purple = IM_COL32(180, 120, 255, 255);
@@ -407,9 +396,7 @@ void RenderFloatingLogo() {
     ImGui::End();
 }
 
-// ═══════════════════════════════════════════════════════════
 //  RENDER MENU — NEXUS CORE
-// ═══════════════════════════════════════════════════════════
 
 void RenderMenu() {
     g_MenuWidth  = 1250.0f;
@@ -1012,9 +999,7 @@ void RenderMenu() {
     ImGui::End();
 }
 
-// ═══════════════════════════════════════════════════════════
 //  FONTS
-// ═══════════════════════════════════════════════════════════
 
 void LoadCustomIconFonts(ImGuiIO& io) {
     io.Fonts->AddFontFromMemoryTTF((void*)inter_medium, sizeof(inter_medium), 20.f, NULL, io.Fonts->GetGlyphRangesCyrillic());
@@ -1023,9 +1008,7 @@ void LoadCustomIconFonts(ImGuiIO& io) {
     io.Fonts->Build();
 }
 
-// ═══════════════════════════════════════════════════════════
 //  PROCESS HELPER
-// ═══════════════════════════════════════════════════════════
 
 bool isProcessAlive(int pid) {
     if (pid <= 0) return false;
@@ -1035,9 +1018,7 @@ bool isProcessAlive(int pid) {
     return (stat(path, &st) == 0);
 }
 
-// ═══════════════════════════════════════════════════════════
 //  MAIN
-// ═══════════════════════════════════════════════════════════
 
 int main(int argc, char *argv[]) {
     crash_guard::install();

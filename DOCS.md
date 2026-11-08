@@ -134,3 +134,17 @@ Compilation is automated on GitHub Actions using Android NDK `r25c`:
 1. **Trigger:** Automatically invoked on every `push` or `pull_request` to the `main` branch.
 2. **Build Toolchain:** `ndk-build` targeting `arm64-v8a` with Clang `-Oz` optimization, hidden visibility, and full binary stripping (`llvm-strip`).
 3. **Artifact Output:** Standalone native ELF binary named **`ninmods-kernel`** packaged and published to GitHub Actions artifacts.
+
+---
+
+## 7. Codebase Style & Commenting Invariants
+
+1. **Strict Prohibition of Decorative Box-Drawing Comment Banners:**
+   - Decorative unicode box-drawing banners (e.g. `// ══════════════...`, `// ──────────────...`, or fancy ASCII separators) are strictly prohibited.
+   - All comments must be minimal, clean, standard single-line (`// Comment`) without decorative ASCII borders or box art.
+2. **Language Invariant:**
+   - All source code, symbols, logging, comments, and strings must be written strictly in professional English.
+   - Regional or non-English scripts (such as Bengali) must never be added to code comments or source files.
+3. **Clean Code & Zero Clutter Policy:**
+   - Backup files (`.bak`, `.old`), uncommitted binaries (`libs/`), intermediate object folders (`obj/`), and empty directories must never be checked into the repository.
+

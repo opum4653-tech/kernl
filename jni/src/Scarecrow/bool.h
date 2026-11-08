@@ -235,7 +235,7 @@ bool PatchOffsetWithHex(uint64_t libbase, uint64_t offset, const char* replace_h
   return success;
 }
 
-// ── Read<T> / Write<T>: now routed through Memory (driver-aware) ──────────────
+// Read<T> / Write<T>: now routed through Memory (driver-aware)
 
 template<class T>
 T Read(uintptr_t address) {
@@ -259,7 +259,6 @@ bool Write(uintptr_t address, T value) {
     return Memory::Write<T>(address, value);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 
 uintptr_t getMemoryAddr(uintptr_t address) {
     return Read<uintptr_t>(address);

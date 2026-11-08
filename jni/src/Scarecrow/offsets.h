@@ -1,16 +1,14 @@
 #pragma once
 #include <cstdint>
 
-// ═══════════════════════════════════════════════════════════════════════════════
 // CENTRALIZED OFFSETS MODULE — NinMods Kernel Engine (OB55 / 1.132.1)
-// ═══════════════════════════════════════════════════════════════════════════════
 
 namespace Offsets {
-    // ── Target Game Build Metadata ──
+// Target Game Build Metadata
     constexpr const char* GameVersion   = "OB55 / 1.132.1";
     constexpr const char* TargetPackage = "com.dts.freefireth";
 
-    // ── Base Chain (GameFacade -> BaseGame -> Match) ──
+// Base Chain (GameFacade -> BaseGame -> Match)
     constexpr uintptr_t GameFacade           = 0xA72E4E0;
     constexpr uintptr_t GameFacade_P2        = 0xB8;
     constexpr uintptr_t BaseGame_Match       = 0x90;
@@ -21,14 +19,14 @@ namespace Offsets {
     constexpr uintptr_t Match_PlayerDict     = 0xC0;
     constexpr uintptr_t Match_LocalPlayer    = 0xD8;
 
-    // ── Il2Cpp Mono Dictionary Traversal ──
+// Il2Cpp Mono Dictionary Traversal
     constexpr uintptr_t Dict_Entries         = 0x18;
     constexpr uintptr_t Dict_Count           = 0x20;
     constexpr uintptr_t Dict_ArrayHeader     = 0x20;
     constexpr uintptr_t Dict_EntryStride     = 0x18;
     constexpr uintptr_t Dict_EntryValue      = 0x10;
 
-    // ── Player Entity Fields ──
+// Player Entity Fields
     constexpr uintptr_t Player_Rotation      = 0x614;
     constexpr uintptr_t Player_HeadTF        = 0x6A0;
     constexpr uintptr_t Player_FootTF        = 0x6E8;
@@ -43,23 +41,23 @@ namespace Offsets {
     constexpr uintptr_t Player_IsBot         = 0x4A0;
     constexpr uintptr_t Player_Name          = 0x490;
 
-    // ── Avatar Visibility ──
+// Avatar Visibility
     constexpr uintptr_t Avatar_Uma           = 0x138;
     constexpr uintptr_t Uma_Visible          = 0x101;
     constexpr uintptr_t Uma_Data             = 0x28;
     constexpr uintptr_t UmaData_Skip         = 0x81;
 
-    // ── Camera Chain ──
+// Camera Chain
     constexpr uintptr_t Camera_Follow        = 0x28;
     constexpr uintptr_t Camera_IntPtr        = 0x10;
     constexpr uintptr_t Camera_Matrix        = 0x100;
 
-    // ── Health Chain ──
+// Health Chain
     constexpr uintptr_t HP_List              = 0x10;
     constexpr uintptr_t HP_Entry             = 0x20;
     constexpr uintptr_t HP_Value             = 0x18;
 
-    // ── Aim Information ──
+// Aim Information
     constexpr uintptr_t Player_BulletInfo    = 0xE50;
     constexpr uintptr_t Bullet_SpawnPos      = 0x4C;
     constexpr uintptr_t Bullet_DirWrite      = 0x40;
@@ -191,7 +189,7 @@ namespace Offsets {
     constexpr uintptr_t Inventory_ItemData       = 0x28;
     constexpr uintptr_t Inventory_WeaponId       = 0x40;
 
-    // ── Skeleton Bones (ITransformNode offsets) ──
+// Skeleton Bones (ITransformNode offsets)
     constexpr uintptr_t Bones_Head          = 0x6A0;
     constexpr uintptr_t Bones_Chest         = 0x6B0;
     constexpr uintptr_t Bones_Hip           = 0x6A8;
