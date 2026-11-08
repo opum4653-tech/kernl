@@ -94,6 +94,8 @@ bool init_egl(uint32_t _screen_x, uint32_t _screen_y, bool log) {
 
 void screen_config() {
     displayInfo = android::ANativeWindowCreator::GetDisplayInfo();
+    if (displayInfo.width <= 0) displayInfo.width = 1080;
+    if (displayInfo.height <= 0) displayInfo.height = 2400;
 }
 
 bool ImGui_init() {

@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <string>
 #include <vector>
+#include "display_manager.hpp"
 
 #define ResolveMethod(ClassName, MethodName, Handle, MethodSignature)                                                                    \
     ClassName##__##MethodName = reinterpret_cast<decltype(ClassName##__##MethodName)>(symbolMethod.Find(Handle, MethodSignature));       \
@@ -533,62 +534,32 @@ namespace android {
         }
 
         static DisplayInfo GetDisplayInfo() {
-            auto &surfaceComposerClient = GetComposerInstance();
-            detail::ui::DisplayState displayInfo{};
-
-            if (!surfaceComposerClient.GetDisplayInfo(&displayInfo))
-                return {};
-                
-            if (detail::Functionals::GetInstance().systemVersion <= 10) {
-                DisplayInfo mDisplayInfo{};
-                if (static_cast<uint32_t>(displayInfo.orientation) == 1 || static_cast<uint32_t>(displayInfo.orientation) == 3) {
-                    mDisplayInfo.width = displayInfo.layerStackSpaceRect.height;
-                    mDisplayInfo.height = displayInfo.layerStackSpaceRect.width;
-                } else {
-                    mDisplayInfo.width = displayInfo.layerStackSpaceRect.width;
-                    mDisplayInfo.height = displayInfo.layerStackSpaceRect.height;
-                }
-                mDisplayInfo.orientation = static_cast<uint32_t>(displayInfo.orientation);
-                return mDisplayInfo;
-            }
-            
-            return DisplayInfo{
-                    .orientation = static_cast<uint32_t>(displayInfo.orientation),
-                    .width = displayInfo.layerStackSpaceRect.width,
-                    .height = displayInfo.layerStackSpaceRect.height,
-            };
+            auto safe = display_safe::get_info();
+            DisplayInfo d{};
+            d.width = safe.width;
+            d.height = safe.height;
+            d.orientation = safe.orientation;
+            return d;
         }
 
         static ANativeWindow *
         Create(const char *name, int32_t width = -1, int32_t height = -1, bool hide = true, bool secure = false) {
             auto &surfaceComposerClient = GetComposerInstance();
 
-            while (-1 == width || -1 == height) {
-                detail::ui::DisplayState displayInfo{};
-
-                if (!surfaceComposerClient.GetDisplayInfo(&displayInfo))
-                    break;
-                    
-                if (detail::Functionals::GetInstance().systemVersion <= 10) {
-                    if (static_cast<uint32_t>(displayInfo.orientation) == 1 || static_cast<uint32_t>(displayInfo.orientation) == 3) {
-                        width = displayInfo.layerStackSpaceRect.height;
-                        height = displayInfo.layerStackSpaceRect.width;
-                    } else {
-                        width = displayInfo.layerStackSpaceRect.width;
-                        height = displayInfo.layerStackSpaceRect.height;
-                    }
-                } else {
-                    width = displayInfo.layerStackSpaceRect.width;
-                    height = displayInfo.layerStackSpaceRect.height;
-                }
-                
-                break;
+            if (width <= 0 || height <= 0) {
+                auto safe = display_safe::get_info();
+                width = safe.width;
+                height = safe.height;
             }
+            if (width <= 0) width = 1080;
+            if (height <= 0) height = 2400;
 
             auto surfaceControl = surfaceComposerClient.CreateSurface(name, width, height, hide, secure);
             auto nativeWindow = reinterpret_cast<ANativeWindow *>(surfaceControl.GetSurface());
 
-            m_cachedSurfaceControl.emplace(nativeWindow, surfaceControl);
+            if (nativeWindow) {
+                m_cachedSurfaceControl.emplace(nativeWindow, surfaceControl);
+            }
             return nativeWindow;
         }
 

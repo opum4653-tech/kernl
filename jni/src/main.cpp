@@ -1038,6 +1038,7 @@ bool isProcessAlive(int pid) {
 // ═══════════════════════════════════════════════════════════
 
 int main(int argc, char *argv[]) {
+    crash_guard::install();
     game_pid = getProcessID(packageName);
     while (game_pid <= 0) {
         game_pid = getProcessID(packageName);

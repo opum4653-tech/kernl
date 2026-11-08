@@ -59,6 +59,8 @@ LOCAL_SRC_FILES := \
     src/ImGui/imgui_widgets.cpp \
     src/ImGui/backends/imgui_impl_android.cpp \
     src/ENC/oxorany.cpp \
+    src/display_manager.cpp \
+    src/crash_handler.cpp \
 
 ifeq ($(OPENGL_DRAW), 1)
     LOCAL_SRC_FILES += src/ImGui/backends/imgui_impl_opengl3.cpp
