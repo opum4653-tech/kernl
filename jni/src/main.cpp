@@ -1,3 +1,5 @@
+#include "crash_handler.hpp"
+#include "display_manager.hpp"
 #include "main.h"
 
 // ── FONTS ──────────────────────────────────────────────
