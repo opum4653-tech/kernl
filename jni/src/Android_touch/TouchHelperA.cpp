@@ -19,6 +19,7 @@ bool other_touch;
 
 static uint32_t orientation = 0;
 static float screenHeight = 0, screenWidth = 0;
+static int s_touchMaxX = 0, s_touchMaxY = 0;
 
 struct touchObj {
     bool isDown = false;
@@ -266,6 +267,7 @@ bool Touch_Init(int w, int h, uint32_t orientation_, bool readOnly) {
         if (strstr(ptr->d_name, "event"))
             eventCount++;
     }
+    if (dir) closedir(dir);
     struct input_absinfo abs, absX[maxE], absY[maxE];
     int fd, i, tmp1, tmp2;
     int screenX, screenY, minCnt = eventCount + 1;
@@ -396,8 +398,10 @@ bool Touch_Init(int w, int h, uint32_t orientation_, bool readOnly) {
     }
 
     ::screenWidth = w;
-    ::screenHeight = h,
+    ::screenHeight = h;
     ::orientation = orientation_;
+    s_touchMaxX = screenX;
+    s_touchMaxY = screenY;
     if (::orientation == 1 || ::orientation == 3) {
         ::scale_x = (float) screenX / h;
         ::scale_y = (float) screenY / w;
@@ -412,8 +416,17 @@ bool Touch_Init(int w, int h, uint32_t orientation_, bool readOnly) {
 
 void UpdateScreenData(int w, int h, uint32_t orientation_) {
     ::screenWidth = w;
-    ::screenHeight = h,
+    ::screenHeight = h;
     ::orientation = orientation_;
+    if (s_touchMaxX > 0 && s_touchMaxY > 0 && w > 0 && h > 0) {
+        if (::orientation == 1 || ::orientation == 3) {
+            ::scale_x = (float) s_touchMaxX / (float)h;
+            ::scale_y = (float) s_touchMaxY / (float)w;
+        } else {
+            ::scale_x = (float) s_touchMaxX / (float)w;
+            ::scale_y = (float) s_touchMaxY / (float)h;
+        }
+    }
 }
 
 static bool checkDeviceIsTouch(int fd) {

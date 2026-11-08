@@ -242,7 +242,7 @@ void RenderFloatingLogo() {
 
     // Clickable / Draggable hit-test bounds
     ImGui::SetCursorScreenPos(wp);
-    ImGui::InvisibleButton("##logoClick", ImVec2(logoSize, logoSize));
+    bool clicked = ImGui::InvisibleButton("##logoClick", ImVec2(logoSize, logoSize));
 
     const bool hovered = ImGui::IsItemHovered();
     const bool active  = ImGui::IsItemActive();
@@ -279,10 +279,13 @@ void RenderFloatingLogo() {
     }
 
 // Drag release — check tap vs drag completion
-    if (ImGui::IsItemDeactivated()) {
-        if (!s_logoJustMoved) {
-            g_ShowNexusMenu = !g_ShowNexusMenu;
-        } else if (g_LogoDragging) {
+    if (clicked || (ImGui::IsItemDeactivated() && !s_logoJustMoved)) {
+        g_ShowNexusMenu = !g_ShowNexusMenu;
+        g_LogoDragging  = false;
+        s_logoJustMoved = false;
+        s_logoWasDraggingLastFrame = false;
+    } else if (ImGui::IsItemDeactivated()) {
+        if (g_LogoDragging) {
             SaveLogoPosition();
         }
         g_LogoDragging  = false;
@@ -1031,6 +1034,9 @@ int main(int argc, char *argv[]) {
     fflush(stdout);
 
     screen_config();
+    if (displayInfo.orientation == 0) {
+        displayInfo.orientation = 1; // Default to landscape for gaming overlay
+    }
 
     ::abs_ScreenX = (displayInfo.height > displayInfo.width ? displayInfo.height : displayInfo.width);
     ::abs_ScreenY = (displayInfo.height < displayInfo.width ? displayInfo.height : displayInfo.width);
@@ -1071,6 +1077,7 @@ int main(int argc, char *argv[]) {
 
         if (std::chrono::duration_cast<std::chrono::milliseconds>(currentCheckTime - lastProcessCheck).count() >= 1000) {
             lastProcessCheck = currentCheckTime;
+            display_safe::probe_orientation();
             if (game_pid <= 0) {
                 game_pid = getProcessID(packageName);
                 if (game_pid > 0) {

@@ -13,4 +13,5 @@ namespace display_safe {
     // Results are cached in RAM for instant lookup in the render loop.
     SafeDisplayInfo get_info(bool force_refresh = false);
     void update_orientation(uint32_t rot);
+    uint32_t probe_orientation();
 }

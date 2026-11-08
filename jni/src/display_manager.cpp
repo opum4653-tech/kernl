@@ -119,7 +119,8 @@ SafeDisplayInfo get_info(bool force_refresh) {
         info.height = 2400;
     }
 
-    // Orientation Detection (Zero Fork)
+    // Orientation Detection — default to 1 (Landscape) for gaming overlay
+    info.orientation = 1;
     char rotProp[PROP_VALUE_MAX] = {0};
     if (__system_property_get("ro.sf.hwrotation", rotProp) > 0) {
         int deg = atoi(rotProp);
@@ -127,8 +128,6 @@ SafeDisplayInfo get_info(bool force_refresh) {
         else if (deg == 180) info.orientation = 2;
         else if (deg == 270) info.orientation = 3;
         else info.orientation = 0;
-    } else {
-        info.orientation = (info.width > info.height) ? 1 : 0;
     }
 
     s_cached_info = info;
@@ -139,6 +138,26 @@ SafeDisplayInfo get_info(bool force_refresh) {
 void update_orientation(uint32_t rot) {
     std::lock_guard<std::mutex> lock(s_disp_mutex);
     s_cached_info.orientation = rot;
+}
+
+uint32_t probe_orientation() {
+    uint32_t rot = 1;
+    FILE *fp_rot = popen("dumpsys input 2>/dev/null | grep -m 1 SurfaceOrientation", "r");
+    if (fp_rot) {
+        char buf[128] = {0};
+        if (fgets(buf, sizeof(buf), fp_rot)) {
+            char *p = strstr(buf, "SurfaceOrientation:");
+            if (p) {
+                int r = 0;
+                if (sscanf(p + 19, " %d", &r) == 1 && r >= 0 && r <= 3) {
+                    rot = static_cast<uint32_t>(r);
+                }
+            }
+        }
+        pclose(fp_rot);
+    }
+    update_orientation(rot);
+    return rot;
 }
 
 } // namespace display_safe
