@@ -152,12 +152,20 @@ All mod packages and drivers MUST be downloaded exclusively from the backend ser
 
 ---
 
-## 7. Automated CI Build & Release Pipeline
+## 7. Zero Local Build Policy — Strict GitHub Actions CI/CD Only
 
-Compilation is automated on GitHub Actions using Android NDK `r25c`:
-1. **Trigger:** Automatically invoked on every `push` or `pull_request` to the `main` branch.
-2. **Build Toolchain:** `ndk-build` targeting `arm64-v8a` with Clang `-Oz` optimization, hidden visibility, and full binary stripping (`llvm-strip`).
-3. **Artifact Output:** Standalone native ELF binary named **`ninmods-kernel`** packaged and published to GitHub Actions artifacts.
+> [!IMPORTANT]
+> **MANDATORY INVARIANT: NO LOCAL MACHINE COMPILATION**
+> - **আমাদের লোকাল কম্পিউটার দিয়ে কোনো কিছু বিল্ড করা যাবে না (Zero Local Builds):**
+>   - লোকাল পিসি/ওয়ার্কস্টেশনে NDK, `ndk-build`, বা Clang দিয়ে কোনো নেটিভ কার্নেল বাইনারি বা লাইব্রেরি বিল্ড করা সম্পূর্ণ নিষিদ্ধ ও অপ্রয়োজনীয়।
+>   - লোকাল মেশিনে কোনো অ্যান্ড্রয়েড NDK বা বিল্ড টুলচেইন কনফিগার করার প্রয়োজন নেই।
+> - **বিল্ড সবসময় ১০০% GitHub Actions ক্লাউড CI/CD দিয়ে হবে (Always Build on GitHub):**
+>   - কার্নেল ওভারলে ইঞ্জিনের সম্পূর্ণ কম্পাইলেশন, অপ্টিমাইজেশন (`-Oz`), বাইনারি স্ট্রিপিং (`llvm-strip`), এবং প্যাকেজিং ক্লাউডে GitHub Actions উবুন্টু ভার্চুয়াল মেশিনে সম্পন্ন হবে।
+> - **অটোমেটেড ওয়ার্কফ্লো (Automated CI Pipeline):**
+>   1. **Trigger:** `main` ব্রাঞ্চে যেকোনো `git push` বা `pull_request` করার সাথে সাথে `.github/workflows/build.yml` অটোমেটিক রান হবে।
+>   2. **Build Toolchain:** GitHub ভার্চুয়াল মেশিনে Android NDK `r25c` দিয়ে `ndk-build NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=jni/Android.mk` এক্সিকিউট হবে।
+>   3. **Artifact Output:** তৈরি হওয়া ফ্রেশ `ninmods-kernel` বাইনারিকে `ninmods-kernel.zip` ফাইলে জিপ করে GitHub Actions Artifacts-এ আপলোড করা হবে।
+>   4. রিলিজ বাইনারি সেখান থেকে সরাসরি সার্ভার মিররে (`app_backend/downloads/kernel/ninmods-kernel.zip`) প্লেস করা হবে।
 
 ---
 
