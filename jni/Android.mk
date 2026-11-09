@@ -1,22 +1,29 @@
 LOCAL_PATH := $(call my-dir)
+ROOT_JNI_PATH := $(LOCAL_PATH)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := curl
 LOCAL_SRC_FILES := include/external/curl-android-$(TARGET_ARCH_ABI)/lib/libcurl.a
-LOCAL_EXPORT_C_INCLUDES := $(LOCAL_PATH)/include/external/curl-android-$(TARGET_ARCH_ABI)/include
+LOCAL_EXPORT_C_INCLUDES := $(ROOT_JNI_PATH)/include/external/curl-android-$(TARGET_ARCH_ABI)/include
 include $(PREBUILT_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := ssl
 LOCAL_SRC_FILES := include/external/openssl-android-$(TARGET_ARCH_ABI)/lib/libssl.a
-LOCAL_EXPORT_C_INCLUDES := $(LOCAL_PATH)/include/external/openssl-android-$(TARGET_ARCH_ABI)/include
+LOCAL_EXPORT_C_INCLUDES := $(ROOT_JNI_PATH)/include/external/openssl-android-$(TARGET_ARCH_ABI)/include
 include $(PREBUILT_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := crypto
 LOCAL_SRC_FILES := include/external/openssl-android-$(TARGET_ARCH_ABI)/lib/libcrypto.a
-LOCAL_EXPORT_C_INCLUDES := $(LOCAL_PATH)/include/external/openssl-android-$(TARGET_ARCH_ABI)/include
+LOCAL_EXPORT_C_INCLUDES := $(ROOT_JNI_PATH)/include/external/openssl-android-$(TARGET_ARCH_ABI)/include
 include $(PREBUILT_STATIC_LIBRARY)
+
+# Include libevdev sub-module
+include $(ROOT_JNI_PATH)/vendor/libevdev/Android.mk
+
+# Restore ROOT_JNI_PATH
+LOCAL_PATH := $(ROOT_JNI_PATH)
 
 include $(CLEAR_VARS)
 
@@ -47,8 +54,10 @@ LOCAL_C_INCLUDES += $(LOCAL_PATH)/include/ImGui/backends
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/include/external/curl-android-$(TARGET_ARCH_ABI)/include
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/include/external/openssl-android-$(TARGET_ARCH_ABI)/include
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/include/external/nlohmann
-LOCAL_C_INCLUDES += $(LOCAL_PATH)/include/minitouch/jni/vendor/libevdev/include
-LOCAL_C_INCLUDES += $(LOCAL_PATH)/include/minitouch/jni/vendor/libevdev/source/libevdev
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/vendor/libevdev/include
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/vendor/libevdev/source/include
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/vendor/libevdev/source/libevdev
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/minitouch
 
 LOCAL_SRC_FILES := \
     src/main.cpp \
@@ -72,7 +81,7 @@ else
     LOCAL_SRC_FILES += src/Android_vulkan/VulkanUtils.cpp
 endif
 
-LOCAL_STATIC_LIBRARIES := curl ssl crypto
+LOCAL_STATIC_LIBRARIES := curl ssl crypto libevdev
 
 LOCAL_LDLIBS := -llog -landroid -lEGL -lGLESv3 -lz
 
