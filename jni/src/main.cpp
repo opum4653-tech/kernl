@@ -280,9 +280,15 @@ void RenderFloatingLogo() {
         g_LogoY = newY / screen.y;
     }
 
-// Drag release — check tap vs drag completion
+    // Drag release — check tap vs drag completion with 0.3s debounce
+    static double s_last_nexus_toggle = 0.0;
+    double now_time = ImGui::GetTime();
+
     if (clicked || (ImGui::IsItemDeactivated() && !s_logoJustMoved)) {
-        g_ShowNexusMenu = !g_ShowNexusMenu;
+        if (now_time - s_last_nexus_toggle > 0.30) {
+            g_ShowNexusMenu = !g_ShowNexusMenu;
+            s_last_nexus_toggle = now_time;
+        }
         g_LogoDragging  = false;
         s_logoJustMoved = false;
         s_logoWasDraggingLastFrame = false;
@@ -475,6 +481,17 @@ void RenderMenu() {
     // HEADER
     float pad   = 34.0f * scale_y;
     float headY = wp.y + pad * 0.85f;
+    float closeSize = 42.0f * scale_y;
+
+    // Header Drag Bar: Allows dragging the entire menu window freely across the screen
+    ImGui::SetCursorScreenPos(wp);
+    ImGui::InvisibleButton("##NexusHeaderDrag", ImVec2(W - pad - closeSize - 30.0f, pad * 2.0f + 40.0f * scale_y));
+    if (ImGui::IsItemActive()) {
+        ImVec2 curPos = ImGui::GetWindowPos();
+        curPos.x += ImGui::GetIO().MouseDelta.x;
+        curPos.y += ImGui::GetIO().MouseDelta.y;
+        ImGui::SetWindowPos(curPos);
+    }
 
     ImFont* titleFont = g_BoldFont ? g_BoldFont : ImGui::GetFont();
 
@@ -1069,7 +1086,7 @@ int main(int argc, char *argv[]) {
     ImGuiIO& io = ImGui::GetIO();
     LoadCustomIconFonts(io);
 
-    Touch_Init(native_window_screen_x, native_window_screen_y, displayInfo.orientation, true);
+    Touch_Init(displayInfo.width, displayInfo.height, displayInfo.orientation, true);
 
     InitTouchAimbot();
 
