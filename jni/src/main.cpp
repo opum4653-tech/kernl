@@ -518,7 +518,6 @@ void RenderMenu() {
     }
 
     // CLOSE (X)
-    float closeSize = 42.0f * scale_y;
     ImVec2 closePos(wp.x + W - pad - closeSize, headY - 6.0f * scale_y);
 
     ImGui::SetCursorScreenPos(closePos);
