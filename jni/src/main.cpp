@@ -412,11 +412,15 @@ void RenderFloatingLogo() {
 //  RENDER MENU — NEXUS CORE
 
 void RenderMenu() {
-    g_MenuWidth  = 1250.0f;
-    g_MenuHeight = 850.0f;
+    ImVec2 screen = ImGui::GetIO().DisplaySize;
+    float realW = (screen.x > 0.0f) ? screen.x : 2400.0f;
+    float realH = (screen.y > 0.0f) ? screen.y : 1080.0f;
 
-    float scale_y = g_MenuHeight / 900.0f;
-    scale_y = std::max(0.70f, std::min(scale_y, 1.10f));
+    float ui_scale = std::max(0.65f, std::min(realH / 1080.0f, 1.40f));
+    g_MenuWidth  = std::min(1250.0f * ui_scale, realW * 0.94f);
+    g_MenuHeight = std::min(850.0f * ui_scale, realH * 0.94f);
+
+    float scale_y = ui_scale;
 
     ApplyCustomTheme(scale_y);
 
