@@ -47,6 +47,8 @@ LOCAL_C_INCLUDES += $(LOCAL_PATH)/include/ImGui/backends
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/include/external/curl-android-$(TARGET_ARCH_ABI)/include
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/include/external/openssl-android-$(TARGET_ARCH_ABI)/include
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/include/external/nlohmann
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/include/minitouch/jni/vendor/libevdev/include
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/include/minitouch/jni/vendor/libevdev/source/libevdev
 
 LOCAL_SRC_FILES := \
     src/main.cpp \
