@@ -1,5 +1,6 @@
 #include "Android_draw/draw.h"
 #include "Font.h"
+#include "logger.hpp"
 
 EGLDisplay display = EGL_NO_DISPLAY;
 EGLConfig config;
@@ -41,6 +42,11 @@ bool initGUI_draw(uint32_t _screen_x, uint32_t _screen_y, bool log) {
 
 bool init_egl(uint32_t _screen_x, uint32_t _screen_y, bool log) {
     ::native_window = android::ANativeWindowCreator::Create("AImGui", _screen_x, _screen_y, false, false);
+    if (!::native_window) {
+        LOG_ERROR("Failed to create native surface window (SurfaceComposer returned null)");
+        printf("[-] Failed to create native surface window (SurfaceComposer returned null)\n");
+        return false;
+    }
 
     ANativeWindow_acquire(native_window);
     display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
@@ -140,6 +146,8 @@ bool ImGui_init() {
 void drawBegin() {
     screen_config();
     if (::orientation != displayInfo.orientation) {
+        LOG_INFO("Display orientation transition detected: %u -> %u (Dims: %dx%d)",
+                 ::orientation, displayInfo.orientation, displayInfo.width, displayInfo.height);
         ::orientation = displayInfo.orientation;
         UpdateScreenData(displayInfo.width, displayInfo.height, displayInfo.orientation);
         

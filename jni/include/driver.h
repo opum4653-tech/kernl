@@ -452,26 +452,41 @@ private:
             return g_appConfig.driverOption;
         }
 
-        printf("\033[1;36m[+] 1. RT Hook\033[0m\n");
-        printf("\033[1;36m[+] 2. RT DEV\033[0m\n");
-        printf("\033[1;36m[+] 3. DEV (Most Compatible)\033[0m\n");
-        printf("\033[1;36m[+] 4. QX10~11.4\033[0m\n");
-        printf("\033[1;36m[+] 5. KPM (Neo prctl)\033[0m\n");
-        printf("\033[1;33m[?] Select an option (1-5): \033[0m");
-
-        int selection;
-        scanf("%d", &selection);
-
-        if (selection < 1 || selection > 5) {
-            printf("\033[41m\033[37m[FATAL] Invalid driver option selected! Exiting...\033[0m\n");
-            exit(1);
+        // Auto-probe driver backend safely without blocking on interactive stdin
+        if (probe_kpm()) {
+            printf("[Driver] Auto-detected KPM (Neo prctl) backend\n");
+            g_appConfig.driverOption = 5;
+            g_appConfig.settingsLoaded = true;
+            SaveConfig();
+            return 5;
         }
 
-        g_appConfig.driverOption = selection;
+        char *dev_name = gtqwq();
+        if (dev_name != NULL) {
+            free(dev_name);
+            printf("[Driver] Auto-detected DEV driver backend\n");
+            g_appConfig.driverOption = 3;
+            g_appConfig.settingsLoaded = true;
+            SaveConfig();
+            return 3;
+        }
+
+        char *rt_dev = driver_path();
+        if (rt_dev != NULL) {
+            free(rt_dev);
+            printf("[Driver] Auto-detected RT DEV driver backend\n");
+            g_appConfig.driverOption = 2;
+            g_appConfig.settingsLoaded = true;
+            SaveConfig();
+            return 2;
+        }
+
+        // Default to Option 1: RT Hook (Userland direct memory/syscall) - always safe, requires no device node
+        printf("[Driver] Defaulting to Option 1: RT Hook backend\n");
+        g_appConfig.driverOption = 1;
         g_appConfig.settingsLoaded = true;
         SaveConfig();
-
-        return selection;
+        return 1;
     }
 
 public:
@@ -481,139 +496,120 @@ public:
         选择值 = getDriverSelection();
 
         if (选择值 == 1) {
-            printf("\033[41m\033[37mRT loaded\033[0m\n");
+            printf("\033[42m\033[37mRT Hook loaded\033[0m\n");
             fd = 0;
         } else if (选择值 == 2) {
             char *device_name = driver_path();
             if (device_name == NULL) {
-                printf("\033[41m\033[37m[FATAL] RT DEV driver not found! Exiting...\033[0m\n");
-                exit(1);
+                printf("[!] RT DEV driver not found! Falling back to RT Hook.\n");
+                选择值 = 1;
+                fd = 0;
+            } else {
+                fd = open(device_name, O_RDWR);
+                if (fd == -1) {
+                    printf("[!] Failed to open RT DEV driver! Falling back to RT Hook.\n");
+                    free(device_name);
+                    选择值 = 1;
+                    fd = 0;
+                } else {
+                    printf("\033[42m\033[37mRT DEV driver loaded\033[0m\n");
+                    free(device_name);
+                }
             }
-            fd = open(device_name, O_RDWR);
-            if (fd == -1) {
-                printf("\033[41m\033[37m[FATAL] Driver not loaded! Exiting...\033[0m\n");
-                free(device_name);
-                exit(1);
-            }
-            free(device_name);
         } else if (选择值 == 3) {
             char *device_name = gtqwq();
             if (device_name == NULL) {
-                printf("\033[41m\033[37m[FATAL] DEV driver not found! Exiting...\033[0m\n");
-                exit(1);
+                printf("[!] DEV driver not found! Falling back to RT Hook.\n");
+                选择值 = 1;
+                fd = 0;
+            } else {
+                fd = open(device_name, O_RDWR);
+                if (fd == -1) {
+                    printf("[!] Failed to open DEV driver! Falling back to RT Hook.\n");
+                    free(device_name);
+                    选择值 = 1;
+                    fd = 0;
+                } else {
+                    printf("\033[42m\033[37mDEV driver loaded\033[0m\n");
+                    free(device_name);
+                }
             }
-            fd = open(device_name, O_RDWR);
-            if (fd == -1) {
-                printf("\033[41m\033[37m[FATAL] Driver not loaded! Exiting...\033[0m\n");
-                free(device_name);
-                exit(1);
-            }
-            free(device_name);
         } else if (选择值 == 4) {
             char *output = execCom("ls -l /proc/*/exe 2>/dev/null | grep -E \"/data/[a-z]{6} \\(deleted\\)\"");
             char filePath[256] = {0};
             char pid[56] = {0};
             if (output != NULL && strlen(output) > 0) {
                 char *procStart = strstr(output, "/proc/");
-                if (procStart == NULL) {
-                    printf("\033[41m\033[37m[FATAL] QX driver not found! Exiting...\033[0m\n");
-                    free(output);
-                    exit(1);
-                }
-                char *pidStart = procStart + 6;
-                char *pidEnd = strchr(pidStart, '/');
-                if (pidEnd == NULL) {
-                    printf("\033[41m\033[37m[FATAL] QX driver not found! Exiting...\033[0m\n");
-                    free(output);
-                    exit(1);
-                }
-                strncpy(pid, pidStart, pidEnd - pidStart);
-                pid[pidEnd - pidStart] = '\0';
-                char *arrowStart = strstr(output, "->");
-                if (arrowStart == NULL) {
-                    printf("\033[41m\033[37m[FATAL] QX driver not found! Exiting...\033[0m\n");
-                    free(output);
-                    exit(1);
-                }
-                char *start = arrowStart + 3;
-                char *end = strchr(output, '(');
-                if (end == NULL) {
-                    printf("\033[41m\033[37m[FATAL] QX driver not found! Exiting...\033[0m\n");
-                    free(output);
-                    exit(1);
-                }
-                end = end - 1;
-                strncpy(filePath, start, end - start + 1);
-                filePath[end - start] = '\0';
-                char *replacePtr = strstr(filePath, "data");
-                if (replacePtr != NULL) {
-                    memmove(replacePtr + 2, replacePtr + 3, strlen(replacePtr + 3) + 1);
-                    memmove(replacePtr, "dev", strlen("dev"));
+                if (procStart != NULL) {
+                    char *pidStart = procStart + 6;
+                    char *pidEnd = strchr(pidStart, '/');
+                    if (pidEnd != NULL) {
+                        strncpy(pid, pidStart, pidEnd - pidStart);
+                        pid[pidEnd - pidStart] = '\0';
+                        char *arrowStart = strstr(output, "->");
+                        if (arrowStart != NULL) {
+                            char *start = arrowStart + 3;
+                            char *end = strchr(output, '(');
+                            if (end != NULL) {
+                                end = end - 1;
+                                strncpy(filePath, start, end - start + 1);
+                                filePath[end - start] = '\0';
+                                char *replacePtr = strstr(filePath, "data");
+                                if (replacePtr != NULL) {
+                                    memmove(replacePtr + 2, replacePtr + 3, strlen(replacePtr + 3) + 1);
+                                    memmove(replacePtr, "dev", strlen("dev"));
+                                }
+                            }
+                        }
+                    }
                 }
                 free(output);
-            } else {
-                printf("\033[41m\033[37m[FATAL] QX driver not found! Exiting...\033[0m\n");
-                if (output) free(output);
-                exit(1);
             }
-
-            char fdPath[256];
-            char pattern[100];
-            snprintf(pattern, sizeof(pattern), ".*%s.*", filePath + 5);
-            int major_number = 0;
-            snprintf(fdPath, sizeof(fdPath), "/proc/%s/fd", pid);
-            regex_t regex;
-            if (regcomp(&regex, pattern, 0) != 0) {
-                fprintf(stderr, "[FATAL] Failed to compile regex! Exiting...\n");
-                exit(1);
-            }
-            char result[1024];
-            if (findFirstMatchingPath(fdPath, &regex, result)) {
-                char cmd[256];
-                sprintf(cmd, "ls -AL -l  %s | grep -Eo '[0-9]{3},' | grep  -Eo '[0-9]{3}'", result);
-                char *fdInfo = execCom(cmd);
-                if (fdInfo == NULL || strlen(fdInfo) == 0) {
-                    printf("\033[41m\033[37m[FATAL] Driver not loaded! Exiting...\033[0m\n");
-                    regfree(&regex);
-                    if (fdInfo) free(fdInfo);
-                    exit(1);
-                }
-                fdInfo[strlen(fdInfo)-1] = '\0';
-                major_number = atoi(fdInfo);
-                free(fdInfo);
-            } else {
-                printf("\033[41m\033[37m[FATAL] Driver not loaded! Exiting...\033[0m\n");
-                regfree(&regex);
-                exit(1);
-            }
-            regfree(&regex);
             if (filePath[0] != '\0') {
-                createDriverNode(filePath, major_number, 0);
-                fd = open(filePath, O_RDWR);
-                if (fd == -1) {
-                    removeDeviceNode(filePath);
-                    printf("\033[41m\033[37m[FATAL] Driver not loaded! Exiting...\033[0m\n");
-                    exit(1);
-                } else {
+                char fdPath[256];
+                char pattern[100];
+                snprintf(pattern, sizeof(pattern), ".*%s.*", filePath + 5);
+                int major_number = 0;
+                snprintf(fdPath, sizeof(fdPath), "/proc/%s/fd", pid);
+                regex_t regex;
+                if (regcomp(&regex, pattern, 0) == 0) {
+                    char result[1024];
+                    if (findFirstMatchingPath(fdPath, &regex, result)) {
+                        char cmd[256];
+                        sprintf(cmd, "ls -AL -l  %s | grep -Eo '[0-9]{3},' | grep  -Eo '[0-9]{3}'", result);
+                        char *fdInfo = execCom(cmd);
+                        if (fdInfo != NULL && strlen(fdInfo) > 0) {
+                            fdInfo[strlen(fdInfo)-1] = '\0';
+                            major_number = atoi(fdInfo);
+                            free(fdInfo);
+                        }
+                    }
+                    regfree(&regex);
+                }
+                if (major_number > 0) {
+                    createDriverNode(filePath, major_number, 0);
+                    fd = open(filePath, O_RDWR);
                     removeDeviceNode(filePath);
                 }
-            } else {
-                printf("\033[41m\033[37m[FATAL] Driver not loaded! Exiting...\033[0m\n");
-                exit(1);
+            }
+            if (fd <= 0) {
+                printf("[!] QX driver not available! Falling back to RT Hook.\n");
+                选择值 = 1;
+                fd = 0;
             }
         } else if (选择值 == 5) {
             if (probe_kpm()) {
                 printf("\033[42m\033[37mKPM (Neo) backend active\033[0m\n");
                 fd = -1;
             } else {
-                printf("\033[41m\033[37m[FATAL] KPM not available on this kernel! Exiting...\033[0m\n");
-                exit(1);
+                printf("[!] KPM not available on this kernel! Falling back to RT Hook.\n");
+                选择值 = 1;
+                fd = 0;
             }
         } else {
-            printf("\033[41m\033[37m[FATAL] Invalid selection! Exiting...\033[0m\n");
-            exit(1);
+            选择值 = 1;
+            fd = 0;
         }
-        system("clear");
     }
 
     ~c_driver() {

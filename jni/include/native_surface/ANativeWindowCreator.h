@@ -467,10 +467,14 @@ namespace android {
                                                                                              layerMetadata, nullptr);
                 }
 
-                if (12 <= Functionals::GetInstance().systemVersion) {
+                if (result.get()) {
                     static SurfaceComposerClientTransaction transaction;
-
-                    transaction.SetTrustedOverlay(result, true);
+                    if (Functionals::GetInstance().SurfaceComposerClient__Transaction__SetLayer) {
+                        transaction.SetLayer(result, 0x7FFFFFFF);
+                    }
+                    if (12 <= Functionals::GetInstance().systemVersion && Functionals::GetInstance().SurfaceComposerClient__Transaction__SetTrustedOverlay) {
+                        transaction.SetTrustedOverlay(result, true);
+                    }
                     transaction.Apply(false, true);
                 }
 

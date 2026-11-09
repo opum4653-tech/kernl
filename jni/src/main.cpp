@@ -1,5 +1,6 @@
 #include "crash_handler.hpp"
 #include "display_manager.hpp"
+#include "logger.hpp"
 #include "main.h"
 
 // FONTS
@@ -51,7 +52,7 @@ bool  showMenu        = true;
 int   g_menuMode      = 1;
 int   g_NexusTab      = 0;   // 0=AIM  1=VISUALS  2=MISC  3=CONFIG
 
-bool  g_ShowNexusMenu = false;
+bool  g_ShowNexusMenu = true;
 // UI-only Aim Magnet toggle; does not alter game aiming or memory.
 bool  g_AimMagnetUi = false;
 
@@ -411,6 +412,7 @@ void RenderMenu() {
 
     ApplyCustomTheme(scale_y);
 
+    ImGui::SetNextWindowPos(ImVec2(100.0f, 60.0f), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(g_MenuWidth, g_MenuHeight), ImGuiCond_Always);
     ImGuiWindowFlags flags =
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
@@ -1072,12 +1074,9 @@ int main(int argc, char *argv[]) {
     // Load persisted logo coordinates
     LoadLogoPosition();
 
-    while (main_thread_flag) {
-        static auto lastProcessCheck = std::chrono::steady_clock::now();
-        auto currentCheckTime = std::chrono::steady_clock::now();
-
-        if (std::chrono::duration_cast<std::chrono::milliseconds>(currentCheckTime - lastProcessCheck).count() >= 1000) {
-            lastProcessCheck = currentCheckTime;
+    std::thread attach_worker([]() {
+        LOG_INFO("Kernel attach daemon worker active. Polling game process and screen orientation.");
+        while (main_thread_flag) {
             display_safe::probe_orientation();
             if (game_pid <= 0) {
                 game_pid = getProcessID(packageName);
@@ -1086,11 +1085,13 @@ int main(int argc, char *argv[]) {
                     driver->initialize((pid_t)game_pid);
                     lib_base = 0;
                     lib_base2 = 0;
+                    LOG_INFO("Runtime subsystem attached (PID: %d)", game_pid);
                     printf("[+] Runtime subsystem attached (PID: %d)\n", game_pid);
                     fflush(stdout);
                 }
             } else {
                 if (!isProcessAlive(game_pid)) {
+                    LOG_INFO("Session detached (target game terminated). Waiting for reconnect...");
                     printf("[*] Session detached. Waiting for reconnect...\n");
                     fflush(stdout);
                     game_pid = 0;
@@ -1102,10 +1103,15 @@ int main(int argc, char *argv[]) {
                 lib_base = get_module_base(targetaLibName, PERM_EXEC);
                 if (lib_base > 0) {
                     lib_base2 = get_module_base(targetaLibName2, PERM_EXEC);
+                    LOG_INFO("Target game libraries mapped: lib1=0x%lx, lib2=0x%lx", (unsigned long)lib_base, (unsigned long)lib_base2);
                 }
             }
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
+    });
+    attach_worker.detach();
 
+    while (main_thread_flag) {
         drawBegin();
         {
             // Floating logo button remains visible (draggable overlay button)
