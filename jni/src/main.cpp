@@ -234,6 +234,7 @@ void RenderFloatingLogo() {
         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoFocusOnAppearing |
         ImGuiWindowFlags_NoBringToFrontOnFocus;
 
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::Begin("##NINMODS_LOGO_BTN", nullptr, flags);
 
     ImDrawList* draw = ImGui::GetWindowDrawList();
@@ -399,6 +400,7 @@ void RenderFloatingLogo() {
     }
 
     ImGui::End();
+    ImGui::PopStyleVar();
 }
 
 //  RENDER MENU — NEXUS CORE
@@ -1067,7 +1069,7 @@ int main(int argc, char *argv[]) {
     ImGuiIO& io = ImGui::GetIO();
     LoadCustomIconFonts(io);
 
-    Touch_Init(displayInfo.width, displayInfo.height, displayInfo.orientation, true);
+    Touch_Init(native_window_screen_x, native_window_screen_y, displayInfo.orientation, true);
 
     InitTouchAimbot();
 
