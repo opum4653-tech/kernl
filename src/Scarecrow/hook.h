@@ -303,6 +303,7 @@ static auto WorldToScreenPoint(D3DMatrix viewMatrix, Vector3 ScreenPos) {
     auto v14 = (float)abs_ScreenY / 2.0f;
     result.X = v13 + (v13 * v9) / v12;
     result.Y = v14 - (v14 * v10) / v12;
+    result.Z = v12;
   }
   return result;
 }
@@ -1031,21 +1032,25 @@ void AimbotMenu(float sw, float sh, uintptr_t libAddress) {
   if (!Enable) return;
 
   if (!IsValidPointer(libAddress)) return;
-  auto GameFacade_c = Read<uintptr_t>(libAddress + Offsets::GameFacade);
-  if (!IsValidPointer(GameFacade_c)) return;
+  auto GfCell = Read<uintptr_t>(libAddress + Offsets::GameFacade);
+  if (!IsValidPointer(GfCell)) return;
 
-  auto P2 = Read<uintptr_t>(GameFacade_c + Offsets::Engine_BaseGamePtr);
-  if (!IsValidPointer(P2)) return;
-  auto BaseGame = Read<uintptr_t>(P2);
+  auto GfClass = Read<uintptr_t>(GfCell);
+  if (!IsValidPointer(GfClass)) return;
+
+  auto StaticFields = Read<uintptr_t>(GfClass + Offsets::GameFacade_P2);
+  if (!IsValidPointer(StaticFields)) return;
+
+  auto BaseGame = Read<uintptr_t>(StaticFields + 0x8);
   if (!IsValidPointer(BaseGame)) return;
 
   ApplySpeedHack(BaseGame);
 
-  auto m_Match = Read<uintptr_t>(BaseGame + Offsets::Engine_Match);
-  if (!IsValidPointer(m_Match)) return;
+  bool matchActive = Read<bool>(BaseGame + Offsets::MatchIsRunning);
+  if (!matchActive) return;
 
-  int MatchIsRunning = Read<int>(m_Match + Offsets::MatchIsRunning);
-  if (MatchIsRunning != 1) return;
+  auto m_Match = Read<uintptr_t>(BaseGame + Offsets::BaseGame_Match);
+  if (!IsValidPointer(m_Match)) return;
 
   auto localPlayer = Read<uintptr_t>(m_Match + Offsets::Match_LocalPlayer);
 
@@ -1086,11 +1091,18 @@ void AimbotMenu(float sw, float sh, uintptr_t libAddress) {
   UpdateNoRecoil(localPlayer);
 
   auto FollowCamera = Read<uintptr_t>(localPlayer + Offsets::Cam_FollowCamera);
-  if (!IsValidPointer(FollowCamera)) return;
-  auto Camera = Read<uintptr_t>(FollowCamera + Offsets::Cam_CameraObject);
-  if (!IsValidPointer(Camera)) return;
-  auto IntPtrCam = Read<uintptr_t>(Camera + Offsets::Cam_RawCameraData);
+  uintptr_t Camera = 0;
+  if (IsValidPointer(FollowCamera)) Camera = Read<uintptr_t>(FollowCamera + Offsets::Cam_CameraObject);
+  uintptr_t IntPtrCam = 0;
+  if (IsValidPointer(Camera)) IntPtrCam = Read<uintptr_t>(Camera + Offsets::Cam_RawCameraData);
+
+  if (!IsValidPointer(IntPtrCam)) {
+    FollowCamera = Read<uintptr_t>(localPlayer + 0x690);
+    if (IsValidPointer(FollowCamera)) Camera = Read<uintptr_t>(FollowCamera + 0x28);
+    if (IsValidPointer(Camera)) IntPtrCam = Read<uintptr_t>(Camera + 0x10);
+  }
   if (!IsValidPointer(IntPtrCam)) return;
+
   auto matrix = Read<D3DMatrix>(IntPtrCam + Offsets::Cam_ViewMatrix);
 
   {
@@ -1098,34 +1110,37 @@ void AimbotMenu(float sw, float sh, uintptr_t libAddress) {
     g_TouchViewMatrix = matrix;
   }
 
-  auto dictionary = Read<uintptr_t>(BaseGame + Offsets::Engine_Dictionary);
-  if (!IsValidPointer(dictionary)) return;
-  auto entitylist = Read<uintptr_t>(dictionary + Offsets::Engine_EntityList);
-  if (!IsValidPointer(entitylist)) return;
+  uintptr_t dictAddr = Read<uintptr_t>(BaseGame + Offsets::Match_PlayerDict);
+  if (!IsValidPointer(dictAddr)) return;
+
+  MonoDictionary dict(dictAddr);
+  if (!dict.valid) return;
 
   Vector3 LocalPosition = GetNodePosition(GetPlayerHeadTF(localPlayer));
   uintptr_t bestTarget = 0;
   Vector3 bestPos;
   float bestDist = FLT_MAX;
 
-  for (int i = 0; i < 1000; i++) {
-    uintptr_t enemyPtr = entitylist + i * 8;
-    if (!IsValidPointer(enemyPtr)) break;
-
-    auto enemy = Read<uintptr_t>(enemyPtr);
+  int nv = dict.getNumValues();
+  for (int i = 0; i < nv; i++) {
+    uintptr_t enemy = dict.entry(i);
     if (!IsValidPointer(enemy) || enemy == localPlayer) continue;
+
+    if (Read<bool>(enemy + Offsets::Player_IsDead)) continue;
 
     auto AvatarManager = Read<uintptr_t>(enemy + Offsets::Player_AvatarManager);
     if (!IsValidPointer(AvatarManager)) continue;
     auto UmaAvatarSimple = Read<uintptr_t>(AvatarManager + Offsets::Avatar_UmaSimple);
     if (!IsValidPointer(UmaAvatarSimple)) continue;
 
-    if (!Read<bool>(UmaAvatarSimple + Offsets::Avatar_IsVisible2)) continue;
+    bool isVisible = Read<bool>(UmaAvatarSimple + Offsets::Avatar_IsVisible2);
+    if (AimVisible && !isVisible) continue;
 
     auto UmaData = Read<uintptr_t>(UmaAvatarSimple + Offsets::Avatar_UmaData);
-    if (!IsValidPointer(UmaData)) continue;
-
-    if (Read<bool>(UmaData + Offsets::Avatar_IsDead)) continue;
+    if (IsValidPointer(UmaData)) {
+      if (Read<bool>(UmaData + Offsets::Avatar_IsDead)) continue;
+      if (Read<bool>(UmaData + 0x80)) continue;
+    }
 
     bool isKnocked = IsPlayerKnocked(enemy);
     if (Ignorknock && isKnocked) continue;
@@ -1289,20 +1304,23 @@ void DrawESP(float sw, float sh, uintptr_t libAddress) {
   if (!Enable) return;
   if (!IsValidPointer(libAddress)) return;
 
-  auto GameFacade_c = Read<uintptr_t>(libAddress + Offsets::GameFacade);
-  if (!IsValidPointer(GameFacade_c)) return;
+  auto GfCell = Read<uintptr_t>(libAddress + Offsets::GameFacade);
+  if (!IsValidPointer(GfCell)) return;
 
-  auto P2 = Read<uintptr_t>(GameFacade_c + Offsets::Engine_BaseGamePtr);
-  if (!IsValidPointer(P2)) return;
+  auto GfClass = Read<uintptr_t>(GfCell);
+  if (!IsValidPointer(GfClass)) return;
 
-  auto BaseGame = Read<uintptr_t>(P2);
+  auto StaticFields = Read<uintptr_t>(GfClass + Offsets::GameFacade_P2);
+  if (!IsValidPointer(StaticFields)) return;
+
+  auto BaseGame = Read<uintptr_t>(StaticFields + 0x8);
   if (!IsValidPointer(BaseGame)) return;
 
-  auto m_Match = Read<uintptr_t>(BaseGame + Offsets::Engine_Match);
-  if (!IsValidPointer(m_Match)) return;
+  bool matchActive = Read<bool>(BaseGame + Offsets::MatchIsRunning);
+  if (!matchActive) return;
 
-  int MatchIsRunning = Read<int>(m_Match + Offsets::MatchIsRunning);
-  if (MatchIsRunning != 1) return;
+  auto m_Match = Read<uintptr_t>(BaseGame + Offsets::BaseGame_Match);
+  if (!IsValidPointer(m_Match)) return;
 
   static uintptr_t s_stableLocalPlayer = 0;
   static uintptr_t s_lastBaseGame = 0;
@@ -1341,87 +1359,52 @@ void DrawESP(float sw, float sh, uintptr_t libAddress) {
   uintptr_t localPlayer = s_stableLocalPlayer;
   if (!IsValidPointer(localPlayer)) return;
 
-  auto dictionary = Read<uintptr_t>(BaseGame + Offsets::Engine_Dictionary);
-  if (!IsValidPointer(dictionary)) return;
-
-  auto entitylist = Read<uintptr_t>(dictionary + Offsets::Engine_EntityList);
-  if (!IsValidPointer(entitylist)) return;
-
   uintptr_t activeCamOwner = localPlayer;
-  D3DMatrix matrix;
+  D3DMatrix matrix{};
   bool cameraFound = false;
 
-  if (IsValidPointer(localPlayer)) {
-    auto FollowCamera = Read<uintptr_t>(localPlayer + Offsets::Cam_FollowCamera);
-    if (IsValidPointer(FollowCamera)) {
-      auto Camera = Read<uintptr_t>(FollowCamera + Offsets::Cam_CameraObject);
-      if (IsValidPointer(Camera)) {
-        auto IntPtrCam = Read<uintptr_t>(Camera + Offsets::Cam_RawCameraData);
-        if (IsValidPointer(IntPtrCam)) {
-          matrix = Read<D3DMatrix>(IntPtrCam + Offsets::Cam_ViewMatrix);
-          cameraFound = true;
-        }
-      }
-    }
+  auto FollowCamera = Read<uintptr_t>(localPlayer + Offsets::Cam_FollowCamera);
+  uintptr_t Camera = 0;
+  if (IsValidPointer(FollowCamera)) Camera = Read<uintptr_t>(FollowCamera + Offsets::Cam_CameraObject);
+  uintptr_t IntPtrCam = 0;
+  if (IsValidPointer(Camera)) IntPtrCam = Read<uintptr_t>(Camera + Offsets::Cam_RawCameraData);
+
+  if (!IsValidPointer(IntPtrCam)) {
+    FollowCamera = Read<uintptr_t>(localPlayer + 0x690);
+    if (IsValidPointer(FollowCamera)) Camera = Read<uintptr_t>(FollowCamera + 0x28);
+    if (IsValidPointer(Camera)) IntPtrCam = Read<uintptr_t>(Camera + 0x10);
   }
 
-  if (!cameraFound && IsValidPointer(entitylist)) {
-    for (int i = 0; i < 300; i++) {
-      uintptr_t entPtr = entitylist + i * 8;
-      if (!IsValidPointer(entPtr)) break;
-
-      auto ent = Read<uintptr_t>(entPtr);
-      if (!IsValidPointer(ent)) continue;
-
-      auto FollowCamera = Read<uintptr_t>(ent + Offsets::Cam_FollowCamera);
-      if (IsValidPointer(FollowCamera)) {
-        auto Camera = Read<uintptr_t>(FollowCamera + Offsets::Cam_CameraObject);
-        if (IsValidPointer(Camera)) {
-          auto IntPtrCam = Read<uintptr_t>(Camera + Offsets::Cam_RawCameraData);
-          if (IsValidPointer(IntPtrCam)) {
-            matrix = Read<D3DMatrix>(IntPtrCam + Offsets::Cam_ViewMatrix);
-            activeCamOwner = ent;
-            cameraFound = true;
-            break;
-          }
-        }
-      }
-    }
+  if (IsValidPointer(IntPtrCam)) {
+    matrix = Read<D3DMatrix>(IntPtrCam + Offsets::Cam_ViewMatrix);
+    cameraFound = true;
   }
 
   if (!cameraFound) return;
 
   Vector3 LocalPosition = Vector3::Zero();
-  if (IsValidPointer(activeCamOwner)) {
-    LocalPosition = GetNodePosition(GetPlayerHeadTF(activeCamOwner));
-    if (LocalPosition == Vector3::Zero()) {
-      LocalPosition = GetPosition(GetPlayerMainCamera(activeCamOwner));
-    }
+  uintptr_t headNode = Read<uintptr_t>(localPlayer + Offsets::Bone_Head);
+  if (IsValidPointer(headNode)) LocalPosition = GetNodePosition(headNode);
+  if (LocalPosition == Vector3::Zero()) {
+    LocalPosition = GetNodePosition(GetPlayerHeadTF(localPlayer));
   }
+
+  uintptr_t dictAddr = Read<uintptr_t>(BaseGame + Offsets::Match_PlayerDict);
+  if (!IsValidPointer(dictAddr)) return;
+
+  MonoDictionary dict(dictAddr);
+  if (!dict.valid) return;
 
   int tempPlayerCount = 0;
   int tempBotCount = 0;
-  uintptr_t processedEnemies[1000];
-  int processedCount = 0;
-
   int touchAimCollectCount = 0;
 
-  for (int i = 0; i < 1000; i++) {
-    uintptr_t enemyPtr = entitylist + i * 8;
-    if (!IsValidPointer(enemyPtr)) break;
+  int nv = dict.getNumValues();
+  for (int i = 0; i < nv; i++) {
+    uintptr_t enemy = dict.entry(i);
+    if (!IsValidPointer(enemy) || enemy == activeCamOwner) continue;
 
-    auto enemy = Read<uintptr_t>(enemyPtr);
-    if (enemy == 0 || enemy == activeCamOwner) continue;
-
-    bool alreadyProcessed = false;
-    for (int p = 0; p < processedCount; p++) {
-      if (processedEnemies[p] == enemy) {
-        alreadyProcessed = true;
-        break;
-      }
-    }
-    if (alreadyProcessed) continue;
-    if (processedCount < 1000) processedEnemies[processedCount++] = enemy;
+    if (Read<bool>(enemy + Offsets::Player_IsDead)) continue;
 
     auto AvatarManager = Read<uintptr_t>(enemy + Offsets::Player_AvatarManager);
     if (!IsValidPointer(AvatarManager)) continue;
@@ -1429,16 +1412,13 @@ void DrawESP(float sw, float sh, uintptr_t libAddress) {
     auto UmaAvatarSimple = Read<uintptr_t>(AvatarManager + Offsets::Avatar_UmaSimple);
     if (!IsValidPointer(UmaAvatarSimple)) continue;
 
-    if (!Read<bool>(UmaAvatarSimple + Offsets::Avatar_IsVisible2)) continue;
+    bool isVisible = Read<bool>(UmaAvatarSimple + Offsets::Avatar_IsVisible2);
 
     auto UmaData = Read<uintptr_t>(UmaAvatarSimple + Offsets::Avatar_UmaData);
-    if (!IsValidPointer(UmaData)) continue;
-
-    if (Read<bool>(UmaData + Offsets::Avatar_IsDead)) continue;
-    if (Read<bool>(enemy + 0x7C)) continue;
-
-    bool isSpectating = Read<bool>(enemy + Offsets::Player_IsSpectating);
-    if (isSpectating) continue;
+    if (IsValidPointer(UmaData)) {
+      if (Read<bool>(UmaData + Offsets::Avatar_IsDead)) continue;
+      if (Read<bool>(UmaData + 0x80)) continue;
+    }
 
     bool isKnocked = IsPlayerKnocked(enemy);
 
@@ -1496,20 +1476,30 @@ void DrawESP(float sw, float sh, uintptr_t libAddress) {
     }
 
     auto EnemyPosition = GetNodePosition(GetPlayerHeadTF(enemy));
-    auto EnemyPositionPe = GetNodePosition(GetPlayerPeTF(enemy));
-
     if (EnemyPosition == Vector3::Zero()) continue;
 
+    auto EnemyPositionPe = GetNodePosition(GetPlayerPeTF(enemy));
+    if (EnemyPositionPe == Vector3::Zero()) {
+      EnemyPositionPe = Vector3(EnemyPosition.X, EnemyPosition.Y - 1.8f, EnemyPosition.Z);
+    }
+
     float distanceToEnemy = Vector3::Distance(LocalPosition, EnemyPosition);
-    auto screenPos = WorldToScreenPoint(matrix, EnemyPosition);
+    if (distanceToEnemy < 0.5f || distanceToEnemy > 600.0f) continue;
+
     auto LocationHeadBox = WorldToScreenPoint(matrix, EnemyPosition);
+    if (LocationHeadBox.Z < 0.001f) continue;
+
     auto LocationToeBox = WorldToScreenPoint(matrix, EnemyPositionPe);
+    if (LocationToeBox.Z < 0.001f) {
+      LocationToeBox = LocationHeadBox;
+      LocationToeBox.Y += 50.0f;
+    }
 
-    if (LocationHeadBox.X <= 0 || LocationToeBox.X <= 0 || LocationHeadBox.Y <= 0 || LocationToeBox.Y <= 0) continue;
-    if (LocationHeadBox.X > abs_ScreenX || LocationToeBox.X > abs_ScreenX || LocationHeadBox.Y > abs_ScreenY || LocationToeBox.Y > abs_ScreenY) continue;
+    auto screenPos = LocationHeadBox;
 
-    float headToFeetHeight = abs(LocationToeBox.Y - LocationHeadBox.Y);
-    if (headToFeetHeight < 1.0f || headToFeetHeight > abs_ScreenY * 2) continue;
+    float headToFeetHeight = fabsf(LocationToeBox.Y - LocationHeadBox.Y);
+    if (headToFeetHeight < 2.0f) headToFeetHeight = 30.0f;
+    if (headToFeetHeight > (float)abs_ScreenY * 2.5f) continue;
 
     float boxHeight = headToFeetHeight * 1.15f;
     float width = boxHeight * 0.48f;

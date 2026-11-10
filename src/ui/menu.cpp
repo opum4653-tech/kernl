@@ -394,24 +394,8 @@ static void RenderMenu() {
     ImFont* titleFont = g_BoldFont ? g_BoldFont : ImGui::GetFont();
 
     const char* title = "N I N M O D S";
-    float titleSize = 30.0f * scale_y;
-    float chW = 20.0f * scale_y;
-    float tx = wp.x + pad;
-    ImU32 grad[4] = { accent, accent2, purple, pink };
-    for (int i = 0; title[i]; i++) {
-        if (title[i] == ' ') { tx += chW * 0.35f; continue; }
-        char buf[2] = { title[i], 0 };
-        ImU32 col = grad[i % 4];
-        draw->AddText(titleFont, titleSize, ImVec2(tx, headY), col, buf);
-        tx += chW;
-    }
-
-    float lineY = headY + 40.0f * scale_y;
-    for (int i = 0; i < 12; i++) {
-        float x = wp.x + pad + i * (17.0f * scale_y);
-        ImU32 dc = (i % 2 == 0) ? accent : accent2;
-        draw->AddLine(ImVec2(x, lineY), ImVec2(x + 9.0f * scale_y, lineY), dc, 2.0f);
-    }
+    float titleSize = 26.0f * scale_y;
+    draw->AddText(titleFont, titleSize, ImVec2(wp.x + pad, headY), accent, title);
 
     float closeSize = std::max(30.0f, 42.0f * scale_y);
     float headerH   = std::max(45.0f, 65.0f * scale_y);
@@ -470,7 +454,7 @@ static void RenderMenu() {
     ImVec2 bSz = titleFont->CalcTextSizeA(15.0f * scale_y, FLT_MAX, 0, badgeTxt);
     draw->AddText(titleFont, 15.0f * scale_y, ImVec2(dotC.x + 14.0f * scale_y, bP1.y + (badgeH - bSz.y) * 0.5f), liveCol, badgeTxt);
 
-    float tabY = lineY + 18.0f * scale_y;
+    float tabY = headY + 46.0f * scale_y;
     float tabH = 50.0f * scale_y;
     float tabW = W - pad * 2;
     ImVec2 tP1 = ImVec2(wp.x + pad, tabY);
@@ -534,14 +518,8 @@ static void RenderMenu() {
         draw->AddRectFilled(cp1, cp2, bgCard, 14.0f);
         draw->AddRect(cp1, cp2, border, 14.0f, 0, 1.5f);
 
-        float tLine = 18.0f * scale_y;
-        draw->AddLine(cp1, ImVec2(cp1.x + tLine, cp1.y), titleCol, 2.6f);
-        draw->AddLine(cp1, ImVec2(cp1.x, cp1.y + tLine), titleCol, 2.6f);
-        draw->AddLine(cp2, ImVec2(cp2.x - tLine, cp2.y), titleCol, 2.6f);
-        draw->AddLine(cp2, ImVec2(cp2.x, cp2.y - tLine), titleCol, 2.6f);
-
-        draw->AddText(titleFont, 20.0f * scale_y, ImVec2(cp1.x + 22.0f * scale_y, cp1.y + 18.0f * scale_y), titleCol, pTitle);
-        draw->AddRectFilled(ImVec2(cp1.x + 22.0f * scale_y, cp1.y + 50.0f * scale_y), ImVec2(cp2.x - 22.0f * scale_y, cp1.y + 51.5f * scale_y), (titleCol & 0x00FFFFFF) | (150 << 24), 1.0f);
+        draw->AddText(titleFont, 18.0f * scale_y, ImVec2(cp1.x + 22.0f * scale_y, cp1.y + 16.0f * scale_y), titleCol, pTitle);
+        draw->AddRectFilled(ImVec2(cp1.x + 22.0f * scale_y, cp1.y + 46.0f * scale_y), ImVec2(cp2.x - 22.0f * scale_y, cp1.y + 47.5f * scale_y), (titleCol & 0x00FFFFFF) | (120 << 24), 1.0f);
     };
 
     ImVec2 c1P1 = ImVec2(wp.x + pad, bodyY);
@@ -746,40 +724,6 @@ static void RenderMenu() {
     InfoRow(c2P1, c2P2, infoStart + infoStep * 3, "DRIVER", dName, green);
 
     InfoRow(c2P1, c2P2, infoStart + infoStep * 4, "MODE", (const char*[]){ "AIM", "VISUALS", "MISC", "CONFIG" }[g_CurrentTab], purple);
-
-    const char* coreTxt = "N I N M O D S";
-    float coreSize = 30.0f * scale_y;
-    ImVec2 coreSz = titleFont->CalcTextSizeA(coreSize, FLT_MAX, 0, coreTxt);
-    ImVec2 corePos = ImVec2(c2P1.x + (cardW - coreSz.x) * 0.5f, c2P2.y - 80.0f * scale_y);
-    draw->AddText(titleFont, coreSize, corePos, cyan, coreTxt);
-
-    const char* cap = "K E R N E L   C O R E";
-    float capSize = 12.0f * scale_y;
-    ImVec2 capSz = titleFont->CalcTextSizeA(capSize, FLT_MAX, 0, cap);
-    draw->AddText(titleFont, capSize, ImVec2(c2P1.x + (cardW - capSz.x) * 0.5f, c2P2.y - 40.0f * scale_y), textDim, cap);
-
-    const char* foot = "N I N M O D S   K E R N E L";
-    float footSize = 16.0f * scale_y;
-    ImVec2 fSz = titleFont->CalcTextSizeA(footSize, FLT_MAX, 0, foot);
-    float fx = wp.x + (W - fSz.x) * 0.5f;
-    float fy = H - 44.0f * scale_y;
-
-    draw->AddLine(ImVec2(wp.x + pad, fy + 12.0f * scale_y), ImVec2(wp.x + W * 0.30f, fy + 12.0f * scale_y), accent2, 1.5f);
-    draw->AddLine(ImVec2(wp.x + W * 0.70f, fy + 12.0f * scale_y), ImVec2(wp.x + W - pad, fy + 12.0f * scale_y), accent2, 1.5f);
-
-    ImVec2 fDot  = ImVec2(wp.x + W * 0.30f + 8.0f * scale_y, fy + 12.0f * scale_y);
-    ImVec2 fDot2 = ImVec2(wp.x + W * 0.70f - 8.0f * scale_y, fy + 12.0f * scale_y);
-    draw->AddCircleFilled(fDot,  6.0f * scale_y, accent);
-    draw->AddCircleFilled(fDot2, 6.0f * scale_y, accent2);
-
-    float ftx = fx;
-    ImU32 fcols[3] = { accent, accent2, purple };
-    for (int i = 0; foot[i]; i++) {
-        if (foot[i] == ' ') { ftx += footSize * 0.5f; continue; }
-        char buf[2] = { foot[i], 0 };
-        draw->AddText(titleFont, footSize, ImVec2(ftx, fy), fcols[i % 3], buf);
-        ftx += titleFont->CalcTextSizeA(footSize, FLT_MAX, 0, buf).x;
-    }
 
     }
     ImGui::End();

@@ -280,12 +280,34 @@ struct Vector4 {
 
 class MonoDictionary {
 public:
-    uintptr_t getValues() {
-        return Read<uintptr_t>(reinterpret_cast<uintptr_t>(this) + 0x28) + 0x20;
+    uintptr_t address;
+    uintptr_t entries_head;
+    int count;
+    bool valid;
+
+    explicit MonoDictionary(uintptr_t addr = 0) : address(addr), entries_head(0), count(0), valid(false) {
+        if (!IsValidPointer(addr)) return;
+
+        struct { uintptr_t entries; uintptr_t count_and_pad; } header{};
+        if (Memory::ProcessRead(addr + 0x18, &header, sizeof(header)) != 0) return;
+
+        if (!IsValidPointer(header.entries)) return;
+
+        entries_head = header.entries + 0x20;
+        count = static_cast<int>(header.count_and_pad & 0xFFFFFFFFu);
+        valid = (count > 0 && count < 0x1000);
     }
 
-    int getNumValues() {
-        return Read<int>(reinterpret_cast<uintptr_t>(this) + 0x38);
+    inline uintptr_t getValues() const { return entries_head; }
+    inline int getNumValues() const { return count; }
+
+    inline uintptr_t entry(int i) const {
+        if (!valid || i < 0 || i >= count) return 0;
+        int hashCode = Memory::Read<int>(entries_head + i * 0x18);
+        if (hashCode < 0) return 0;
+        uintptr_t key = Memory::Read<uintptr_t>(entries_head + i * 0x18 + 0x08);
+        if (!key) return 0;
+        return Memory::Read<uintptr_t>(entries_head + i * 0x18 + 0x10);
     }
 };
 
