@@ -37,3 +37,6 @@ extern bool SpeedHackV2;
 extern bool GhostHack;
 extern bool NoReload;
 extern bool NoRecoil;
+
+extern int game_pid;
+extern uint64_t lib_base;
