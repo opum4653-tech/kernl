@@ -393,7 +393,7 @@ static void RenderMenu() {
     float headY = wp.y + pad * 0.85f;
     ImFont* titleFont = g_BoldFont ? g_BoldFont : ImGui::GetFont();
 
-    const char* title = "M O H A M M A D";
+    const char* title = "N I N M O D S";
     float titleSize = 30.0f * scale_y;
     float chW = 20.0f * scale_y;
     float tx = wp.x + pad;
@@ -470,38 +470,8 @@ static void RenderMenu() {
     ImVec2 bSz = titleFont->CalcTextSizeA(15.0f * scale_y, FLT_MAX, 0, badgeTxt);
     draw->AddText(titleFont, 15.0f * scale_y, ImVec2(dotC.x + 14.0f * scale_y, bP1.y + (badgeH - bSz.y) * 0.5f), liveCol, badgeTxt);
 
-    float heroY = lineY + 32.0f * scale_y;
-    float nxW = 250.0f * scale_y;
-    float nxH = 100.0f * scale_y;
-    ImVec2 nxP1 = ImVec2(wp.x + pad, heroY);
-    ImVec2 nxP2 = ImVec2(nxP1.x + nxW, nxP1.y + nxH);
-
-    draw->AddRectFilled(ImVec2(nxP1.x - 3, nxP1.y - 3), ImVec2(nxP2.x + 3, nxP2.y + 3), (accent & 0x00FFFFFF) | (40 << 24), 13.0f);
-    draw->AddRectFilled(nxP1, nxP2, bgCard, 12.0f);
-    draw->AddRect(nxP1, nxP2, accent, 12.0f, 0, 2.0f);
-
-    float tick = 16.0f * scale_y;
-    draw->AddLine(nxP1, ImVec2(nxP1.x + tick, nxP1.y), accent2, 3.0f);
-    draw->AddLine(nxP1, ImVec2(nxP1.x, nxP1.y + tick), accent2, 3.0f);
-    draw->AddLine(ImVec2(nxP2.x, nxP2.y), ImVec2(nxP2.x - tick, nxP2.y), accent2, 3.0f);
-    draw->AddLine(ImVec2(nxP2.x, nxP2.y), ImVec2(nxP2.x, nxP2.y - tick), accent2, 3.0f);
-
-    const char* nxs = "N I N M O D S";
-    float brandSize = 22.0f * scale_y;
-    ImVec2 nxsSz = titleFont->CalcTextSizeA(brandSize, FLT_MAX, 0, nxs);
-    draw->AddText(titleFont, brandSize, ImVec2(nxP1.x + (nxW - nxsSz.x) * 0.5f, nxP1.y + (nxH - nxsSz.y) * 0.5f), cyan, nxs);
-
-    float scX = nxP2.x + 46.0f * scale_y;
-    draw->AddText(titleFont, 20.0f * scale_y, ImVec2(scX, heroY + 8.0f * scale_y), textMain, "SYSTEM CORE");
-    draw->AddRectFilled(ImVec2(scX, heroY + 34.0f * scale_y), ImVec2(scX + 170.0f * scale_y, heroY + 36.5f * scale_y), accent3, 2.0f);
-
-    ImVec2 cDot = ImVec2(scX + 10.0f * scale_y, heroY + 62.0f * scale_y);
-    draw->AddCircleFilled(cDot, 7.0f * scale_y, (liveCol & 0x00FFFFFF) | (80 << 24));
-    draw->AddCircleFilled(cDot, 4.5f * scale_y, liveCol);
-    draw->AddText(titleFont, 15.0f * scale_y, ImVec2(cDot.x + 16.0f * scale_y, cDot.y - 10.0f * scale_y), green, connected ? "CONNECTED" : "DISCONNECTED");
-
-    float tabY = heroY + nxH + 26.0f * scale_y;
-    float tabH = 52.0f * scale_y;
+    float tabY = lineY + 18.0f * scale_y;
+    float tabH = 50.0f * scale_y;
     float tabW = W - pad * 2;
     ImVec2 tP1 = ImVec2(wp.x + pad, tabY);
     ImVec2 tP2 = ImVec2(tP1.x + tabW, tP1.y + tabH);
@@ -554,8 +524,8 @@ static void RenderMenu() {
         draw->AddText(titleFont, 17.0f * scale_y, ImVec2(diaX + 20.0f * scale_y, diaY - txtSz.y * 0.5f), active ? (g_darkMode ? IM_COL32(255, 255, 255, 255) : IM_COL32(20, 24, 36, 255)) : tabCol, tabNames[i]);
     }
 
-    float bodyY = tP2.y + 24.0f * scale_y;
-    float bodyH = std::max(180.0f * scale_y, H - (bodyY - wp.y) - 78.0f * scale_y);
+    float bodyY = tP2.y + 18.0f * scale_y;
+    float bodyH = std::max(200.0f * scale_y, H - (bodyY - wp.y) - 62.0f * scale_y);
     float cardW = (tabW - 24.0f * scale_y) * 0.5f;
 
     auto DrawPanel = [&](ImVec2 cp1, ImVec2 cp2, const char* pTitle, ImU32 titleCol) {
@@ -567,7 +537,6 @@ static void RenderMenu() {
         float tLine = 18.0f * scale_y;
         draw->AddLine(cp1, ImVec2(cp1.x + tLine, cp1.y), titleCol, 2.6f);
         draw->AddLine(cp1, ImVec2(cp1.x, cp1.y + tLine), titleCol, 2.6f);
-        draw->AddLine(cp1, ImVec2(cp2.x, cp2.y), titleCol, 2.6f);
         draw->AddLine(cp2, ImVec2(cp2.x - tLine, cp2.y), titleCol, 2.6f);
         draw->AddLine(cp2, ImVec2(cp2.x, cp2.y - tLine), titleCol, 2.6f);
 
