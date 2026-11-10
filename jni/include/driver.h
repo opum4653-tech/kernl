@@ -17,20 +17,6 @@
 #include <string.h>
 #include <regex.h>
 #include <sys/uio.h>
-#include <sys/syscall.h>
-
-#ifndef __NR_process_vm_readv
-#if defined(__aarch64__)
-#define __NR_process_vm_readv 270
-#define __NR_process_vm_writev 271
-#elif defined(__arm__)
-#define __NR_process_vm_readv 376
-#define __NR_process_vm_writev 377
-#elif defined(__x86_64__)
-#define __NR_process_vm_readv 310
-#define __NR_process_vm_writev 311
-#endif
-#endif
 #include <iostream>
 #include <string>
 #include <sys/utsname.h>
@@ -678,11 +664,16 @@ public:
         return false;
     }
 
-    bool read(uintptr_t addr, void *buffer, size_t size) {
-        if (!buffer || addr == 0 || size == 0) return false;
+    bool is_driver_loaded() const {
+        return (选择值 == 5) || (fd > 0);
+    }
 
+    bool read(uintptr_t addr, void *buffer, size_t size) {
+        if (!buffer || addr == 0 || size == 0 || this->pid <= 0) return false;
+
+        // Strictly through the loaded kernel driver only
         if (选择值 == 5) {
-            if (kpm_read(addr, buffer, size)) return true;
+            return kpm_read(addr, buffer, size);
         } else if (fd > 0) {
             COPY_MEMORY cm;
             cm.pid = this->pid;
@@ -691,26 +682,19 @@ public:
             cm.size = size;
 
             int opcode = (选择值 == 1) ? HOOK_OP_READ_MEM : DEV_OP_READ_MEM;
-            if (ioctl(fd, opcode, &cm) == 0) {
-                return true;
-            }
+            return (ioctl(fd, opcode, &cm) == 0);
         }
 
-        // Universal process_vm_readv fallback (Direct Linux Kernel Syscall)
-        if (this->pid > 0 && addr >= 0x10000) {
-            struct iovec local_iov{buffer, size};
-            struct iovec remote_iov{reinterpret_cast<void*>(addr), size};
-            long res = syscall(__NR_process_vm_readv, this->pid, &local_iov, 1, &remote_iov, 1, 0);
-            return (res == static_cast<long>(size));
-        }
+        // Driver not loaded: strictly refuse unassisted read
         return false;
     }
 
     bool write(uintptr_t addr, void *buffer, size_t size) {
-        if (!buffer || addr == 0 || size == 0) return false;
+        if (!buffer || addr == 0 || size == 0 || this->pid <= 0) return false;
 
+        // Strictly through the loaded kernel driver only
         if (选择值 == 5) {
-            if (kpm_write(addr, buffer, size)) return true;
+            return kpm_write(addr, buffer, size);
         } else if (fd > 0) {
             COPY_MEMORY cm;
             cm.pid = this->pid;
@@ -719,18 +703,10 @@ public:
             cm.size = size;
 
             int opcode = (选择值 == 1) ? HOOK_OP_WRITE_MEM : DEV_OP_WRITE_MEM;
-            if (ioctl(fd, opcode, &cm) == 0) {
-                return true;
-            }
+            return (ioctl(fd, opcode, &cm) == 0);
         }
 
-        // Universal process_vm_writev fallback (Direct Linux Kernel Syscall)
-        if (this->pid > 0 && addr >= 0x10000) {
-            struct iovec local_iov{buffer, size};
-            struct iovec remote_iov{reinterpret_cast<void*>(addr), size};
-            long res = syscall(__NR_process_vm_writev, this->pid, &local_iov, 1, &remote_iov, 1, 0);
-            return (res == static_cast<long>(size));
-        }
+        // Driver not loaded: strictly refuse unassisted write
         return false;
     }
 
