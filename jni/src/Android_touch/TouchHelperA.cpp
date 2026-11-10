@@ -6,6 +6,7 @@
 #include <pthread.h>
 #include <cmath>
 #include <algorithm>
+#include <mutex>
 #include <linux/input.h>
 #include <linux/uinput.h>
 
@@ -81,11 +82,14 @@ static void genRandomString(char *string, int length) {
     string[length - 1] = '\0';
 }
 
+static std::mutex s_uploadMutex;
+
 static void Upload() {
-    static bool bTouch = false;
+    if (Touch_readOnly || nowfd <= 0) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(s_uploadMutex);
     static bool isFirstDown = true;
-    while (bTouch);
-    bTouch = true;
     int tmpCnt = 0, tmpCnt2 = 0, i, j;
     for (i = 0; i < fdNum; i++) {
         for (j = 0; j < maxF; j++) {
@@ -151,14 +155,14 @@ static void Upload() {
     input.event[tmpCnt].value = 0;
     tmpCnt++;
 
-    if (is && isFirstDown) {
-        isFirstDown = false;
-        write(nowfd, &input, sizeof(struct input_event) * (tmpCnt + 2));
-    } else {
-        write(nowfd, input.event, sizeof(struct input_event) * tmpCnt);
+    if (nowfd > 0) {
+        if (is && isFirstDown) {
+            isFirstDown = false;
+            write(nowfd, &input, sizeof(struct input_event) * (tmpCnt + 2));
+        } else {
+            write(nowfd, input.event, sizeof(struct input_event) * tmpCnt);
+        }
     }
-
-    bTouch = false;
 }
 
 static void *TypeA(void *arg) {
@@ -255,7 +259,7 @@ static void *TypeA(void *arg) {
                 } else {
                     io.MouseDown[0] = false;
                 }
-                if (!Touch_readOnly) {
+                if (!Touch_readOnly && nowfd > 0) {
                     Upload();
                 }
                 continue;
@@ -447,6 +451,7 @@ void Touch_Close() {
 }
 
 void Touch_Down(float xt, float yt) {
+    if (Touch_readOnly || nowfd <= 0 || fdNum <= 0) return;
     static int x, y;
     x = 0, y = 0;
     switch (orientation) {
@@ -484,6 +489,7 @@ void Touch_Move(float x, float y) {
 }
 
 void Touch_Up() {
+    if (Touch_readOnly || nowfd <= 0 || fdNum <= 0) return;
     touchObj &touch = Finger[0][9];
     touch.isDown = false;
     Upload();
@@ -535,8 +541,8 @@ bool GetFingerScreenPos(int slot, float& outX, float& outY) {
 }
 
 void Touch_Down_Slot(int slot, float xt, float yt) {
+    if (Touch_readOnly || nowfd <= 0 || fdNum <= 0) return;
     if (slot < 0 || slot >= maxF) slot = 6;
-    if (fdNum <= 0) return;
 
     float x = 0, y = 0;
     switch (orientation) {
@@ -575,8 +581,8 @@ void Touch_Move_Slot(int slot, float x, float y) {
 }
 
 void Touch_Up_Slot(int slot) {
+    if (Touch_readOnly || nowfd <= 0 || fdNum <= 0) return;
     if (slot < 0 || slot >= maxF) slot = 6;
-    if (fdNum <= 0) return;
     touchObj &touch = Finger[0][slot];
     touch.isDown = false;
     Upload();

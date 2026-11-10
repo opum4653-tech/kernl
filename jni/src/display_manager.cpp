@@ -8,6 +8,7 @@
 #include <linux/fb.h>
 #include <sys/system_properties.h>
 #include <mutex>
+#include <chrono>
 
 namespace display_safe {
 
@@ -141,7 +142,18 @@ void update_orientation(uint32_t rot) {
 }
 
 uint32_t probe_orientation() {
-    uint32_t rot = 1;
+    static uint32_t s_last_rot = 1;
+    static auto s_last_time = std::chrono::steady_clock::time_point{};
+    auto now = std::chrono::steady_clock::now();
+
+    // Throttle dumpsys query to at most once every 3 seconds to avoid blocking system_server IPC
+    if (s_last_time.time_since_epoch().count() != 0 &&
+        std::chrono::duration_cast<std::chrono::milliseconds>(now - s_last_time).count() < 3000) {
+        return s_last_rot;
+    }
+    s_last_time = now;
+
+    uint32_t rot = s_last_rot;
     FILE *fp_rot = popen("dumpsys input 2>/dev/null | grep -m 1 SurfaceOrientation", "r");
     if (fp_rot) {
         char buf[128] = {0};
@@ -156,6 +168,7 @@ uint32_t probe_orientation() {
         }
         pclose(fp_rot);
     }
+    s_last_rot = rot;
     update_orientation(rot);
     return rot;
 }

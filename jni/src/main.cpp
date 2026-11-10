@@ -1034,6 +1034,10 @@ void LoadCustomIconFonts(ImGuiIO& io) {
     g_BoldFont = io.Fonts->AddFontFromMemoryTTF((void*)inter_bold, sizeof(inter_bold), 23.f, NULL, io.Fonts->GetGlyphRangesCyrillic());
     g_IconFont = io.Fonts->AddFontFromMemoryTTF((void*)F107_data, F107_size, 25.0f, NULL, io.Fonts->GetGlyphRangesDefault());
     io.Fonts->Build();
+    #if defined(USE_OPENGL)
+    ImGui_ImplOpenGL3_DestroyFontsTexture();
+    ImGui_ImplOpenGL3_CreateFontsTexture();
+    #endif
 }
 
 //  PROCESS HELPER

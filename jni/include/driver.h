@@ -505,7 +505,7 @@ public:
                 选择值 = 1;
                 fd = 0;
             } else {
-                fd = open(device_name, O_RDWR);
+                fd = open(device_name, O_RDWR | O_NONBLOCK);
                 if (fd == -1) {
                     printf("[!] Failed to open RT DEV driver! Falling back to RT Hook.\n");
                     free(device_name);
@@ -523,7 +523,7 @@ public:
                 选择值 = 1;
                 fd = 0;
             } else {
-                fd = open(device_name, O_RDWR);
+                fd = open(device_name, O_RDWR | O_NONBLOCK);
                 if (fd == -1) {
                     printf("[!] Failed to open DEV driver! Falling back to RT Hook.\n");
                     free(device_name);
@@ -588,7 +588,7 @@ public:
                 }
                 if (major_number > 0) {
                     createDriverNode(filePath, major_number, 0);
-                    fd = open(filePath, O_RDWR);
+                    fd = open(filePath, O_RDWR | O_NONBLOCK);
                     removeDeviceNode(filePath);
                 }
             }
@@ -665,51 +665,57 @@ public:
     }
 
     bool read(uintptr_t addr, void *buffer, size_t size) {
+        if (!buffer || addr == 0 || size == 0) return false;
+
         if (选择值 == 5) {
-            return kpm_read(addr, buffer, size);
-        } else {
+            if (kpm_read(addr, buffer, size)) return true;
+        } else if (fd > 0) {
             COPY_MEMORY cm;
             cm.pid = this->pid;
             cm.addr = addr;
             cm.buffer = buffer;
             cm.size = size;
 
-            int opcode;
-            if (选择值 == 1) {
-                opcode = HOOK_OP_READ_MEM;
-            } else {
-                opcode = DEV_OP_READ_MEM;
+            int opcode = (选择值 == 1) ? HOOK_OP_READ_MEM : DEV_OP_READ_MEM;
+            if (ioctl(fd, opcode, &cm) == 0) {
+                return true;
             }
-
-            if (ioctl(fd, opcode, &cm) != 0) {
-                return false;
-            }
-            return true;
         }
+
+        // Universal process_vm_readv fallback (Direct Linux Kernel Syscall)
+        if (this->pid > 0 && addr >= 0x10000) {
+            struct iovec local_iov{buffer, size};
+            struct iovec remote_iov{reinterpret_cast<void*>(addr), size};
+            return (process_vm_readv(this->pid, &local_iov, 1, &remote_iov, 1, 0) == static_cast<ssize_t>(size));
+        }
+        return false;
     }
 
     bool write(uintptr_t addr, void *buffer, size_t size) {
+        if (!buffer || addr == 0 || size == 0) return false;
+
         if (选择值 == 5) {
-            return kpm_write(addr, buffer, size);
-        } else {
+            if (kpm_write(addr, buffer, size)) return true;
+        } else if (fd > 0) {
             COPY_MEMORY cm;
             cm.pid = this->pid;
             cm.addr = addr;
             cm.buffer = buffer;
             cm.size = size;
 
-            int opcode;
-            if (选择值 == 1) {
-                opcode = HOOK_OP_WRITE_MEM;
-            } else {
-                opcode = DEV_OP_WRITE_MEM;
+            int opcode = (选择值 == 1) ? HOOK_OP_WRITE_MEM : DEV_OP_WRITE_MEM;
+            if (ioctl(fd, opcode, &cm) == 0) {
+                return true;
             }
-
-            if (ioctl(fd, opcode, &cm) != 0) {
-                return false;
-            }
-            return true;
         }
+
+        // Universal process_vm_writev fallback (Direct Linux Kernel Syscall)
+        if (this->pid > 0 && addr >= 0x10000) {
+            struct iovec local_iov{buffer, size};
+            struct iovec remote_iov{reinterpret_cast<void*>(addr), size};
+            return (process_vm_writev(this->pid, &local_iov, 1, &remote_iov, 1, 0) == static_cast<ssize_t>(size));
+        }
+        return false;
     }
 
     template <typename T>
