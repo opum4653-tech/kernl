@@ -284,9 +284,9 @@ void RenderFloatingLogo() {
     static double s_last_nexus_toggle = 0.0;
     double now_time = ImGui::GetTime();
 
-    if (clicked || (ImGui::IsItemDeactivated() && !s_logoJustMoved)) {
+    if (clicked || ImGui::IsItemClicked() || (ImGui::IsItemDeactivated() && !s_logoJustMoved)) {
         if (now_time - s_last_nexus_toggle > 0.30) {
-            g_ShowNexusMenu = !g_ShowNexusMenu;
+            g_ShowNexusMenu = true;
             s_last_nexus_toggle = now_time;
         }
         g_LogoDragging  = false;
@@ -424,7 +424,14 @@ void RenderMenu() {
 
     ApplyCustomTheme(scale_y);
 
-    ImGui::SetNextWindowPos(ImVec2(100.0f, 60.0f), ImGuiCond_FirstUseEver);
+    static ImVec2 s_menu_pos = ImVec2(-1.0f, -1.0f);
+    if (s_menu_pos.x < 0.0f) {
+        s_menu_pos = ImVec2((realW - g_MenuWidth) * 0.5f, (realH - g_MenuHeight) * 0.5f);
+    }
+    s_menu_pos.x = std::max(0.0f, std::min(s_menu_pos.x, realW - g_MenuWidth));
+    s_menu_pos.y = std::max(0.0f, std::min(s_menu_pos.y, realH - g_MenuHeight));
+
+    ImGui::SetNextWindowPos(s_menu_pos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(g_MenuWidth, g_MenuHeight), ImGuiCond_Always);
     ImGuiWindowFlags flags =
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
@@ -491,10 +498,10 @@ void RenderMenu() {
     ImGui::SetCursorScreenPos(wp);
     ImGui::InvisibleButton("##NexusHeaderDrag", ImVec2(W - pad - closeSize - 30.0f, pad * 2.0f + 40.0f * scale_y));
     if (ImGui::IsItemActive()) {
-        ImVec2 curPos = ImGui::GetWindowPos();
-        curPos.x += ImGui::GetIO().MouseDelta.x;
-        curPos.y += ImGui::GetIO().MouseDelta.y;
-        ImGui::SetWindowPos(curPos);
+        s_menu_pos.x += ImGui::GetIO().MouseDelta.x;
+        s_menu_pos.y += ImGui::GetIO().MouseDelta.y;
+        s_menu_pos.x = std::max(0.0f, std::min(s_menu_pos.x, realW - g_MenuWidth));
+        s_menu_pos.y = std::max(0.0f, std::min(s_menu_pos.y, realH - g_MenuHeight));
     }
 
     ImFont* titleFont = g_BoldFont ? g_BoldFont : ImGui::GetFont();
@@ -526,9 +533,9 @@ void RenderMenu() {
 
     ImGui::SetCursorScreenPos(closePos);
     ImGui::PushID("nexus_close");
-    ImGui::InvisibleButton("##close", ImVec2(closeSize, closeSize));
+    bool closeBtn = ImGui::InvisibleButton("##close", ImVec2(closeSize, closeSize));
     bool closeHov = ImGui::IsItemHovered();
-    bool closeClk = ImGui::IsItemClicked();
+    bool closeClk = closeBtn || ImGui::IsItemClicked();
     ImGui::PopID();
 
     ImVec2 closeCenter(closePos.x + closeSize * 0.5f, closePos.y + closeSize * 0.5f);
@@ -643,9 +650,9 @@ void RenderMenu() {
 
         ImGui::SetCursorScreenPos(sP1);
         ImGui::PushID(9000 + i);
-        ImGui::InvisibleButton("##tab", ImVec2(slotW, tabH));
+        bool tabBtn = ImGui::InvisibleButton("##tab", ImVec2(slotW, tabH));
         bool hovered = ImGui::IsItemHovered();
-        if (ImGui::IsItemClicked()) g_NexusTab = i;
+        if (tabBtn || ImGui::IsItemClicked()) g_NexusTab = i;
         ImGui::PopID();
 
         if (active) {
@@ -780,8 +787,9 @@ void RenderMenu() {
 
         ImGui::SetCursorScreenPos(ImVec2(cp1.x + 10, rowY - 6.0f * scale_y));
         ImGui::PushID(uid);
-        if (ImGui::InvisibleButton("##mod",
-            ImVec2(cp2.x - cp1.x - 20.0f, 34.0f * scale_y)))
+        bool modBtn = ImGui::InvisibleButton("##mod",
+            ImVec2(cp2.x - cp1.x - 20.0f, 34.0f * scale_y));
+        if (modBtn || ImGui::IsItemClicked())
             *value = !(*value);
         ImGui::PopID();
     };
@@ -937,7 +945,7 @@ void RenderMenu() {
         ImGui::PushStyleColor(ImGuiCol_ButtonActive,
             g_darkMode ? IM_COL32(60, 60, 200, 255) : IM_COL32(230, 180, 60, 255));
         if (ImGui::Button(g_darkMode ? "DARK MODE" : "LIGHT MODE",
-                          ImVec2(170.0f * scale_y, 45.0f * scale_y))) {
+                          ImVec2(170.0f * scale_y, 45.0f * scale_y)) || ImGui::IsItemClicked()) {
             g_darkMode = !g_darkMode;
         }
         ImGui::PopStyleColor(3);
@@ -949,7 +957,7 @@ void RenderMenu() {
         ImGui::PushStyleColor(ImGuiCol_Button,        IM_COL32(220, 60, 60, 220));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(255, 90, 90, 255));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive,  IM_COL32(180, 40, 40, 255));
-        if (ImGui::Button("EXIT", ImVec2(170.0f * scale_y, 45.0f * scale_y))) {
+        if (ImGui::Button("EXIT", ImVec2(170.0f * scale_y, 45.0f * scale_y)) || ImGui::IsItemClicked()) {
             exit(0);
         }
         ImGui::PopStyleColor(3);
@@ -1140,11 +1148,13 @@ int main(int argc, char *argv[]) {
     while (main_thread_flag) {
         drawBegin();
         {
-            // Floating logo button remains visible (draggable overlay button)
-            RenderFloatingLogo();
-
-            // Render main menu when toggled visible
-            if (g_ShowNexusMenu) RenderMenu();
+            if (!g_ShowNexusMenu) {
+                // When menu is closed, show floating draggable logo
+                RenderFloatingLogo();
+            } else {
+                // When menu is open, show main menu (clean, zero overlap, full touch accessibility)
+                RenderMenu();
+            }
 
             // ESP / Aimbot
             if (game_pid > 0 && lib_base > 0) {

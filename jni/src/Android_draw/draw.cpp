@@ -102,6 +102,11 @@ void screen_config() {
     displayInfo = android::ANativeWindowCreator::GetDisplayInfo();
     if (displayInfo.width <= 0) displayInfo.width = 1080;
     if (displayInfo.height <= 0) displayInfo.height = 2400;
+
+    int max_d = (displayInfo.width > displayInfo.height) ? displayInfo.width : displayInfo.height;
+    int min_d = (displayInfo.width < displayInfo.height) ? displayInfo.width : displayInfo.height;
+    native_window_screen_x = max_d;
+    native_window_screen_y = min_d;
 }
 
 bool ImGui_init() {
@@ -134,6 +139,8 @@ bool ImGui_init() {
     style->GrabRounding      = 3;
     
     io.IniFilename = NULL;
+    io.MouseDragThreshold = 14.0f;
+    style->TouchExtraPadding = ImVec2(4.0f, 4.0f);
     static ImFontConfig font_cfg;
     font_cfg.SizePixels = 22.0f;
     io.Fonts->AddFontFromMemoryTTF((void *) Roboto_Regular, sizeof(Roboto_Regular), 32.0f, &font_cfg, io.Fonts->GetGlyphRangesChineseFull());
@@ -149,13 +156,7 @@ void drawBegin() {
         LOG_INFO("Display orientation transition detected: %u -> %u (Dims: %dx%d)",
                  ::orientation, displayInfo.orientation, displayInfo.width, displayInfo.height);
         ::orientation = displayInfo.orientation;
-        UpdateScreenData(displayInfo.width, displayInfo.height, displayInfo.orientation);
-        
-        // CRASH PREVENTION: g_window ka nullptr check (segmentation fault protection)
-        if (g_window != nullptr) {
-            g_window->Pos.x = 100;
-            g_window->Pos.y = 125;
-        }
+        UpdateScreenData(native_window_screen_x, native_window_screen_y, displayInfo.orientation);
     }
 
     #ifdef USE_OPENGL

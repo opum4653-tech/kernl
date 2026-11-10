@@ -254,9 +254,12 @@ static void *TypeA(void *arg) {
                     x = std::clamp(x, 0.0f, (orientation == 1 || orientation == 3) ? longEdge : shortEdge);
                     y = std::clamp(y, 0.0f, (orientation == 1 || orientation == 3) ? shortEdge : longEdge);
 
+                    io.AddMousePosEvent(x, y);
+                    io.AddMouseButtonEvent(0, true);
                     io.MousePos = ImVec2(x, y);
                     io.MouseDown[0] = true;
                 } else {
+                    io.AddMouseButtonEvent(0, false);
                     io.MouseDown[0] = false;
                 }
                 if (!Touch_readOnly && nowfd > 0) {
