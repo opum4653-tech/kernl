@@ -1,4 +1,3 @@
-// ninmods-kernel — PURE KERNEL DRIVER ARCHITECTURE (EXTERNAL ARCHITECTURE PARITY)
 #include "Android_draw/draw.h"
 #include "Android_touch/Touch.hpp"
 #include "ui/menu.hpp"
@@ -204,7 +203,7 @@ static int start_overlay() {
             if (game_pid > 0 && lib_base > 0) {
                 DrawESP(abs_ScreenX, abs_ScreenY, lib_base);
                 AimbotMenu(abs_ScreenX, abs_ScreenY, lib_base);
-                TouchAimbotTick(g_ShowNexusMenu);
+                TouchAimbotTick(g_ShowMenu);
             }
         }
         drawEnd();

@@ -8,11 +8,10 @@ namespace ui::menu {
     void save_logo_pos();
 }
 
-extern bool g_ShowNexusMenu;
+extern bool g_ShowMenu;
 extern float g_ThemeColorArr[4];
 #define g_ThemeColor ImVec4(g_ThemeColorArr[0], g_ThemeColorArr[1], g_ThemeColorArr[2], g_ThemeColorArr[3])
 
-// Scarecrow cheat toggles defined in hook.h (linked via main.cpp)
 extern bool Aimbot;
 extern bool AimLock;
 extern bool AimSilent;
@@ -40,3 +39,4 @@ extern bool NoRecoil;
 
 extern int game_pid;
 extern uint64_t lib_base;
+extern bool main_thread_flag;

@@ -11,22 +11,17 @@
 #include <cstdio>
 #include <cstdlib>
 
-// ═══════════════════════════════════════════════════════════
-//  GLOBAL UI STATE
-// ═══════════════════════════════════════════════════════════
-
 float g_ThemeColorArr[4] = { 1.00f, 0.20f, 0.20f, 1.00f };
 
 float g_GlowIntensity = 1.0f;
 float g_MenuWidth     = 1250.0f;
 float g_MenuHeight    = 850.0f;
 bool  g_darkMode      = true;
-int   g_NexusTab      = 0;   // 0=AIM  1=VISUALS  2=MISC  3=CONFIG
+int   g_CurrentTab    = 0;
 
-bool  g_ShowNexusMenu = false;
+bool  g_ShowMenu      = false;
 bool  g_AimMagnetUi   = false;
 
-// Floating Logo Position (draggable)
 float  g_LogoX = 30.0f;
 float  g_LogoY = 0.38f;
 bool   g_LogoDragging = false;
@@ -35,8 +30,7 @@ ImVec2 g_LogoDragStart(0, 0);
 float  g_LogoSize = 130.0f;
 float  g_LogoDragThreshold = 8.0f;
 
-static bool s_logoWasDraggingLastFrame = false;
-static bool s_logoJustMoved            = false;
+static bool s_logoJustMoved = false;
 
 extern ImFont* g_IconFont;
 extern ImFont* g_BoldFont;
@@ -61,13 +55,13 @@ static const char* get_logo_pos_file() {
     for (const char* dir : dirs) {
         mkdir(dir, 0777);
         if (access(dir, W_OK) == 0) {
-            path = std::string(dir) + "/nexus_logo_pos.txt";
+            path = std::string(dir) + "/ninmods_logo_pos.txt";
             return path.c_str();
         }
     }
     mkdir("/data/data/com.andorid.ninmods/files", 0777);
     mkdir("/data/data/com.andorid.ninmods/files/logs", 0777);
-    path = "/data/data/com.andorid.ninmods/files/logs/nexus_logo_pos.txt";
+    path = "/data/data/com.andorid.ninmods/files/logs/ninmods_logo_pos.txt";
     return path.c_str();
 }
 
@@ -94,7 +88,8 @@ void load_logo_pos() {
     }
 }
 
-} // namespace ui::menu
+}
+namespace ui::menu {
 
 static void ApplyCustomTheme(float scale_y = 1.0f) {
     ImGuiStyle& style = ImGui::GetStyle();
@@ -151,10 +146,6 @@ static void ApplyCustomTheme(float scale_y = 1.0f) {
     colors[ImGuiCol_HeaderActive]  = g_ThemeColor;
 }
 
-// ═══════════════════════════════════════════════════════════
-//  FLOATING LOGO BUTTON
-// ═══════════════════════════════════════════════════════════
-
 static void RenderFloatingLogo() {
     ImGuiIO& io = ImGui::GetIO();
     ImVec2 screen = io.DisplaySize;
@@ -165,6 +156,9 @@ static void RenderFloatingLogo() {
     ImVec2 logoPos(g_LogoX, screen.y * g_LogoY);
     logoPos.x = std::max(margin, std::min(logoPos.x, screen.x - logoSize - margin));
     logoPos.y = std::max(margin, std::min(logoPos.y, screen.y - logoSize - margin));
+
+    g_LogoX = logoPos.x;
+    g_LogoY = screen.y > 0.0f ? (logoPos.y / screen.y) : 0.38f;
 
     ImGui::SetNextWindowPos(logoPos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(logoSize, logoSize), ImGuiCond_Always);
@@ -178,7 +172,7 @@ static void RenderFloatingLogo() {
         ImGuiWindowFlags_NoBringToFrontOnFocus;
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-    if (ImGui::Begin("##NEXUS_LOGO_BTN", nullptr, flags)) {
+    if (ImGui::Begin("##NINMODS_LOGO_BTN", nullptr, flags)) {
         ImDrawList* draw = ImGui::GetWindowDrawList();
         ImVec2 wp  = ImGui::GetWindowPos();
         ImVec2 ctr = ImVec2(wp.x + logoSize * 0.5f, wp.y + logoSize * 0.5f);
@@ -199,45 +193,47 @@ static void RenderFloatingLogo() {
             s_logoJustMoved  = false;
         }
 
-        if (active && !g_LogoDragging) {
+        if (active) {
             const float dx = mouse.x - g_LogoDragStart.x;
             const float dy = mouse.y - g_LogoDragStart.y;
-            if (sqrtf(dx * dx + dy * dy) > 12.0f) {
+            if (!g_LogoDragging && sqrtf(dx * dx + dy * dy) > g_LogoDragThreshold) {
                 g_LogoDragging  = true;
                 s_logoJustMoved = true;
             }
-        }
 
-        if (g_LogoDragging && active) {
-            float newX = mouse.x - g_LogoDragOffset.x;
-            float newY = mouse.y - g_LogoDragOffset.y;
+            if (g_LogoDragging) {
+                float newX = mouse.x - g_LogoDragOffset.x;
+                float newY = mouse.y - g_LogoDragOffset.y;
 
-            newX = std::max(margin, std::min(newX, screen.x - logoSize - margin));
-            newY = std::max(margin, std::min(newY, screen.y - logoSize - margin));
+                newX = std::max(margin, std::min(newX, screen.x - logoSize - margin));
+                newY = std::max(margin, std::min(newY, screen.y - logoSize - margin));
 
-            g_LogoX = newX;
-            g_LogoY = newY / (screen.y > 0.0f ? screen.y : 1.0f);
+                g_LogoX = newX;
+                g_LogoY = screen.y > 0.0f ? (newY / screen.y) : 0.38f;
+            }
         }
 
         static double s_last_toggle_time = 0.0;
         double cur_time = ImGui::GetTime();
 
         if (clicked || (deactivated && !s_logoJustMoved)) {
-            if (cur_time - s_last_toggle_time > 0.25) {
-                g_ShowNexusMenu = !g_ShowNexusMenu;
-                s_last_toggle_time = cur_time;
+            const float dx = mouse.x - g_LogoDragStart.x;
+            const float dy = mouse.y - g_LogoDragStart.y;
+            if (sqrtf(dx * dx + dy * dy) <= g_LogoDragThreshold) {
+                if (cur_time - s_last_toggle_time > 0.20) {
+                    g_ShowMenu = !g_ShowMenu;
+                    s_last_toggle_time = cur_time;
+                }
             }
             s_logoJustMoved = false;
             g_LogoDragging  = false;
         } else if (deactivated) {
-            if (g_LogoDragging) {
+            if (g_LogoDragging || s_logoJustMoved) {
                 ui::menu::save_logo_pos();
             }
             s_logoJustMoved = false;
             g_LogoDragging  = false;
         }
-
-        s_logoWasDraggingLastFrame = g_LogoDragging;
 
     ImU32 accent = ImGui::ColorConvertFloat4ToU32(g_ThemeColor);
     ImU32 cyan   = IM_COL32(80, 220, 255, 255);
@@ -314,24 +310,35 @@ static void RenderFloatingLogo() {
     ImGui::PopStyleVar();
 }
 
-// ═══════════════════════════════════════════════════════════
-//  RENDER MENU — NEXUS CORE ("M O H A M M A D")
-// ═══════════════════════════════════════════════════════════
-
 static void RenderMenu() {
     ImGuiIO& io = ImGui::GetIO();
     ImVec2 screen = io.DisplaySize;
 
-    // Sizing responsive to display resolution
-    g_MenuWidth  = std::min(1180.0f, screen.x * 0.94f);
-    g_MenuHeight = std::min(820.0f, screen.y * 0.94f);
+    g_MenuWidth  = std::max(480.0f, std::min(1180.0f, screen.x * 0.94f));
+    g_MenuHeight = std::max(360.0f, std::min(820.0f, screen.y * 0.94f));
+    if (g_MenuWidth > screen.x) g_MenuWidth = screen.x;
+    if (g_MenuHeight > screen.y) g_MenuHeight = screen.y;
 
     float scale_y = g_MenuHeight / 900.0f;
-    scale_y = std::max(0.70f, std::min(scale_y, 1.10f));
+    scale_y = std::max(0.65f, std::min(scale_y, 1.10f));
 
-    ApplyCustomTheme(scale_y);
+    static bool s_last_dark = !g_darkMode;
+    static float s_last_scale = -1.0f;
+    static ImVec4 s_last_accent = ImVec4(0, 0, 0, 0);
 
-    // Initial centering position and persistent drag coordinates
+    bool need_update = (s_last_dark != g_darkMode) ||
+                       (fabsf(s_last_scale - scale_y) > 0.01f) ||
+                       (s_last_accent.x != g_ThemeColorArr[0] ||
+                        s_last_accent.y != g_ThemeColorArr[1] ||
+                        s_last_accent.z != g_ThemeColorArr[2] ||
+                        s_last_accent.w != g_ThemeColorArr[3]);
+    if (need_update) {
+        ApplyCustomTheme(scale_y);
+        s_last_dark = g_darkMode;
+        s_last_scale = scale_y;
+        s_last_accent = ImVec4(g_ThemeColorArr[0], g_ThemeColorArr[1], g_ThemeColorArr[2], g_ThemeColorArr[3]);
+    }
+
     static ImVec2 s_menu_pos(-1.0f, -1.0f);
     if (s_menu_pos.x < 0.0f || s_menu_pos.x > screen.x || s_menu_pos.y > screen.y) {
         s_menu_pos = ImVec2((screen.x - g_MenuWidth) * 0.5f, (screen.y - g_MenuHeight) * 0.5f);
@@ -349,7 +356,7 @@ static void RenderMenu() {
         ImGuiWindowFlags_NoMove;
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-    if (ImGui::Begin("NEXUS_CORE", nullptr, flags)) {
+    if (ImGui::Begin("NINMODS_CORE", nullptr, flags)) {
 
     ImDrawList* draw = ImGui::GetWindowDrawList();
     ImVec2 wp = ImGui::GetWindowPos();
@@ -357,37 +364,35 @@ static void RenderMenu() {
     float  W  = ws.x;
     float  H  = ws.y;
 
-    ImU32 bgDeep     = IM_COL32(8, 8, 16, 252);
-    ImU32 bgCard     = IM_COL32(20, 20, 32, 250);
-    ImU32 bgInset    = IM_COL32(30, 30, 46, 255);
-    ImU32 border     = IM_COL32(60, 60, 88, 255);
-    ImU32 borderGlow = IM_COL32(90, 90, 130, 255);
+    ImU32 bgDeep     = g_darkMode ? IM_COL32(8, 8, 16, 252)    : IM_COL32(242, 244, 250, 252);
+    ImU32 bgCard     = g_darkMode ? IM_COL32(20, 20, 32, 250)  : IM_COL32(255, 255, 255, 250);
+    ImU32 bgInset    = g_darkMode ? IM_COL32(30, 30, 46, 255)  : IM_COL32(232, 236, 245, 255);
+    ImU32 border     = g_darkMode ? IM_COL32(60, 60, 88, 255)  : IM_COL32(195, 200, 218, 255);
+    ImU32 borderGlow = g_darkMode ? IM_COL32(90, 90, 130, 255) : IM_COL32(165, 175, 205, 255);
     ImU32 accent     = ImGui::ColorConvertFloat4ToU32(g_ThemeColor);
-    ImU32 accent2    = IM_COL32(120, 200, 255, 255);
-    ImU32 accent3    = IM_COL32(255, 180, 80, 255);
+    ImU32 accent2    = g_darkMode ? IM_COL32(120, 200, 255, 255) : IM_COL32(30, 130, 230, 255);
+    ImU32 accent3    = g_darkMode ? IM_COL32(255, 180, 80, 255)  : IM_COL32(210, 120, 20, 255);
 
-    ImU32 textMain   = IM_COL32(245, 245, 255, 255);
-    ImU32 textDim    = IM_COL32(160, 160, 190, 255);
+    ImU32 textMain   = g_darkMode ? IM_COL32(245, 245, 255, 255) : IM_COL32(20, 24, 36, 255);
+    ImU32 textDim    = g_darkMode ? IM_COL32(160, 160, 190, 255) : IM_COL32(95, 105, 125, 255);
 
-    ImU32 green      = IM_COL32(0, 240, 140, 255);
-    ImU32 redColor   = IM_COL32(255, 90, 90, 255);
-    ImU32 purple     = IM_COL32(180, 120, 255, 255);
-    ImU32 cyan       = IM_COL32(80, 220, 255, 255);
-    ImU32 yellow     = IM_COL32(255, 220, 100, 255);
-    ImU32 pink       = IM_COL32(255, 120, 200, 255);
+    ImU32 green      = g_darkMode ? IM_COL32(0, 240, 140, 255)   : IM_COL32(0, 180, 100, 255);
+    ImU32 redColor   = g_darkMode ? IM_COL32(255, 90, 90, 255)   : IM_COL32(220, 50, 50, 255);
+    ImU32 purple     = g_darkMode ? IM_COL32(180, 120, 255, 255) : IM_COL32(130, 70, 220, 255);
+    ImU32 cyan       = g_darkMode ? IM_COL32(80, 220, 255, 255)  : IM_COL32(10, 150, 210, 255);
+    ImU32 yellow     = g_darkMode ? IM_COL32(255, 220, 100, 255) : IM_COL32(210, 160, 10, 255);
+    ImU32 pink       = g_darkMode ? IM_COL32(255, 120, 200, 255) : IM_COL32(210, 60, 160, 255);
 
-    // Frame
     ImVec2 p1 = wp;
     ImVec2 p2 = ImVec2(wp.x + W, wp.y + H);
 
     draw->AddRectFilled(ImVec2(p1.x - 5, p1.y - 5), ImVec2(p2.x + 5, p2.y + 5), (accent & 0x00FFFFFF) | (25 << 24), 22.0f);
-    draw->AddRectFilled(ImVec2(p1.x + 5, p1.y + 8), ImVec2(p2.x + 5, p2.y + 8), IM_COL32(0, 0, 0, 140), 18.0f);
+    draw->AddRectFilled(ImVec2(p1.x + 5, p1.y + 8), ImVec2(p2.x + 5, p2.y + 8), IM_COL32(0, 0, 0, g_darkMode ? 140 : 45), 18.0f);
     draw->AddRectFilled(p1, p2, bgDeep, 18.0f);
     draw->AddRect(ImVec2(p1.x + 1, p1.y + 1), ImVec2(p2.x - 1, p2.y - 1), borderGlow, 17.0f, 0, 1.6f);
     draw->AddRectFilledMultiColor(ImVec2(p1.x + 20, p1.y), ImVec2(p2.x - 20, p1.y + 3), accent, accent2, accent2, accent);
 
-    // Header
-    float pad   = 34.0f * scale_y;
+    float pad   = std::max(16.0f, 34.0f * scale_y);
     float headY = wp.y + pad * 0.85f;
     ImFont* titleFont = g_BoldFont ? g_BoldFont : ImGui::GetFont();
 
@@ -411,11 +416,11 @@ static void RenderMenu() {
         draw->AddLine(ImVec2(x, lineY), ImVec2(x + 9.0f * scale_y, lineY), dc, 2.0f);
     }
 
-    // Header Drag Handle: Allows moving the menu anywhere on screen by dragging the top header
-    float closeSize = 42.0f * scale_y;
-    float headerH = 65.0f * scale_y;
+    float closeSize = std::max(30.0f, 42.0f * scale_y);
+    float headerH   = std::max(45.0f, 65.0f * scale_y);
+    float dragBarW  = std::max(100.0f, W - pad - closeSize - 20.0f * scale_y);
     ImGui::SetCursorScreenPos(wp);
-    ImGui::InvisibleButton("##NexusHeaderDragBar", ImVec2(W - pad - closeSize - 20.0f * scale_y, headerH));
+    ImGui::InvisibleButton("##NinmodsHeaderDragBar", ImVec2(dragBarW, headerH));
     if (ImGui::IsItemActive()) {
         s_menu_pos.x += io.MouseDelta.x;
         s_menu_pos.y += io.MouseDelta.y;
@@ -423,13 +428,12 @@ static void RenderMenu() {
         s_menu_pos.y = std::max(0.0f, std::min(s_menu_pos.y, screen.y - g_MenuHeight));
     }
 
-    // Close button
     ImVec2 closePos(wp.x + W - pad - closeSize, headY - 6.0f * scale_y);
 
     ImGui::SetCursorScreenPos(closePos);
-    ImGui::PushID("nexus_close");
+    ImGui::PushID("ninmods_close");
     if (ImGui::InvisibleButton("##close", ImVec2(closeSize, closeSize))) {
-        g_ShowNexusMenu = false;
+        g_ShowMenu = false;
     }
     bool closeHov = ImGui::IsItemHovered();
     ImGui::PopID();
@@ -449,7 +453,6 @@ static void RenderMenu() {
     draw->AddLine(ImVec2(closeCenter.x - xOff, closeCenter.y - xOff), ImVec2(closeCenter.x + xOff, closeCenter.y + xOff), xCol, 3.0f);
     draw->AddLine(ImVec2(closeCenter.x + xOff, closeCenter.y - xOff), ImVec2(closeCenter.x - xOff, closeCenter.y + xOff), xCol, 3.0f);
 
-    // ACTIVE badge
     float badgeW = 130.0f * scale_y;
     float badgeH = 36.0f * scale_y;
     ImVec2 bP1 = ImVec2(closePos.x - badgeW - 14.0f * scale_y, headY - 3.0f * scale_y);
@@ -470,7 +473,6 @@ static void RenderMenu() {
     ImVec2 bSz = titleFont->CalcTextSizeA(15.0f * scale_y, FLT_MAX, 0, badgeTxt);
     draw->AddText(titleFont, 15.0f * scale_y, ImVec2(dotC.x + 14.0f * scale_y, bP1.y + (badgeH - bSz.y) * 0.5f), liveCol, badgeTxt);
 
-    // Hero box
     float heroY = lineY + 32.0f * scale_y;
     float nxW = 250.0f * scale_y;
     float nxH = 100.0f * scale_y;
@@ -487,10 +489,10 @@ static void RenderMenu() {
     draw->AddLine(ImVec2(nxP2.x, nxP2.y), ImVec2(nxP2.x - tick, nxP2.y), accent2, 3.0f);
     draw->AddLine(ImVec2(nxP2.x, nxP2.y), ImVec2(nxP2.x, nxP2.y - tick), accent2, 3.0f);
 
-    const char* nxs = "N E X U S";
-    float nexusSize = 26.0f * scale_y;
-    ImVec2 nxsSz = titleFont->CalcTextSizeA(nexusSize, FLT_MAX, 0, nxs);
-    draw->AddText(titleFont, nexusSize, ImVec2(nxP1.x + (nxW - nxsSz.x) * 0.5f, nxP1.y + (nxH - nxsSz.y) * 0.5f), cyan, nxs);
+    const char* nxs = "N I N M O D S";
+    float brandSize = 22.0f * scale_y;
+    ImVec2 nxsSz = titleFont->CalcTextSizeA(brandSize, FLT_MAX, 0, nxs);
+    draw->AddText(titleFont, brandSize, ImVec2(nxP1.x + (nxW - nxsSz.x) * 0.5f, nxP1.y + (nxH - nxsSz.y) * 0.5f), cyan, nxs);
 
     float scX = nxP2.x + 46.0f * scale_y;
     draw->AddText(titleFont, 20.0f * scale_y, ImVec2(scX, heroY + 8.0f * scale_y), textMain, "SYSTEM CORE");
@@ -501,7 +503,6 @@ static void RenderMenu() {
     draw->AddCircleFilled(cDot, 4.5f * scale_y, liveCol);
     draw->AddText(titleFont, 15.0f * scale_y, ImVec2(cDot.x + 16.0f * scale_y, cDot.y - 10.0f * scale_y), green, connected ? "CONNECTED" : "DISCONNECTED");
 
-    // Tab Bar
     float tabY = heroY + nxH + 26.0f * scale_y;
     float tabH = 52.0f * scale_y;
     float tabW = W - pad * 2;
@@ -519,13 +520,13 @@ static void RenderMenu() {
     for (int i = 0; i < tabCount; i++) {
         ImVec2 sP1 = ImVec2(tP1.x + slotW * i, tP1.y);
         ImVec2 sP2 = ImVec2(sP1.x + slotW, tP2.y);
-        bool active = (g_NexusTab == i);
+        bool active = (g_CurrentTab == i);
         ImU32 tabCol = tabColors[i];
 
         ImGui::SetCursorScreenPos(sP1);
         ImGui::PushID(9000 + i);
         if (ImGui::InvisibleButton("##tab", ImVec2(slotW, tabH))) {
-            g_NexusTab = i;
+            g_CurrentTab = i;
         }
         bool hovered = ImGui::IsItemHovered();
         ImGui::PopID();
@@ -544,7 +545,7 @@ static void RenderMenu() {
 
         float diaX = sP1.x + 30.0f * scale_y;
         float diaY = (sP1.y + sP2.y) * 0.5f;
-        ImU32 diaCol = active ? IM_COL32(255, 255, 255, 255) : tabCol;
+        ImU32 diaCol = active ? (g_darkMode ? IM_COL32(255, 255, 255, 255) : IM_COL32(20, 24, 36, 255)) : tabCol;
         draw->AddQuadFilled(
             ImVec2(diaX, diaY - 6.0f * scale_y),
             ImVec2(diaX + 6.0f * scale_y, diaY),
@@ -553,16 +554,15 @@ static void RenderMenu() {
             diaCol);
 
         ImVec2 txtSz = titleFont->CalcTextSizeA(17.0f * scale_y, FLT_MAX, 0, tabNames[i]);
-        draw->AddText(titleFont, 17.0f * scale_y, ImVec2(diaX + 20.0f * scale_y, diaY - txtSz.y * 0.5f), active ? IM_COL32(255, 255, 255, 255) : tabCol, tabNames[i]);
+        draw->AddText(titleFont, 17.0f * scale_y, ImVec2(diaX + 20.0f * scale_y, diaY - txtSz.y * 0.5f), active ? (g_darkMode ? IM_COL32(255, 255, 255, 255) : IM_COL32(20, 24, 36, 255)) : tabCol, tabNames[i]);
     }
 
-    // Panels
     float bodyY = tP2.y + 24.0f * scale_y;
-    float bodyH = H - (bodyY - wp.y) - 78.0f * scale_y;
+    float bodyH = std::max(180.0f * scale_y, H - (bodyY - wp.y) - 78.0f * scale_y);
     float cardW = (tabW - 24.0f * scale_y) * 0.5f;
 
     auto DrawPanel = [&](ImVec2 cp1, ImVec2 cp2, const char* pTitle, ImU32 titleCol) {
-        draw->AddRectFilled(ImVec2(cp1.x + 3, cp1.y + 5), ImVec2(cp2.x + 3, cp2.y + 5), IM_COL32(0, 0, 0, 110), 14.0f);
+        draw->AddRectFilled(ImVec2(cp1.x + 3, cp1.y + 5), ImVec2(cp2.x + 3, cp2.y + 5), IM_COL32(0, 0, 0, g_darkMode ? 110 : 35), 14.0f);
         draw->AddRectFilled(ImVec2(cp1.x - 2, cp1.y - 2), ImVec2(cp2.x + 2, cp2.y + 2), (titleCol & 0x00FFFFFF) | (28 << 24), 16.0f);
         draw->AddRectFilled(cp1, cp2, bgCard, 14.0f);
         draw->AddRect(cp1, cp2, border, 14.0f, 0, 1.5f);
@@ -570,8 +570,9 @@ static void RenderMenu() {
         float tLine = 18.0f * scale_y;
         draw->AddLine(cp1, ImVec2(cp1.x + tLine, cp1.y), titleCol, 2.6f);
         draw->AddLine(cp1, ImVec2(cp1.x, cp1.y + tLine), titleCol, 2.6f);
-        draw->AddLine(ImVec2(cp2.x, cp2.y), ImVec2(cp2.x - tLine, cp2.y), titleCol, 2.6f);
-        draw->AddLine(ImVec2(cp2.x, cp2.y), ImVec2(cp2.x, cp2.y - tLine), titleCol, 2.6f);
+        draw->AddLine(cp1, ImVec2(cp2.x, cp2.y), titleCol, 2.6f);
+        draw->AddLine(cp2, ImVec2(cp2.x - tLine, cp2.y), titleCol, 2.6f);
+        draw->AddLine(cp2, ImVec2(cp2.x, cp2.y - tLine), titleCol, 2.6f);
 
         draw->AddText(titleFont, 20.0f * scale_y, ImVec2(cp1.x + 22.0f * scale_y, cp1.y + 18.0f * scale_y), titleCol, pTitle);
         draw->AddRectFilled(ImVec2(cp1.x + 22.0f * scale_y, cp1.y + 50.0f * scale_y), ImVec2(cp2.x - 22.0f * scale_y, cp1.y + 51.5f * scale_y), (titleCol & 0x00FFFFFF) | (150 << 24), 1.0f);
@@ -590,8 +591,8 @@ static void RenderMenu() {
         if (*value) {
             draw->AddCircleFilled(ImVec2(dotX, dotY), 12.0f * scale_y, (green & 0x00FFFFFF) | (70 << 24));
         }
-        draw->AddCircleFilled(ImVec2(dotX, dotY), 7.5f * scale_y, *value ? ((green & 0x00FFFFFF) | (80 << 24)) : IM_COL32(60, 60, 72, 90));
-        draw->AddCircleFilled(ImVec2(dotX, dotY), 4.5f * scale_y, *value ? green : IM_COL32(90, 90, 108, 255));
+        draw->AddCircleFilled(ImVec2(dotX, dotY), 7.5f * scale_y, *value ? ((green & 0x00FFFFFF) | (80 << 24)) : (g_darkMode ? IM_COL32(60, 60, 72, 90) : IM_COL32(180, 185, 200, 100)));
+        draw->AddCircleFilled(ImVec2(dotX, dotY), 4.5f * scale_y, *value ? green : (g_darkMode ? IM_COL32(90, 90, 108, 255) : IM_COL32(150, 155, 175, 255)));
 
         draw->AddText(titleFont, 17.0f * scale_y, ImVec2(dotX + 22.0f * scale_y, rowY), *value ? textMain : textDim, label);
 
@@ -624,23 +625,22 @@ static void RenderMenu() {
         draw->AddText(titleFont, 16.0f * scale_y, ImVec2(cp1.x + 34.0f * scale_y, rowY), textDim, key);
         ImVec2 vSz = titleFont->CalcTextSizeA(16.0f * scale_y, FLT_MAX, 0, val);
         draw->AddText(titleFont, 16.0f * scale_y, ImVec2(cp2.x - 34.0f * scale_y - vSz.x, rowY), valCol, val);
-        draw->AddLine(ImVec2(cp1.x + 28.0f * scale_y, rowY + 26.0f * scale_y), ImVec2(cp2.x - 28.0f * scale_y, rowY + 26.0f * scale_y), IM_COL32(50, 50, 70, 255), 1.2f);
+        draw->AddLine(ImVec2(cp1.x + 28.0f * scale_y, rowY + 26.0f * scale_y), ImVec2(cp2.x - 28.0f * scale_y, rowY + 26.0f * scale_y), g_darkMode ? IM_COL32(50, 50, 70, 255) : IM_COL32(210, 215, 230, 255), 1.2f);
     };
 
-    // Left Panel
     const char* leftTitle  = "";
     ImU32       leftColor  = accent;
-    if (g_NexusTab == 0)      { leftTitle = "AIM PANEL";    leftColor = redColor; }
-    else if (g_NexusTab == 1) { leftTitle = "VISUAL PANEL"; leftColor = cyan; }
-    else if (g_NexusTab == 2) { leftTitle = "MISC PANEL";   leftColor = yellow; }
-    else                       { leftTitle = "CONFIG PANEL"; leftColor = purple; }
+    if (g_CurrentTab == 0)      { leftTitle = "AIM PANEL";    leftColor = redColor; }
+    else if (g_CurrentTab == 1) { leftTitle = "VISUAL PANEL"; leftColor = cyan; }
+    else if (g_CurrentTab == 2) { leftTitle = "MISC PANEL";   leftColor = yellow; }
+    else                        { leftTitle = "CONFIG PANEL"; leftColor = purple; }
 
     DrawPanel(c1P1, c1P2, leftTitle, leftColor);
 
     float rowStep = 46.0f * scale_y;
     float rowBase = 70.0f * scale_y;
 
-    if (g_NexusTab == 0) {
+    if (g_CurrentTab == 0) {
         ModuleRow(c1P1, c1P2, rowBase,               "AIM BOT",    &Aimbot,     "n_aim1", redColor);
         ModuleRow(c1P1, c1P2, rowBase + rowStep,     "AIM LOCK",   &AimLock,    "n_aim_lock", redColor);
         ModuleRow(c1P1, c1P2, rowBase + rowStep * 2, "SILENT",     &AimSilent,  "n_aim2", redColor);
@@ -657,10 +657,10 @@ static void RenderMenu() {
 
         float tx1 = c1P1.x + 34.0f * scale_y;
         float tx2 = c1P2.x - 34.0f * scale_y;
-        float ty  = fovY + 24.0f * scale_y;
+        float ty  = fovY + 26.0f * scale_y;
         float th  = 5.0f;
 
-        draw->AddRectFilled(ImVec2(tx1, ty), ImVec2(tx2, ty + th), IM_COL32(55, 55, 75, 255), 2.5f);
+        draw->AddRectFilled(ImVec2(tx1, ty), ImVec2(tx2, ty + th), g_darkMode ? IM_COL32(55, 55, 75, 255) : IM_COL32(200, 205, 220, 255), 2.5f);
         float tFov = AimFov / 360.0f;
         float kx = tx1 + (tx2 - tx1) * tFov;
 
@@ -669,9 +669,10 @@ static void RenderMenu() {
         draw->AddCircleFilled(ImVec2(kx, ty + th * 0.5f), 7.5f * scale_y, IM_COL32(255, 255, 255, 255));
         draw->AddCircleFilled(ImVec2(kx, ty + th * 0.5f), 4.0f * scale_y, accent);
 
-        ImGui::SetCursorScreenPos(ImVec2(tx1, ty - 12.0f));
-        ImGui::PushID("nexus_fov");
-        ImGui::InvisibleButton("##fov", ImVec2(tx2 - tx1, 30.0f));
+        float hitH = 20.0f * scale_y;
+        ImGui::SetCursorScreenPos(ImVec2(tx1, ty + th * 0.5f - hitH * 0.5f));
+        ImGui::PushID("ninmods_fov");
+        ImGui::InvisibleButton("##fov", ImVec2(tx2 - tx1, hitH));
         if (ImGui::IsItemActive()) {
             float m = (ImGui::GetMousePos().x - tx1) / (tx2 - tx1);
             m = std::max(0.0f, std::min(1.0f, m));
@@ -679,7 +680,7 @@ static void RenderMenu() {
         }
         ImGui::PopID();
     }
-    else if (g_NexusTab == 1) {
+    else if (g_CurrentTab == 1) {
         ModuleRow(c1P1, c1P2, rowBase,               "BOX ESP",   &showBox,      "n_vis1", cyan);
         ModuleRow(c1P1, c1P2, rowBase + rowStep,     "LINE",      &showLine,     "n_vis2", cyan);
         ModuleRow(c1P1, c1P2, rowBase + rowStep * 2, "SKELETON",  &showSkeleton, "n_vis_skel", cyan);
@@ -688,7 +689,7 @@ static void RenderMenu() {
         ModuleRow(c1P1, c1P2, rowBase + rowStep * 5, "DISTANCE",  &showDistance, "n_vis5", cyan);
         ModuleRow(c1P1, c1P2, rowBase + rowStep * 6, "COUNT",     &showCount,    "n_vis_cnt", cyan);
     }
-    else if (g_NexusTab == 2) {
+    else if (g_CurrentTab == 2) {
         ModuleRow(c1P1, c1P2, rowBase,               "SPEED",     &SpeedHackV2, "n_msc1", yellow);
         ModuleRow(c1P1, c1P2, rowBase + rowStep,     "GHOST",     &GhostHack,   "n_msc2", yellow);
         ModuleRow(c1P1, c1P2, rowBase + rowStep * 2, "NO RELOAD", &NoReload,    "n_msc3", yellow);
@@ -701,7 +702,7 @@ static void RenderMenu() {
 
         ImGui::SetCursorScreenPos(ImVec2(c1P1.x + 34.0f * scale_y, y0 + 26.0f * scale_y));
         ImGui::PushID("n_boxcol");
-        ImGui::ColorEdit4("##bc", (float*)&boxCustomColor,
+        ImGui::ColorEdit4("##bc", &boxCustomColor.x,
             ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_AlphaPreviewHalf);
         ImGui::PopID();
 
@@ -716,7 +717,7 @@ static void RenderMenu() {
 
         ImGui::SetCursorScreenPos(ImVec2(c1P1.x + 34.0f * scale_y, y1 + 26.0f * scale_y));
         ImGui::PushID("n_linecol");
-        ImGui::ColorEdit4("##lc", (float*)&lineCustomColor,
+        ImGui::ColorEdit4("##lc", &lineCustomColor.x,
             ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_AlphaPreviewHalf);
         ImGui::PopID();
 
@@ -753,12 +754,12 @@ static void RenderMenu() {
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(255, 90, 90, 255));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive,  IM_COL32(180, 40, 40, 255));
         if (ImGui::Button("EXIT", ImVec2(170.0f * scale_y, 45.0f * scale_y))) {
-            exit(0);
+            main_thread_flag = false;
+            g_ShowMenu = false;
         }
         ImGui::PopStyleColor(3);
     }
 
-    // Right Panel
     DrawPanel(c2P1, c2P2, "SYSTEM INFO", accent2);
 
     float infoStart = 76.0f * scale_y;
@@ -778,10 +779,10 @@ static void RenderMenu() {
     const char* dName = (选择值 >= 1 && 选择值 <= 5) ? dNames[选择值] : "ARMED";
     InfoRow(c2P1, c2P2, infoStart + infoStep * 3, "DRIVER", dName, green);
 
-    InfoRow(c2P1, c2P2, infoStart + infoStep * 4, "MODE", (const char*[]){ "AIM", "VISUALS", "MISC", "CONFIG" }[g_NexusTab], purple);
+    InfoRow(c2P1, c2P2, infoStart + infoStep * 4, "MODE", (const char*[]){ "AIM", "VISUALS", "MISC", "CONFIG" }[g_CurrentTab], purple);
 
-    const char* coreTxt = "N E X U S";
-    float coreSize = 32.0f * scale_y;
+    const char* coreTxt = "N I N M O D S";
+    float coreSize = 30.0f * scale_y;
     ImVec2 coreSz = titleFont->CalcTextSizeA(coreSize, FLT_MAX, 0, coreTxt);
     ImVec2 corePos = ImVec2(c2P1.x + (cardW - coreSz.x) * 0.5f, c2P2.y - 80.0f * scale_y);
     draw->AddText(titleFont, coreSize, corePos, cyan, coreTxt);
@@ -791,8 +792,7 @@ static void RenderMenu() {
     ImVec2 capSz = titleFont->CalcTextSizeA(capSize, FLT_MAX, 0, cap);
     draw->AddText(titleFont, capSize, ImVec2(c2P1.x + (cardW - capSz.x) * 0.5f, c2P2.y - 40.0f * scale_y), textDim, cap);
 
-    // Footer
-    const char* foot = "N E X U S   K E R N E L";
+    const char* foot = "N I N M O D S   K E R N E L";
     float footSize = 16.0f * scale_y;
     ImVec2 fSz = titleFont->CalcTextSizeA(footSize, FLT_MAX, 0, foot);
     float fx = wp.x + (W - fSz.x) * 0.5f;
@@ -824,9 +824,10 @@ namespace ui::menu {
 
 void render() {
     RenderFloatingLogo();
-    if (g_ShowNexusMenu) {
+    if (g_ShowMenu) {
         RenderMenu();
     }
 }
 
-} // namespace ui::menu
+}
+namespace ui::menu {
