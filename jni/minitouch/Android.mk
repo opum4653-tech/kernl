@@ -5,29 +5,14 @@ include $(CLEAR_VARS)
 LOCAL_MODULE := minitouch-common
 
 LOCAL_SRC_FILES := \
-	minitouch.c \
+	minitouch.c
 
 LOCAL_STATIC_LIBRARIES := \
-	libevdev \
+	libevdev
+
+LOCAL_C_INCLUDES := \
+	$(LOCAL_PATH)/../vendor/libevdev/include \
+	$(LOCAL_PATH)/../vendor/libevdev/source/include \
+	$(LOCAL_PATH)/../vendor/libevdev/source/libevdev
 
 include $(BUILD_STATIC_LIBRARY)
-
-include $(CLEAR_VARS)
-
-# Enable PIE manually. Will get reset on $(CLEAR_VARS).
-LOCAL_CFLAGS += -fPIE
-LOCAL_LDFLAGS += -fPIE -pie
-
-LOCAL_MODULE := minitouch
-
-LOCAL_STATIC_LIBRARIES := minitouch-common
-
-include $(BUILD_EXECUTABLE)
-
-include $(CLEAR_VARS)
-
-LOCAL_MODULE := minitouch-nopie
-
-LOCAL_STATIC_LIBRARIES := minitouch-common
-
-include $(BUILD_EXECUTABLE)
