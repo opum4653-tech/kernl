@@ -17,6 +17,20 @@
 #include <string.h>
 #include <regex.h>
 #include <sys/uio.h>
+#include <sys/syscall.h>
+
+#ifndef __NR_process_vm_readv
+#if defined(__aarch64__)
+#define __NR_process_vm_readv 270
+#define __NR_process_vm_writev 271
+#elif defined(__arm__)
+#define __NR_process_vm_readv 376
+#define __NR_process_vm_writev 377
+#elif defined(__x86_64__)
+#define __NR_process_vm_readv 310
+#define __NR_process_vm_writev 311
+#endif
+#endif
 #include <iostream>
 #include <string>
 #include <sys/utsname.h>
@@ -686,7 +700,8 @@ public:
         if (this->pid > 0 && addr >= 0x10000) {
             struct iovec local_iov{buffer, size};
             struct iovec remote_iov{reinterpret_cast<void*>(addr), size};
-            return (process_vm_readv(this->pid, &local_iov, 1, &remote_iov, 1, 0) == static_cast<ssize_t>(size));
+            long res = syscall(__NR_process_vm_readv, this->pid, &local_iov, 1, &remote_iov, 1, 0);
+            return (res == static_cast<long>(size));
         }
         return false;
     }
@@ -713,7 +728,8 @@ public:
         if (this->pid > 0 && addr >= 0x10000) {
             struct iovec local_iov{buffer, size};
             struct iovec remote_iov{reinterpret_cast<void*>(addr), size};
-            return (process_vm_writev(this->pid, &local_iov, 1, &remote_iov, 1, 0) == static_cast<ssize_t>(size));
+            long res = syscall(__NR_process_vm_writev, this->pid, &local_iov, 1, &remote_iov, 1, 0);
+            return (res == static_cast<long>(size));
         }
         return false;
     }
