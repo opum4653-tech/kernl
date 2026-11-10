@@ -38,8 +38,8 @@ LOCAL_CFLAGS += -DVK_USE_PLATFORM_ANDROID_KHR
 LOCAL_CPPFLAGS := -std=c++17
 LOCAL_CPPFLAGS += -fvisibility=hidden
 LOCAL_CPPFLAGS += -DVK_USE_PLATFORM_ANDROID_KHR
-LOCAL_CPPFLAGS += -w -Wno-error=format-security -Werror
-LOCAL_CPPFLAGS += -Wno-error=c++11-narrowing -fpermissive -Wall -fexceptions
+LOCAL_CPPFLAGS += -w -Wno-error=format-security
+LOCAL_CPPFLAGS += -Wno-error=c++11-narrowing -fpermissive -fexceptions
 
 ifeq ($(OPENGL_DRAW), 1)
    LOCAL_CFLAGS += -DUSE_OPENGL
@@ -47,7 +47,8 @@ ifeq ($(OPENGL_DRAW), 1)
 endif
 
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/include
-LOCAL_C_INCLUDES += $(LOCAL_PATH)/src
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/include/Android_draw
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/include/Android_touch
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/include/Android_vulkan
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/include/ImGui
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/include/ImGui/backends
@@ -59,20 +60,34 @@ LOCAL_C_INCLUDES += $(LOCAL_PATH)/vendor/libevdev/include
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/vendor/libevdev/source/include
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/vendor/libevdev/source/libevdev
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/minitouch
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/src
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/src/ui
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/src/ui/png
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/src/ui/png/images
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/src/aim
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/src/func
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/src/game
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/src/offsets
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/src/other
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/src/protect
 
 LOCAL_SRC_FILES := \
     src/main.cpp \
+    src/globals.cpp \
     src/Android_draw/draw.cpp \
     src/Android_touch/TouchHelperA.cpp \
     src/ImGui/imgui.cpp \
-    src/ImGui/imgui_demo.cpp \
     src/ImGui/imgui_draw.cpp \
     src/ImGui/imgui_tables.cpp \
     src/ImGui/imgui_widgets.cpp \
     src/ImGui/backends/imgui_impl_android.cpp \
-    src/ENC/oxorany.cpp \
-    src/display_manager.cpp \
-    src/crash_handler.cpp \
+    src/ui/menu.cpp \
+    src/ui/png/image.cpp \
+    src/game/data.cpp \
+    src/protect/license.cpp \
+    src/protect/oxorany.cpp \
+    src/other/display_manager.cpp \
+    src/other/crash_handler.cpp
 
 ifeq ($(OPENGL_DRAW), 1)
     LOCAL_SRC_FILES += src/ImGui/backends/imgui_impl_opengl3.cpp

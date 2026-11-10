@@ -486,12 +486,10 @@ private:
             return 2;
         }
 
-        // Default to Option 1: RT Hook (Userland direct memory/syscall) - always safe, requires no device node
-        printf("[Driver] Defaulting to Option 1: RT Hook backend\n");
-        g_appConfig.driverOption = 1;
-        g_appConfig.settingsLoaded = true;
-        SaveConfig();
-        return 1;
+        // No kernel driver detected yet; do not fall back to userland syscalls
+        printf("[Driver] No active kernel driver detected yet. Waiting for driver...\n");
+        g_appConfig.driverOption = 0;
+        return 0;
     }
 
     bool connect_driver() {
@@ -664,8 +662,9 @@ public:
         return false;
     }
 
-    bool is_driver_loaded() const {
-        return (选择值 == 5) || (fd > 0);
+    bool is_driver_loaded() {
+        if ((选择值 == 5 && probe_kpm()) || fd > 0) return true;
+        return connect_driver();
     }
 
     bool read(uintptr_t addr, void *buffer, size_t size) {
@@ -725,22 +724,10 @@ public:
     }
 
     uintptr_t getModuleBase(const char* name) {
+        if (!is_driver_loaded()) return 0;
         if (选择值 == 5) {
             return kpm_module_base(name);
-        } else if (选择值 == 1) {
-            FILE* fp;
-            char cmd[0x100] = "";
-            uintptr_t ret = 0;
-            snprintf(cmd, sizeof(cmd), "ls -l /proc/%d/map_files/ | grep '%s'", pid, name);
-            fp = popen(cmd, "r");
-            if (!fp) {
-                std::cerr << "Failed to run command" << std::endl;
-                return 0;
-            }
-            fscanf(fp, "%*s %*d %*s %*s %*d %*s %*s %lx-%*lx", &ret);
-            pclose(fp);
-            return ret;
-        } else if (选择值 == 2 || 选择值 == 3 || 选择值 == 4) {
+        } else if (fd > 0) {
             MODULE_BASE mb;
             char buf[0x100];
             strncpy(buf, name, sizeof(buf) - 1);
@@ -748,10 +735,10 @@ public:
             mb.pid = this->pid;
             mb.name = buf;
             int opcode = DEV_OP_MODULE_BASE;
-            if (ioctl(fd, opcode, &mb) != 0) {
-                return 0;
+            if (ioctl(fd, opcode, &mb) == 0 && mb.base > 0) {
+                return mb.base;
             }
-            return mb.base;
+            return kpm_module_base(name);
         }
         return 0;
     }
