@@ -61,6 +61,7 @@ LOCAL_C_INCLUDES := \
     $(LOCAL_PATH)/vendor/libevdev/source/libevdev \
     $(LOCAL_PATH)/minitouch \
     $(LOCAL_PATH)/../includes \
+    $(LOCAL_PATH)/../includes/driver \
     $(LOCAL_PATH)/../includes/network \
     $(LOCAL_PATH)/../includes/network/curl/include \
     $(LOCAL_PATH)/../includes/network/openssl/include \
@@ -76,6 +77,10 @@ LOCAL_C_INCLUDES := \
     $(LOCAL_PATH)/../includes/draw/ImGui/backends \
     $(LOCAL_PATH)/../includes/protect \
     $(LOCAL_PATH)/../src \
+    $(LOCAL_PATH)/../src/Scarecrow \
+    $(LOCAL_PATH)/../src/Vectors \
+    $(LOCAL_PATH)/../src/ENC \
+    $(LOCAL_PATH)/../src/FONTS \
     $(LOCAL_PATH)/../src/ui \
     $(LOCAL_PATH)/../src/ui/png \
     $(LOCAL_PATH)/../src/ui/png/images \

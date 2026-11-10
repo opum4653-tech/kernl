@@ -3,775 +3,790 @@
 #include "Android_draw/draw.h"
 #include "Android_touch/Touch.hpp"
 #include "other/logger.hpp"
-#include "func/esp.hpp"
-#include "func/aim.hpp"
-#include "cfg.hpp"
-#include "game/data.hpp"
-#include "encrypt.h"
+#include "driver.h"
 #include <string>
 #include <cmath>
 #include <algorithm>
-#include <mutex>
-#include <atomic>
-#include <cstring>
+#include <fstream>
 #include <cstdio>
+#include <cstdlib>
 
-using namespace ImGui;
+// ═══════════════════════════════════════════════════════════
+//  GLOBAL UI STATE
+// ═══════════════════════════════════════════════════════════
 
-// Forward-declare Dear ImGui's ClearActiveID to cancel active widgets during scroll
-namespace ImGui {
-    IMGUI_API void ClearActiveID();
-}
+float g_ThemeColorArr[4] = { 1.00f, 0.20f, 0.20f, 1.00f };
 
-extern std::atomic<bool> main_thread_flag;
-static int activeTab = 0;
-static float ui_opacity = 1.0f;
-static std::atomic<bool> menu_open{true};
-static std::atomic<bool> g_should_exit{false};
+float g_GlowIntensity = 1.0f;
+float g_MenuWidth     = 1250.0f;
+float g_MenuHeight    = 850.0f;
+bool  g_darkMode      = true;
+int   g_NexusTab      = 0;   // 0=AIM  1=VISUALS  2=MISC  3=CONFIG
 
-// DESIGN 08: ELECTRIC ORCHID GLASS — COLOR DEFINITIONS
-namespace theme_orchid {
-    constexpr ImU32 ColPrimary       = IM_COL32(225, 0, 152, 255);       // Electric Orchid #E10098
-    constexpr ImU32 ColPrimaryLight  = IM_COL32(255, 90, 205, 255);      // Soft Orchid Glow #FF5ACD
-    constexpr ImU32 ColHeaderBg      = IM_COL32(21, 16, 31, 255);        // Header #15101F
-    constexpr ImU32 ColTextMuted     = IM_COL32(155, 140, 180, 255);     // Muted Text #9B8CB4
-    constexpr ImU32 ColWhite         = IM_COL32(252, 248, 255, 255);     // Clean White
-}
+bool  g_ShowNexusMenu = false;
+bool  g_AimMagnetUi   = false;
 
-// VECTOR ICONS (PRECISE GEOMETRY & CLEAN ARCS)
-enum EIconType {
-    ICON_EYE = 0,
-    ICON_CROSSHAIR,
-    ICON_SETTINGS,
-    ICON_POWER
+// Floating Logo Position (draggable)
+float  g_LogoX = 30.0f;
+float  g_LogoY = 0.38f;
+bool   g_LogoDragging = false;
+ImVec2 g_LogoDragOffset(0, 0);
+ImVec2 g_LogoDragStart(0, 0);
+float  g_LogoSize = 130.0f;
+float  g_LogoDragThreshold = 8.0f;
+
+static bool s_logoWasDraggingLastFrame = false;
+static bool s_logoJustMoved            = false;
+
+extern ImFont* g_IconFont;
+extern ImFont* g_BoldFont;
+
+static const ImVec4 g_ThemeSwatches[6] = {
+    ImVec4(1.00f, 0.20f, 0.20f, 1.00f),
+    ImVec4(0.00f, 0.85f, 0.45f, 1.00f),
+    ImVec4(0.30f, 0.55f, 1.00f, 1.00f),
+    ImVec4(1.00f, 0.30f, 0.85f, 1.00f),
+    ImVec4(1.00f, 0.75f, 0.00f, 1.00f),
+    ImVec4(0.00f, 0.85f, 0.90f, 1.00f),
 };
 
-static void DrawCircularLogo(ImDrawList* dl, ImVec2 center, float radius, bool spinning = false) {
-    ImU32 colPrimary      = theme_orchid::ColPrimary;       // IM_COL32(225, 0, 152, 255)
-    ImU32 colPrimaryLight = theme_orchid::ColPrimaryLight;  // IM_COL32(255, 90, 205, 255)
-    ImU32 colDarkBg       = IM_COL32(18, 14, 26, 245);
-    ImU32 colWhite        = IM_COL32(255, 255, 255, 255);
-    ImU32 colCyan         = IM_COL32(0, 240, 255, 200);
-
-    float t = (float)ImGui::GetTime();
-    float pulse = 0.5f + 0.5f * sinf(t * 3.0f);
-
-    // 1. Smooth Anti-Aliased Outer Glow
-    dl->AddCircleFilled(center, radius + 8.0f * pulse, (colPrimary & 0x00FFFFFF) | ((int)(45 * pulse) << 24), 48);
-    dl->AddCircleFilled(center, radius + 4.0f, (colPrimary & 0x00FFFFFF) | ((int)(85 * pulse) << 24), 48);
-
-    // 2. Base Dark Glass Disc
-    dl->AddCircleFilled(center, radius, colDarkBg, 64);
-
-    // 3. Crisp Concentric Metallic/Neon Rings
-    dl->AddCircle(center, radius, colPrimary, 64, 2.5f);
-    dl->AddCircle(center, radius - 2.5f, (colPrimaryLight & 0x00FFFFFF) | (180 << 24), 64, 1.2f);
-    dl->AddCircle(center, radius * 0.76f, (colPrimary & 0x00FFFFFF) | (140 << 24), 48, 1.2f);
-
-    // 4. Rotating Orbital Arcs (Cyber Feel)
-    float spinSpeed = spinning ? 3.5f : 1.8f;
-    float ang = t * spinSpeed;
-    for (int i = 0; i < 4; i++) {
-        float a1 = ang + i * (3.14159265f * 0.5f);
-        float a2 = a1 + 0.45f;
-        ImVec2 pa(center.x + cosf(a1) * (radius - 4.5f), center.y + sinf(a1) * (radius - 4.5f));
-        ImVec2 pb(center.x + cosf(a2) * (radius - 4.5f), center.y + sinf(a2) * (radius - 4.5f));
-        dl->AddLine(pa, pb, (i % 2 == 0) ? colPrimaryLight : colCyan, 2.2f);
-    }
-
-    // 5. Center Stylized "N" Letter with drop shadow
-    ImFont* font = ImGui::GetFont();
-    const char* txt = "N";
-    float fontSize = radius * 1.15f;
-    ImVec2 tsz = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, txt);
-    ImVec2 txtPos = ImVec2(center.x - tsz.x * 0.5f, center.y - tsz.y * 0.5f);
-
-    dl->AddText(font, fontSize, ImVec2(txtPos.x + 1.2f, txtPos.y + 1.2f), IM_COL32(0, 0, 0, 180), txt);
-    dl->AddText(font, fontSize, txtPos, colWhite, txt);
-}
-
-static void DrawVectorIcon(ImDrawList* dl, EIconType type, ImVec2 center, float size, ImU32 col) {
-    float hs = size * 0.5f;
-    float cx = center.x;
-    float cy = center.y;
-
-    switch (type) {
-        case ICON_EYE: {
-            // ESP Eye contour
-            dl->AddBezierQuadratic(ImVec2(cx - hs, cy), ImVec2(cx, cy - hs * 0.85f), ImVec2(cx + hs, cy), col, 2.0f);
-            dl->AddBezierQuadratic(ImVec2(cx - hs, cy), ImVec2(cx, cy + hs * 0.85f), ImVec2(cx + hs, cy), col, 2.0f);
-            dl->AddCircleFilled(center, size * 0.22f, col);
-            dl->AddCircleFilled(center, size * 0.08f, IM_COL32(14, 12, 20, 255));
-            break;
-        }
-        case ICON_CROSSHAIR: {
-            // Combat Crosshair
-            dl->AddCircle(center, size * 0.38f, col, 16, 1.8f);
-            dl->AddCircleFilled(center, 1.8f, col);
-            dl->AddLine(ImVec2(cx, cy - hs), ImVec2(cx, cy - size * 0.22f), col, 1.8f);
-            dl->AddLine(ImVec2(cx, cy + size * 0.22f), ImVec2(cx, cy + hs), col, 1.8f);
-            dl->AddLine(ImVec2(cx - hs, cy), ImVec2(cx - size * 0.22f, cy), col, 1.8f);
-            dl->AddLine(ImVec2(cx + size * 0.22f, cy), ImVec2(cx + hs, cy), col, 1.8f);
-            break;
-        }
-        case ICON_SETTINGS: {
-            // Gear icon with radial teeth
-            dl->AddCircle(center, size * 0.30f, col, 16, 1.8f);
-            dl->AddCircleFilled(center, size * 0.12f, col);
-            for (int i = 0; i < 8; ++i) {
-                float angle = i * (3.14159265f / 4.0f);
-                float x1 = cx + cosf(angle) * (hs * 0.65f);
-                float y1 = cy + sinf(angle) * (hs * 0.65f);
-                float x2 = cx + cosf(angle) * hs;
-                float y2 = cy + sinf(angle) * hs;
-                dl->AddLine(ImVec2(x1, y1), ImVec2(x2, y2), col, 2.0f);
-            }
-            break;
-        }
-        case ICON_POWER: {
-            // Authentic Power Arc with gap at the top
-            float r = size * 0.38f;
-            dl->PathClear();
-            dl->PathArcTo(center, r, -2.10f, 5.24f, 20); // ~ -120 deg to ~ 300 deg
-            dl->PathStroke(col, 0, 2.0f);
-            dl->AddLine(ImVec2(cx, cy - hs), ImVec2(cx, cy), col, 2.0f);
-            break;
+static const char* get_logo_pos_file() {
+    static std::string path = "";
+    if (!path.empty()) return path.c_str();
+    const char* dirs[] = {
+        "/data/data/com.andorid.ninmods/files/logs",
+        "/data/user/0/com.andorid.ninmods/files/logs",
+        "/sdcard/Android/data/com.andorid.ninmods/files/logs"
+    };
+    for (const char* dir : dirs) {
+        mkdir(dir, 0777);
+        if (access(dir, W_OK) == 0) {
+            path = std::string(dir) + "/nexus_logo_pos.txt";
+            return path.c_str();
         }
     }
-}
-
-static bool DrawSidebarIconButton(const char* str_id, EIconType icon_type, bool is_active, ImVec2 size) {
-    bool pressed = ImGui::InvisibleButton(str_id, size);
-    bool hovered = ImGui::IsItemHovered();
-
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-    ImVec2 bMin = ImGui::GetItemRectMin();
-    ImVec2 bMax = ImGui::GetItemRectMax();
-    ImVec2 center = ImVec2((bMin.x + bMax.x) * 0.5f, (bMin.y + bMax.y) * 0.5f);
-
-    if (is_active) {
-        // Active button background & subtle glowing border
-        dl->AddRectFilled(bMin, bMax, IM_COL32(225, 0, 152, 48), 10.0f);
-        dl->AddRect(bMin, bMax, IM_COL32(225, 0, 152, 140), 10.0f, 0, 1.2f);
-
-        // Left vertical indicator pill (crisp 3.5px width)
-        dl->AddRectFilled(ImVec2(bMin.x + 3.0f, bMin.y + 8.0f), ImVec2(bMin.x + 6.5f, bMax.y - 8.0f), theme_orchid::ColPrimary, 2.0f);
-
-        // Glowing white icon (larger 25px scale for crisp visibility)
-        DrawVectorIcon(dl, icon_type, center, 25.0f, theme_orchid::ColWhite);
-    } else {
-        if (hovered) {
-            dl->AddRectFilled(bMin, bMax, IM_COL32(255, 255, 255, 18), 10.0f);
-        }
-        ImU32 ic_col = hovered ? theme_orchid::ColPrimaryLight : theme_orchid::ColTextMuted;
-        // Idle icon (larger 23px scale)
-        DrawVectorIcon(dl, icon_type, center, 23.0f, ic_col);
-    }
-
-    return pressed;
-}
-
-// NATIVE TOUCH-SCROLL HANDLER (100% PUBLIC IMGUI API — ZERO INTERNAL DEPENDENCY)
-// Axis-locked gesture discrimination eliminates slider conflicts completely.
-static void handleTouchScroll() {
-    ImGuiIO& io = ImGui::GetIO();
-    enum GestureState { GESTURE_IDLE, GESTURE_HORIZONTAL, GESTURE_VERTICAL };
-    static GestureState s_gesture = GESTURE_IDLE;
-    static ImVec2 s_touch_start = ImVec2(0, 0);
-    static ImGuiID s_active_child = 0;
-
-    ImGuiID child_id = ImGui::GetID("##TouchScrollToken");
-
-    if (io.MouseDown[0]) {
-        if (s_gesture == GESTURE_IDLE) {
-            if (s_active_child == 0 && ImGui::IsWindowHovered()) {
-                s_touch_start = io.MousePos;
-                s_active_child = child_id;
-            }
-        }
-
-        if (s_active_child == child_id) {
-            float dx = io.MousePos.x - s_touch_start.x;
-            float dy = io.MousePos.y - s_touch_start.y;
-            float abs_dx = std::abs(dx);
-            float abs_dy = std::abs(dy);
-
-            if (s_gesture == GESTURE_IDLE) {
-                // If horizontal movement exceeds 5px and dominates vertical -> lock to HORIZONTAL (Slider/Widget)
-                if (abs_dx >= 5.0f && abs_dx > abs_dy * 1.1f) {
-                    s_gesture = GESTURE_HORIZONTAL;
-                }
-                // If vertical movement exceeds 5px and dominates horizontal -> lock to VERTICAL (Scroll)
-                else if (abs_dy >= 5.0f && abs_dy > abs_dx * 1.1f) {
-                    s_gesture = GESTURE_VERTICAL;
-                }
-            }
-
-            if (s_gesture == GESTURE_VERTICAL) {
-                // Clear any active widget (slider, checkbox) so it cannot mutate during scroll
-                ImGui::ClearActiveID();
-
-                float delta_y = io.MouseDelta.y;
-                if (std::abs(delta_y) > 0.01f) {
-                    ImGui::SetScrollY(ImGui::GetScrollY() - delta_y);
-                }
-            }
-            // In GESTURE_HORIZONTAL mode: ZERO scroll interference. Slider has 100% exclusive control.
-        }
-    } else {
-        // Finger released: reset gesture state cleanly
-        s_gesture = GESTURE_IDLE;
-        s_active_child = 0;
-    }
+    mkdir("/data/data/com.andorid.ninmods/files", 0777);
+    mkdir("/data/data/com.andorid.ninmods/files/logs", 0777);
+    path = "/data/data/com.andorid.ninmods/files/logs/nexus_logo_pos.txt";
+    return path.c_str();
 }
 
 namespace ui::menu {
 
-    void render() {
-        // Render overlays on background
-        func::esp::draw();
-        func::aim::update();
-        func::aim::render_fov(ImGui::GetBackgroundDrawList());
-
-        ImGuiIO& io = ImGui::GetIO();
-
-        float realW = (io.DisplaySize.x > 0.0f) ? io.DisplaySize.x : (float)native_window_screen_x;
-        float realH = (io.DisplaySize.y > 0.0f) ? io.DisplaySize.y : (float)native_window_screen_y;
-        if (realW <= 0) realW = 2400.0f;
-        if (realH <= 0) realH = 1080.0f;
-
-        // SCREEN ROTATION & RESOLUTION TRACKER
-        // Tracks orientation flips globally across both Pill and Main Menu
-        static int last_orientation = -1;
-        static float last_screen_w = 0.0f;
-        static float last_screen_h = 0.0f;
-        static bool menu_needs_reposition = false;
-        static bool pill_needs_reposition = false;
-
-        bool screen_changed = (last_orientation != displayInfo.orientation ||
-                               last_screen_w != realW ||
-                               last_screen_h != realH);
-
-        if (screen_changed) {
-            last_orientation = displayInfo.orientation;
-            last_screen_w = realW;
-            last_screen_h = realH;
-            menu_needs_reposition = true;
-            pill_needs_reposition = true;
-        }
-
-        // DYNAMIC RESPONSIVE UI SCALING — AGNOSTIC ACROSS ALL RESOLUTIONS & ASPECT RATIOS
-        const float ui_scale = std::max(0.72f, std::min(realH / 1080.0f, 1.45f));
-        const float logoRadius = 44.0f * ui_scale;
-        const float logoDiameter = logoRadius * 2.0f;
-        const float margin = 12.0f * ui_scale;
-
-        static ImVec2 s_circle_pos = ImVec2(-1.0f, -1.0f);
-        if (s_circle_pos.x < 0.0f || pill_needs_reposition) {
-            s_circle_pos = ImVec2(margin + logoRadius + 20.0f * ui_scale, realH * 0.25f);
-            pill_needs_reposition = false;
-        }
-
-        // Viewport clamping
-        s_circle_pos.x = std::max(margin + logoRadius, std::min(s_circle_pos.x, realW - logoRadius - margin));
-        s_circle_pos.y = std::max(margin + logoRadius, std::min(s_circle_pos.y, realH - logoRadius - margin));
-
-        static bool s_is_touch_down = false;
-        static ImVec2 s_touch_start_pos = ImVec2(0, 0);
-        static ImVec2 s_drag_offset = ImVec2(0, 0);
-        static bool s_is_dragging = false;
-        static bool s_moved_drag = false;
-
-        // Window for floating circular logo
-        ImVec2 winPos = ImVec2(s_circle_pos.x - logoRadius, s_circle_pos.y - logoRadius);
-        ImVec2 winSize = ImVec2(logoDiameter, logoDiameter);
-
-        ImGui::SetNextWindowPos(winPos, ImGuiCond_Always);
-        ImGui::SetNextWindowSize(winSize, ImGuiCond_Always);
-
-        ImGuiWindowFlags circleFlags = ImGuiWindowFlags_NoTitleBar |
-                                       ImGuiWindowFlags_NoResize |
-                                       ImGuiWindowFlags_NoCollapse |
-                                       ImGuiWindowFlags_NoScrollbar |
-                                       ImGuiWindowFlags_NoScrollWithMouse |
-                                       ImGuiWindowFlags_NoSavedSettings |
-                                       ImGuiWindowFlags_NoBackground |
-                                       ImGuiWindowFlags_NoMove |
-                                       ImGuiWindowFlags_NoFocusOnAppearing |
-                                       ImGuiWindowFlags_NoBringToFrontOnFocus;
-
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-        if (ImGui::Begin("##NINMODS_FLOATING_CIRCLE", nullptr, circleFlags)) {
-            ImDrawList* dl = ImGui::GetWindowDrawList();
-            ImVec2 center = s_circle_pos;
-            const ImVec2 mouse = io.MousePos;
-
-            // 1. Registered Dear ImGui button target covering the full circle window
-            ImGui::SetCursorScreenPos(winPos);
-            bool clicked = ImGui::InvisibleButton("##CircleHitbox", winSize);
-            const bool active  = ImGui::IsItemActive();
-            const bool deactivated = ImGui::IsItemDeactivated();
-
-            // 2. Drag & Tap Tracking via Absolute Finger Offset
-            if (ImGui::IsItemActivated()) {
-                s_touch_start_pos = mouse;
-                s_drag_offset = ImVec2(mouse.x - s_circle_pos.x, mouse.y - s_circle_pos.y);
-                s_is_dragging = false;
-                s_moved_drag = false;
-            }
-
-            if (active && !s_is_dragging) {
-                float dx = mouse.x - s_touch_start_pos.x;
-                float dy = mouse.y - s_touch_start_pos.y;
-                if ((dx * dx + dy * dy) > (14.0f * 14.0f)) {
-                    s_is_dragging = true;
-                    s_moved_drag = true;
-                }
-            }
-
-            if (s_is_dragging && active) {
-                s_circle_pos.x = mouse.x - s_drag_offset.x;
-                s_circle_pos.y = mouse.y - s_drag_offset.y;
-
-                s_circle_pos.x = std::max(margin + logoRadius, std::min(s_circle_pos.x, realW - logoRadius - margin));
-                s_circle_pos.y = std::max(margin + logoRadius, std::min(s_circle_pos.y, realH - logoRadius - margin));
-            }
-
-            // Clean single-event tap toggle with 0.3s cooldown debounce
-            static double s_last_toggle_time = 0.0;
-            double cur_time = ImGui::GetTime();
-
-            if (clicked || (deactivated && !s_moved_drag)) {
-                if (cur_time - s_last_toggle_time > 0.30) {
-                    menu_open = !menu_open;
-                    s_last_toggle_time = cur_time;
-                    LOG_INFO("Floating Logo TOGGLED -> menu_open=%s", menu_open ? "TRUE" : "FALSE");
-                }
-                s_moved_drag = false;
-                s_is_dragging = false;
-            } else if (deactivated) {
-                s_moved_drag = false;
-                s_is_dragging = false;
-            }
-
-            // Draw circular emblem with spinning orbital arcs
-            DrawCircularLogo(dl, center, logoRadius, s_is_dragging);
-
-            // Real-time daemon connection status dot
-            bool connected = (proc::pid > 0 && proc::lib > 0);
-            ImU32 stCol = connected ? IM_COL32(0, 240, 140, 255) : IM_COL32(255, 90, 90, 255);
-            ImVec2 stDot(center.x + logoRadius * 0.68f, center.y - logoRadius * 0.68f);
-            dl->AddCircleFilled(stDot, 6.0f, (stCol & 0x00FFFFFF) | (90 << 24));
-            dl->AddCircleFilled(stDot, 4.0f, (stCol & 0x00FFFFFF) | (180 << 24));
-            dl->AddCircleFilled(stDot, 2.5f, stCol);
-        }
-        ImGui::End();
-        ImGui::PopStyleVar();
-
-        // If menu is minimized, done for this frame
-        if (!menu_open) {
-            return;
-        }
-
-        // MAIN MENU: DYNAMIC UNIVERSAL SIZING (720p, 1080p, 1440p, Foldables, Tablets)
-        const float winW = std::max(500.0f * ui_scale, std::min(860.0f * ui_scale, realW * 0.92f));
-        const float winH = std::max(360.0f * ui_scale, std::min(500.0f * ui_scale, realH * 0.92f));
-
-        static ImVec2 s_menu_pos = ImVec2(-1.0f, -1.0f);
-        if (s_menu_pos.x < 0.0f || menu_needs_reposition) {
-            s_menu_pos = ImVec2((realW - winW) * 0.5f, (realH - winH) * 0.5f);
-            menu_needs_reposition = false;
-        }
-
-        s_menu_pos.x = std::max(0.0f, std::min(s_menu_pos.x, realW - winW));
-        s_menu_pos.y = std::max(0.0f, std::min(s_menu_pos.y, realH - winH));
-
-        ImGui::SetNextWindowSize(ImVec2(winW, winH), ImGuiCond_Always);
-        ImGui::SetNextWindowPos(s_menu_pos, ImGuiCond_Always);
-
-        // Precise styling for Electric Orchid Glass + Complete Scrollbar Hiding
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.055f, 0.047f, 0.078f, 0.98f));
-        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.882f, 0.000f, 0.596f, 0.70f));
-        ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.110f, 0.086f, 0.157f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.160f, 0.120f, 0.220f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0.220f, 0.160f, 0.300f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_CheckMark, ImVec4(0.882f, 0.000f, 0.596f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(0.882f, 0.000f, 0.596f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(1.000f, 0.353f, 0.804f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.110f, 0.086f, 0.157f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.200f, 0.140f, 0.280f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.882f, 0.000f, 0.596f, 0.5f));
-        ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.882f, 0.000f, 0.596f, 0.40f));
-        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.882f, 0.000f, 0.596f, 0.60f));
-        ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.882f, 0.000f, 0.596f, 0.80f));
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.988f, 0.973f, 1.000f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_TextDisabled, ImVec4(0.608f, 0.549f, 0.706f, 1.0f));
-
-        // Hide scrollbars completely (always hidden, but touch dragging works!)
-        ImGui::PushStyleColor(ImGuiCol_ScrollbarBg, ImVec4(0, 0, 0, 0));
-        ImGui::PushStyleColor(ImGuiCol_ScrollbarGrab, ImVec4(0, 0, 0, 0));
-        ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabHovered, ImVec4(0, 0, 0, 0));
-        ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabActive, ImVec4(0, 0, 0, 0));
-
-        // Window-scoped Alpha & Zero Scrollbar Size
-        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ui_opacity);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 12.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.5f);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 8.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 0.0f); // Zero scrollbar size allocates 0px margin!
-
-        ImGuiWindowFlags winFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse;
-
-        if (ImGui::Begin("##NIN_MAIN_PANEL", nullptr, winFlags)) {
-            ImDrawList* dl = ImGui::GetWindowDrawList();
-            ImVec2 winPos = ImGui::GetWindowPos();
-            ImVec2 winSize = ImGui::GetWindowSize();
-
-            // 1. TOP HEADER (44px)
-            const float headerH = 44.0f;
-            ImVec2 headerP0 = winPos;
-            ImVec2 headerP1 = ImVec2(winPos.x + winSize.x, winPos.y + headerH);
-
-            // Header Background & Underline
-            dl->AddRectFilled(headerP0, headerP1, theme_orchid::ColHeaderBg, 12.0f, ImDrawFlags_RoundCornersTop);
-            dl->AddLine(ImVec2(winPos.x, winPos.y + headerH), ImVec2(winPos.x + winSize.x, winPos.y + headerH), IM_COL32(54, 38, 76, 255), 1.0f);
-
-            // Header Drag Handle: Allows moving the menu anywhere on screen by dragging the header
-            const float closeBtnSize = 36.0f;
-            ImGui::SetCursorScreenPos(headerP0);
-            ImGui::InvisibleButton("##HeaderDragBar", ImVec2(winSize.x - closeBtnSize - 16.0f, headerH));
-            if (ImGui::IsItemActive()) {
-                s_menu_pos.x += io.MouseDelta.x;
-                s_menu_pos.y += io.MouseDelta.y;
-                s_menu_pos.x = std::max(0.0f, std::min(s_menu_pos.x, realW - winW));
-                s_menu_pos.y = std::max(0.0f, std::min(s_menu_pos.y, realH - winH));
-            }
-
-            // Header BAM PASE: Circular Emblem + Name "NINMODS"
-            float logoX = winPos.x + 22.0f;
-            float headerCY = winPos.y + headerH * 0.5f;
-            DrawCircularLogo(dl, ImVec2(logoX, headerCY), 13.0f, false);
-            dl->AddText(ImVec2(logoX + 20.0f, headerCY - 9.0f), theme_orchid::ColWhite, "NINMODS");
-
-            // Header DAN PASE: CLOSE ICON BUTTON (JUST BUTTON, NO BACKGROUND, NO BORDER!)
-            ImVec2 closePos = ImVec2(winPos.x + winSize.x - closeBtnSize - 8.0f, winPos.y + (headerH - closeBtnSize) * 0.5f);
-            ImGui::SetCursorScreenPos(closePos);
-
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0, 0, 0, 0));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0, 0, 0, 0));
-            ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0, 0, 0, 0));
-            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
-
-            if (ImGui::Button("##CloseBtn", ImVec2(closeBtnSize, closeBtnSize))) {
-                LOG_INFO("Main menu close button clicked -> Minimizing to floating pill");
-                menu_open = false; // Pure close action
-            }
-            bool closeHovered = ImGui::IsItemHovered();
-
-            ImGui::PopStyleVar();
-            ImGui::PopStyleColor(4);
-
-            // Draw Clean Close Icon (X) centered in touch target
-            ImVec2 closeCenter = ImVec2(closePos.x + closeBtnSize * 0.5f, closePos.y + closeBtnSize * 0.5f);
-            ImU32 closeCol = closeHovered ? theme_orchid::ColPrimaryLight : IM_COL32(200, 195, 215, 230);
-            const float xRadius = 6.0f;
-            dl->AddLine(ImVec2(closeCenter.x - xRadius, closeCenter.y - xRadius), ImVec2(closeCenter.x + xRadius, closeCenter.y + xRadius), closeCol, 2.2f);
-            dl->AddLine(ImVec2(closeCenter.x - xRadius, closeCenter.y + xRadius), ImVec2(closeCenter.x + xRadius, closeCenter.y - xRadius), closeCol, 2.2f);
-
-            // 2. MAIN BODY: LEFT SIDEBAR (ICON-ONLY) + RIGHT CONTENT AREA
-            const float bodyY = headerH;
-            const float bodyH = winSize.y - headerH;
-            const float sidebarW = 76.0f;
-
-            // SIDEBAR CONTAINER
-            ImGui::SetCursorPos(ImVec2(0, bodyY));
-            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.067f, 0.055f, 0.094f, 1.0f));
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-
-            if (ImGui::BeginChild("##Sidebar", ImVec2(sidebarW, bodyH), false, ImGuiWindowFlags_NoScrollbar)) {
-                // Divider line between sidebar & content
-                dl->AddLine(ImVec2(winPos.x + sidebarW, winPos.y + headerH), ImVec2(winPos.x + sidebarW, winPos.y + winSize.y), IM_COL32(40, 30, 56, 255), 1.0f);
-
-                const ImVec2 btnSize = ImVec2(56.0f, 52.0f);
-                const float btnX = (sidebarW - btnSize.x) * 0.5f; // Exactly 10.0f -> centered between 0 and 76
-
-                // Tab 0: ESP (Eye Icon)
-                ImGui::SetCursorPos(ImVec2(btnX, 12.0f));
-                if (DrawSidebarIconButton("##TabESP", ICON_EYE, (activeTab == 0), btnSize)) {
-                    activeTab = 0;
-                }
-
-                // Tab 1: Combat / Aim (Crosshair Icon)
-                ImGui::SetCursorPos(ImVec2(btnX, 12.0f + btnSize.y + 8.0f));
-                if (DrawSidebarIconButton("##TabCombat", ICON_CROSSHAIR, (activeTab == 1), btnSize)) {
-                    activeTab = 1;
-                }
-
-                // Tab 2: Settings (Gear Icon)
-                ImGui::SetCursorPos(ImVec2(btnX, 12.0f + (btnSize.y + 8.0f) * 2.0f));
-                if (DrawSidebarIconButton("##TabSettings", ICON_SETTINGS, (activeTab == 2), btnSize)) {
-                    activeTab = 2;
-                }
-
-                // Bottom Safe Exit Icon (Anchored cleanly to bottom with equal margin)
-                ImGui::SetCursorPos(ImVec2(btnX, bodyH - btnSize.y - 12.0f));
-                if (DrawSidebarIconButton("##TabPower", ICON_POWER, false, btnSize)) {
-                    g_should_exit = true; // Signal exit cleanly outside ImGui frame
-                }
-            }
-            ImGui::EndChild();
-            ImGui::PopStyleVar();
-            ImGui::PopStyleColor();
-
-            // 3. MAIN CONTENT AREA (EXPANDED DUAL-COLUMN GEOMETRY)
-            const float contentX = sidebarW + 14.0f;
-            const float contentY = headerH + 10.0f;
-            const float contentW = winSize.x - contentX - 14.0f;
-            const float contentH = bodyH - 20.0f;
-            const float colGap   = 14.0f;
-            const float colW     = (contentW - colGap) * 0.5f;
-
-            // Card background styling
-            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.086f, 0.067f, 0.130f, 0.90f));
-            ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.196f, 0.141f, 0.282f, 1.0f));
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14, 10));
-            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8, 10));
-
-            // TAB 0: ESP VISUALS (DUAL COLUMN: BAM PASE + DAN PASE)
-            if (activeTab == 0) {
-// LEFT COLUMN CARD (BAM PASE OPTION): ESP VISUALS
-                ImGui::SetCursorPos(ImVec2(contentX, contentY));
-                if (ImGui::BeginChild("##ColLeftESP", ImVec2(colW, contentH), true)) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "ESP VISUALS");
-                    ImDrawList* cdl = ImGui::GetWindowDrawList();
-                    ImVec2 lpos = ImGui::GetCursorScreenPos();
-                    cdl->AddLine(ImVec2(lpos.x, lpos.y - 4), ImVec2(lpos.x + 85, lpos.y - 4), theme_orchid::ColPrimary, 2.0f);
-                    ImGui::Dummy(ImVec2(0, 4));
-
-                    ImGui::Checkbox("ESP Box (Chaturbhuj)", &cfg::esp::box);
-                    ImGui::Checkbox("ESP Health Bar (Right)", &cfg::esp::health);
-                    ImGui::Checkbox("ESP Armor Bar", &cfg::esp::armor);
-                    ImGui::Checkbox("ESP Laser Line", &cfg::esp::tracer);
-                    ImGui::Checkbox("ESP Player Name", &cfg::esp::name);
-                    ImGui::Checkbox("ESP Distance", &cfg::esp::distance);
-                    ImGui::Checkbox("ESP Bot Tag (AI)", &cfg::esp::bot_tag);
-                    ImGui::Checkbox("ESP Weapon Name", &cfg::esp::weapon);
-                    ImGui::Checkbox("Firing Indicator", &cfg::esp::firing_ind);
-
-                    handleTouchScroll();
-                }
-                ImGui::EndChild();
-
-// RIGHT COLUMN CARD (DAN PASE OPTION): FILTERS & CONTROLS
-                ImGui::SetCursorPos(ImVec2(contentX + colW + colGap, contentY));
-                if (ImGui::BeginChild("##ColRightESP", ImVec2(colW, contentH), true)) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "SETTINGS & FILTERS");
-                    ImDrawList* cdl = ImGui::GetWindowDrawList();
-                    ImVec2 rpos = ImGui::GetCursorScreenPos();
-                    cdl->AddLine(ImVec2(rpos.x, rpos.y - 4), ImVec2(rpos.x + 120, rpos.y - 4), theme_orchid::ColPrimary, 2.0f);
-                    ImGui::Dummy(ImVec2(0, 4));
-
-                    ImGui::Checkbox("Ignore Bot Players", &cfg::esp::ignore_bots);
-                    ImGui::Checkbox("Crosshair Center", &cfg::esp::crosshair);
-                    ImGui::Checkbox("Loot ESP", &cfg::esp::loot);
-
-                    ImGui::Dummy(ImVec2(0, 4));
-                    const char* boxTypes[] = { "Corner", "Full Chaturbhuj", "Glow" };
-                    ImGui::SetNextItemWidth(-1);
-                    ImGui::Combo("##BoxStyle", &cfg::esp::box_type, boxTypes, 3);
-                    ImGui::TextDisabled("Box Style Mode");
-
-                    ImGui::Dummy(ImVec2(0, 4));
-                    ImGui::SetNextItemWidth(-1);
-                    ImGui::SliderFloat("##MaxRange", &cfg::esp::max_range, 50.0f, 500.0f, "%.0f m");
-                    ImGui::TextDisabled("Max Render Distance");
-
-                    ImGui::Dummy(ImVec2(0, 4));
-                    ImGui::SetNextItemWidth(-1);
-                    ImGui::SliderFloat("##LaserThickness", &cfg::esp::tracer_thickness, 0.5f, 4.0f, "%.1f px");
-                    ImGui::TextDisabled("Laser Line Width");
-
-                    ImGui::Dummy(ImVec2(0, 4));
-                    ImGui::SetNextItemWidth(-1);
-                    ImGui::SliderFloat("##BoxThickness", &cfg::esp::box_thickness, 1.0f, 5.0f, "%.1f px");
-                    ImGui::TextDisabled("Box Border Width");
-
-                    handleTouchScroll();
-                }
-                ImGui::EndChild();
-            }
-            // TAB 1: COMBAT & AIM ASSIST (DUAL COLUMN)
-            else if (activeTab == 1) {
-                // Left Column: Aim Controls & Target Selectors
-                ImGui::SetCursorPos(ImVec2(contentX, contentY));
-                if (ImGui::BeginChild("##ColLeftCombat", ImVec2(colW, contentH), true)) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "AIMBOT SETTINGS");
-                    ImDrawList* cdl = ImGui::GetWindowDrawList();
-                    ImVec2 lpos = ImGui::GetCursorScreenPos();
-                    cdl->AddLine(ImVec2(lpos.x, lpos.y - 4), ImVec2(lpos.x + 120, lpos.y - 4), theme_orchid::ColPrimary, 2.0f);
-                    ImGui::Dummy(ImVec2(0, 4));
-
-                    ImGui::Checkbox("Enable Aim Assist", &cfg::aim::enable);
-                    ImGui::Checkbox("Scope Headshot (Instant Head)", &cfg::aim::scope_aim);
-
-                    ImGui::Dummy(ImVec2(0, 4));
-                    const char* triggerModes[] = { "When Firing", "Always In FOV" };
-                    ImGui::SetNextItemWidth(-1);
-                    ImGui::Combo("##AimTrigger", &cfg::aim::trigger_mode, triggerModes, 2);
-                    ImGui::TextDisabled("Aim Trigger Condition");
-
-                    ImGui::Dummy(ImVec2(0, 4));
-                    const char* boneTargets[] = { "Head (Auto Drag)", "Neck / Upper Chest", "Pelvis / Body" };
-                    ImGui::SetNextItemWidth(-1);
-                    ImGui::Combo("##AimBone", &cfg::aim::target_bone, boneTargets, 3);
-                    ImGui::TextDisabled("Target Aim Bone");
-
-                    ImGui::Dummy(ImVec2(0, 4));
-                    ImGui::SetNextItemWidth(-1);
-                    ImGui::SliderFloat("##HeadshotRate", &cfg::aim::headshot_rate, 0.0f, 100.0f, "%.0f%%");
-                    ImGui::TextDisabled("Headshot Rate Percentage (0%% - 100%%)");
-
-                    ImGui::Dummy(ImVec2(0, 4));
-                    const char* priorityModes[] = { "Crosshair Distance", "Lowest Health", "3D Distance" };
-                    ImGui::SetNextItemWidth(-1);
-                    ImGui::Combo("##AimPriority", &cfg::aim::priority_mode, priorityModes, 3);
-                    ImGui::TextDisabled("Target Selection Priority");
-
-                    ImGui::Dummy(ImVec2(0, 8));
-                    ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "SAFETY FILTERS");
-                    lpos = ImGui::GetCursorScreenPos();
-                    cdl->AddLine(ImVec2(lpos.x, lpos.y - 4), ImVec2(lpos.x + 100, lpos.y - 4), theme_orchid::ColPrimary, 2.0f);
-                    ImGui::Dummy(ImVec2(0, 4));
-
-                    ImGui::Checkbox("Ignore Knocked Enemies", &cfg::aim::ignore_knocked);
-                    ImGui::Checkbox("Ignore AI Bot Players", &cfg::aim::ignore_bots);
-                    ImGui::Checkbox("Check Visibility Only", &cfg::aim::visible_check);
-
-                    handleTouchScroll();
-                }
-                ImGui::EndChild();
-
-                // Right Column: FOV & Smooth Speed & Live Lock HUD
-                ImGui::SetCursorPos(ImVec2(contentX + colW + colGap, contentY));
-                if (ImGui::BeginChild("##ColRightCombat", ImVec2(colW, contentH), true)) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "FOV & SMOOTHNESS");
-                    ImDrawList* cdl = ImGui::GetWindowDrawList();
-                    ImVec2 rpos = ImGui::GetCursorScreenPos();
-                    cdl->AddLine(ImVec2(rpos.x, rpos.y - 4), ImVec2(rpos.x + 125, rpos.y - 4), theme_orchid::ColPrimary, 2.0f);
-                    ImGui::Dummy(ImVec2(0, 4));
-
-                    ImGui::Checkbox("Draw FOV Circle", &cfg::aim::show_fov);
-
-                    ImGui::Dummy(ImVec2(0, 4));
-                    ImGui::SetNextItemWidth(-1);
-                    ImGui::SliderFloat("##FovRadius", &cfg::aim::fov_radius, 40.0f, 450.0f, "%.0f px");
-                    ImGui::TextDisabled("Aim FOV Circle Radius");
-
-                    ImGui::Dummy(ImVec2(0, 4));
-                    ImGui::SetNextItemWidth(-1);
-                    ImGui::SliderFloat("##AimSmooth", &cfg::aim::smooth, 1.0f, 25.0f, "%.1f (Smooth)");
-                    ImGui::TextDisabled("Smooth Factor (Higher = Safe & Human)");
-
-                    ImGui::Dummy(ImVec2(0, 4));
-                    ImGui::SetNextItemWidth(-1);
-                    ImGui::SliderFloat("##AimMaxDist", &cfg::aim::max_distance, 20.0f, 300.0f, "%.0f m");
-                    ImGui::TextDisabled("Max Aiming Range");
-
-                    ImGui::Dummy(ImVec2(0, 10));
-                    ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "LIVE TARGET HUD");
-                    rpos = ImGui::GetCursorScreenPos();
-                    cdl->AddLine(ImVec2(rpos.x, rpos.y - 4), ImVec2(rpos.x + 105, rpos.y - 4), theme_orchid::ColPrimary, 2.0f);
-                    ImGui::Dummy(ImVec2(0, 4));
-
-                    if (func::aim::g_currentTarget.valid) {
-                        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.4f, 1.0f), "Target: %s", func::aim::g_currentTarget.name);
-                        ImGui::Text("Distance: %.1f m", func::aim::g_currentTarget.distance);
-                        ImGui::Text("Health: %d HP", func::aim::g_currentTarget.hp);
-                        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.6f, 1.0f), "Status: LOCKED [IN FOV]");
-                    } else {
-                        ImGui::TextDisabled("Target: None (Scanning)");
-                        ImGui::TextDisabled("Distance: -- m");
-                        ImGui::TextDisabled("Health: --");
-                        ImGui::TextDisabled("Status: STANDBY");
-                    }
-
-                    handleTouchScroll();
-                }
-                ImGui::EndChild();
-            }
-            // TAB 2: SETTINGS & SYSTEM STATUS (DUAL COLUMN)
-            else if (activeTab == 2) {
-                // Left Column: UI Customization
-                ImGui::SetCursorPos(ImVec2(contentX, contentY));
-                if (ImGui::BeginChild("##ColLeftSettings", ImVec2(colW, contentH), true)) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "UI APPEARANCE");
-                    ImDrawList* cdl = ImGui::GetWindowDrawList();
-                    ImVec2 lpos = ImGui::GetCursorScreenPos();
-                    cdl->AddLine(ImVec2(lpos.x, lpos.y - 4), ImVec2(lpos.x + 105, lpos.y - 4), theme_orchid::ColPrimary, 2.0f);
-                    ImGui::Dummy(ImVec2(0, 4));
-
-                    ImGui::SliderFloat("##Opacity", &ui_opacity, 0.2f, 1.0f, "Opacity: %.2f");
-
-                    ImGui::Dummy(ImVec2(0, 12));
-                    ImGui::TextColored(ImVec4(0.2f, 0.8f, 1.0f, 1.0f), "Engine Architecture:");
-                    ImGui::Text("Kernel DMA / RPM Memory");
-                    ImGui::Text("100% Non-Invasive");
-                    ImGui::Text("Screen Record: Unblocked");
-                    ImGui::Text("Screenshot: Allowed");
-
-                    handleTouchScroll();
-                }
-                ImGui::EndChild();
-
-                // Right Column: Live Process Diagnostics
-                ImGui::SetCursorPos(ImVec2(contentX + colW + colGap, contentY));
-                if (ImGui::BeginChild("##ColRightSettings", ImVec2(colW, contentH), true)) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "LIVE DIAGNOSTICS");
-                    ImDrawList* cdl = ImGui::GetWindowDrawList();
-                    ImVec2 rpos = ImGui::GetCursorScreenPos();
-                    cdl->AddLine(ImVec2(rpos.x, rpos.y - 4), ImVec2(rpos.x + 115, rpos.y - 4), theme_orchid::ColPrimary, 2.0f);
-                    ImGui::Dummy(ImVec2(0, 4));
-
-                    ImGui::Text("Target PID: %d", static_cast<int>(proc::pid));
-
-                    // Separate clean format if/else without ternary format mismatches
-                    if (proc::lib) {
-                        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.5f, 1.0f), "libil2cpp: 0x%lx", (unsigned long)proc::lib);
-                    } else {
-                        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "Waiting for Game...");
-                    }
-
-                    ImGui::Text("Overlay FPS: %.1f", io.Framerate);
-                    ImGui::Text("Screen: %.0f x %.0f", realW, realH);
-
-                    ImGui::Dummy(ImVec2(0, 10));
-                    if (ImGui::Button("SAFE EXIT APPLICATION", ImVec2(ImGui::GetContentRegionAvail().x, 38))) {
-                        g_should_exit = true; // Signal exit cleanly outside ImGui frame
-                    }
-
-                    handleTouchScroll();
-                }
-                ImGui::EndChild();
-            }
-
-            ImGui::PopStyleVar(2);
-            ImGui::PopStyleColor(2);
-        }
-        ImGui::End();
-
-        ImGui::PopStyleVar(7);
-        ImGui::PopStyleColor(20);
-
-        // DEFERRED SAFE SHUTDOWN (CALLED AFTER ALL IMGUI FRAMES UNWOUND)
-        if (g_should_exit) {
-            main_thread_flag = false;
-            Touch_Close();
-            data::thread_stop();
-            shutdown();
-            exit(0);
-        }
+void save_logo_pos() {
+    std::ofstream f(get_logo_pos_file());
+    if (f.is_open()) {
+        f << g_LogoX << " " << g_LogoY << " " << g_LogoSize;
+        f.close();
     }
 }
+
+void load_logo_pos() {
+    std::ifstream f(get_logo_pos_file());
+    if (f.is_open()) {
+        float x, y, s;
+        if (f >> x >> y) {
+            g_LogoX = x;
+            g_LogoY = y;
+            if (f >> s) g_LogoSize = s;
+        }
+        f.close();
+    }
+}
+
+} // namespace ui::menu
+
+static void ApplyCustomTheme(float scale_y = 1.0f) {
+    ImGuiStyle& style = ImGui::GetStyle();
+    ImVec4* colors = style.Colors;
+
+    style.WindowBorderSize = 0.0f;
+    style.ChildBorderSize  = 0.0f;
+    style.FrameBorderSize  = 0.0f;
+    style.PopupBorderSize  = 0.0f;
+    style.TabBorderSize    = 0.0f;
+    style.WindowRounding   = 14.0f;
+    style.ChildRounding    = 10.0f;
+    style.FrameRounding    = 6.0f;
+
+    float g2 = 20.0f * scale_y;
+    style.ItemSpacing = ImVec2(12.0f, std::max(1.0f, std::min(g2, 26.0f)));
+    style.FramePadding = ImVec2(10.0f, std::max(4.0f, 8.0f * scale_y));
+
+    if (!g_darkMode) {
+        colors[ImGuiCol_WindowBg]      = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+        colors[ImGuiCol_ChildBg]       = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+        colors[ImGuiCol_PopupBg]       = ImVec4(0.98f, 0.98f, 1.00f, 1.00f);
+        colors[ImGuiCol_Border]        = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+        colors[ImGuiCol_Text]          = ImVec4(0.10f, 0.10f, 0.15f, 1.00f);
+        colors[ImGuiCol_TextDisabled]  = ImVec4(0.55f, 0.55f, 0.55f, 1.00f);
+        colors[ImGuiCol_Button]        = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+        colors[ImGuiCol_ButtonHovered] = ImVec4(0.92f, 0.92f, 0.94f, 1.00f);
+        colors[ImGuiCol_ButtonActive]  = ImVec4(0.87f, 0.87f, 0.90f, 1.00f);
+        colors[ImGuiCol_FrameBg]       = ImVec4(0.93f, 0.93f, 0.95f, 1.00f);
+        colors[ImGuiCol_FrameBgHovered]= ImVec4(0.89f, 0.89f, 0.92f, 1.00f);
+        colors[ImGuiCol_FrameBgActive] = ImVec4(0.86f, 0.86f, 0.89f, 1.00f);
+    } else {
+        colors[ImGuiCol_WindowBg]      = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+        colors[ImGuiCol_ChildBg]       = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+        colors[ImGuiCol_PopupBg]       = ImVec4(0.10f, 0.10f, 0.13f, 1.00f);
+        colors[ImGuiCol_Border]        = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+        colors[ImGuiCol_Text]          = ImVec4(0.95f, 0.95f, 0.98f, 1.00f);
+        colors[ImGuiCol_TextDisabled]  = ImVec4(0.45f, 0.45f, 0.48f, 1.00f);
+        colors[ImGuiCol_Button]        = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+        colors[ImGuiCol_ButtonHovered] = ImVec4(0.14f, 0.14f, 0.18f, 1.00f);
+        colors[ImGuiCol_ButtonActive]  = ImVec4(0.18f, 0.18f, 0.22f, 1.00f);
+        colors[ImGuiCol_FrameBg]       = ImVec4(0.15f, 0.15f, 0.18f, 1.00f);
+        colors[ImGuiCol_FrameBgHovered]= ImVec4(0.18f, 0.18f, 0.22f, 1.00f);
+        colors[ImGuiCol_FrameBgActive] = ImVec4(0.20f, 0.20f, 0.26f, 1.00f);
+    }
+
+    colors[ImGuiCol_SliderGrab]       = g_ThemeColor;
+    colors[ImGuiCol_SliderGrabActive] = ImVec4(g_ThemeColorArr[0]*0.9f,
+                                               g_ThemeColorArr[1]*0.9f,
+                                               g_ThemeColorArr[2]*0.9f,
+                                               g_ThemeColorArr[3]);
+    colors[ImGuiCol_Header]        = g_ThemeColor;
+    colors[ImGuiCol_HeaderHovered] = g_ThemeColor;
+    colors[ImGuiCol_HeaderActive]  = g_ThemeColor;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  FLOATING LOGO BUTTON
+// ═══════════════════════════════════════════════════════════
+
+static void RenderFloatingLogo() {
+    ImGuiIO& io = ImGui::GetIO();
+    ImVec2 screen = io.DisplaySize;
+
+    const float logoSize = g_LogoSize;
+    const float margin   = 10.0f;
+
+    ImVec2 logoPos(g_LogoX, screen.y * g_LogoY);
+    logoPos.x = std::max(margin, std::min(logoPos.x, screen.x - logoSize - margin));
+    logoPos.y = std::max(margin, std::min(logoPos.y, screen.y - logoSize - margin));
+
+    ImGui::SetNextWindowPos(logoPos, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(logoSize, logoSize), ImGuiCond_Always);
+
+    ImGuiWindowFlags flags =
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_NoScrollWithMouse |
+        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBackground |
+        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoFocusOnAppearing |
+        ImGuiWindowFlags_NoBringToFrontOnFocus;
+
+    ImGui::Begin("##NEXUS_LOGO_BTN", nullptr, flags);
+
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    ImVec2 wp  = ImGui::GetWindowPos();
+    ImVec2 ctr = ImVec2(wp.x + logoSize * 0.5f, wp.y + logoSize * 0.5f);
+    float  rad = logoSize * 0.44f;
+
+    ImGui::SetCursorScreenPos(wp);
+    ImGui::InvisibleButton("##logoClick", ImVec2(logoSize, logoSize));
+
+    const bool hovered = ImGui::IsItemHovered();
+    const bool active  = ImGui::IsItemActive();
+    const ImVec2 mouse = ImGui::GetMousePos();
+
+    if (ImGui::IsItemActivated()) {
+        g_LogoDragStart  = mouse;
+        g_LogoDragOffset = ImVec2(mouse.x - logoPos.x, mouse.y - logoPos.y);
+        g_LogoDragging   = false;
+        s_logoJustMoved  = false;
+    }
+
+    if (active && !g_LogoDragging) {
+        const float dx = mouse.x - g_LogoDragStart.x;
+        const float dy = mouse.y - g_LogoDragStart.y;
+        if (sqrtf(dx * dx + dy * dy) > g_LogoDragThreshold) {
+            g_LogoDragging  = true;
+            s_logoJustMoved = true;
+        }
+    }
+
+    if (g_LogoDragging && active) {
+        float newX = mouse.x - g_LogoDragOffset.x;
+        float newY = mouse.y - g_LogoDragOffset.y;
+
+        newX = std::max(margin, std::min(newX, screen.x - logoSize - margin));
+        newY = std::max(margin, std::min(newY, screen.y - logoSize - margin));
+
+        g_LogoX = newX;
+        g_LogoY = newY / (screen.y > 0.0f ? screen.y : 1.0f);
+    }
+
+    if (ImGui::IsItemDeactivated()) {
+        if (!g_LogoDragging && !s_logoJustMoved && hovered) {
+            g_ShowNexusMenu = !g_ShowNexusMenu;
+        } else if (g_LogoDragging) {
+            ui::menu::save_logo_pos();
+        }
+        g_LogoDragging  = false;
+        s_logoWasDraggingLastFrame = false;
+    }
+
+    s_logoWasDraggingLastFrame = g_LogoDragging;
+
+    ImU32 accent = ImGui::ColorConvertFloat4ToU32(g_ThemeColor);
+    ImU32 cyan   = IM_COL32(80, 220, 255, 255);
+    ImU32 purple = IM_COL32(180, 120, 255, 255);
+    ImU32 white  = IM_COL32(255, 255, 255, 255);
+
+    float t     = (float)ImGui::GetTime();
+    float pulse = 0.5f + 0.5f * sinf(t * 2.5f);
+    float scale = (hovered || g_LogoDragging) ? (1.0f + 0.08f * pulse) : 1.0f;
+    float r     = rad * scale;
+
+    draw->AddCircleFilled(ctr, r + 22.0f, (accent & 0x00FFFFFF) | ((int)(45 * pulse) << 24), 64);
+    draw->AddCircleFilled(ctr, r + 12.0f, (accent & 0x00FFFFFF) | ((int)(75 * pulse) << 24), 56);
+    draw->AddCircleFilled(ctr, r + 5.0f,  (accent & 0x00FFFFFF) | ((int)(90 * pulse) << 24), 48);
+
+    draw->AddCircleFilled(ctr, r,        IM_COL32(15, 15, 24, 252), 64);
+    draw->AddCircleFilled(ctr, r - 3.0f, IM_COL32(22, 22, 36, 250), 64);
+
+    draw->AddCircle(ctr, r,        accent, 64, 4.5f);
+    draw->AddCircle(ctr, r - 3.0f, (cyan   & 0x00FFFFFF) | (160 << 24), 64, 2.0f);
+    draw->AddCircle(ctr, r - 7.0f, (purple & 0x00FFFFFF) | (100 << 24), 60, 1.5f);
+
+    draw->AddCircle(ctr, r * 0.82f, (accent & 0x00FFFFFF) | (200 << 24), 48, 2.0f);
+    draw->AddCircle(ctr, r * 0.66f, (cyan   & 0x00FFFFFF) | (150 << 24), 44, 1.5f);
+    draw->AddCircle(ctr, r * 0.50f, (purple & 0x00FFFFFF) | (130 << 24), 40, 1.5f);
+
+    float spin = g_LogoDragging ? 3.2f : 1.6f;
+    float ang  = t * spin;
+    for (int i = 0; i < 6; i++) {
+        float a1 = ang + i * (3.14159265f * 2.0f / 6.0f);
+        float a2 = a1 + 0.42f;
+        ImVec2 pa(ctr.x + cosf(a1) * (r - 6.0f), ctr.y + sinf(a1) * (r - 6.0f));
+        ImVec2 pb(ctr.x + cosf(a2) * (r - 6.0f), ctr.y + sinf(a2) * (r - 6.0f));
+        ImU32 arcCol = (i % 2 == 0) ? cyan : accent;
+        draw->AddLine(pa, pb, arcCol, 4.0f);
+    }
+
+    ImFont* bold = g_BoldFont ? g_BoldFont : ImGui::GetFont();
+    const char* txt = "N";
+    float txtSize = 54.0f;
+    ImVec2 tsz = bold->CalcTextSizeA(txtSize, FLT_MAX, 0, txt);
+
+    draw->AddText(bold, txtSize, ImVec2(ctr.x - tsz.x * 0.5f, ctr.y - tsz.y * 0.5f - 3.0f), (white & 0x00FFFFFF) | (80 << 24), txt);
+    draw->AddText(bold, txtSize, ImVec2(ctr.x - tsz.x * 0.5f, ctr.y - tsz.y * 0.5f - 4.0f), (white & 0x00FFFFFF) | (140 << 24), txt);
+    draw->AddText(bold, txtSize, ImVec2(ctr.x - tsz.x * 0.5f, ctr.y - tsz.y * 0.5f - 5.0f), white, txt);
+
+    bool connected = (game_pid > 0 && lib_base > 0);
+    ImU32 stCol = connected ? IM_COL32(0, 240, 140, 255) : IM_COL32(255, 90, 90, 255);
+    ImVec2 stDot(ctr.x + r * 0.68f, ctr.y - r * 0.68f);
+
+    draw->AddCircleFilled(stDot, 12.0f, (stCol & 0x00FFFFFF) | (100 << 24));
+    draw->AddCircleFilled(stDot,  7.0f, (stCol & 0x00FFFFFF) | (150 << 24));
+    draw->AddCircleFilled(stDot,  4.5f, stCol);
+
+    if (g_LogoDragging) {
+        const char* moveTxt = "MOVE";
+        float mSize = 14.0f;
+        ImVec2 mSz = bold->CalcTextSizeA(mSize, FLT_MAX, 0, moveTxt);
+        float iy = ctr.y + r + 6.0f;
+        draw->AddRectFilled(ImVec2(ctr.x - mSz.x * 0.5f - 12.0f, iy), ImVec2(ctr.x + mSz.x * 0.5f + 12.0f, iy + 24.0f), IM_COL32(0, 0, 0, 220), 6.0f);
+        draw->AddRect(ImVec2(ctr.x - mSz.x * 0.5f - 12.0f, iy), ImVec2(ctr.x + mSz.x * 0.5f + 12.0f, iy + 24.0f), cyan, 6.0f, 0, 1.5f);
+        draw->AddText(bold, mSize, ImVec2(ctr.x - mSz.x * 0.5f, iy + 4.0f), cyan, moveTxt);
+    } else if (hovered) {
+        const char* hintTxt = "TAP=OPEN  DRAG=MOVE";
+        float hSize = 11.0f;
+        ImVec2 hSz = bold->CalcTextSizeA(hSize, FLT_MAX, 0, hintTxt);
+        float iy = ctr.y + r + 6.0f;
+        draw->AddRectFilled(ImVec2(ctr.x - hSz.x * 0.5f - 10.0f, iy), ImVec2(ctr.x + hSz.x * 0.5f + 10.0f, iy + 20.0f), IM_COL32(0, 0, 0, 180), 5.0f);
+        draw->AddText(bold, hSize, ImVec2(ctr.x - hSz.x * 0.5f, iy + 4.0f), (cyan & 0x00FFFFFF) | (200 << 24), hintTxt);
+    }
+
+    ImGui::End();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  RENDER MENU — NEXUS CORE ("M O H A M M A D")
+// ═══════════════════════════════════════════════════════════
+
+static void RenderMenu() {
+    g_MenuWidth  = 1250.0f;
+    g_MenuHeight = 850.0f;
+
+    float scale_y = g_MenuHeight / 900.0f;
+    scale_y = std::max(0.70f, std::min(scale_y, 1.10f));
+
+    ApplyCustomTheme(scale_y);
+
+    ImGui::SetNextWindowSize(ImVec2(g_MenuWidth, g_MenuHeight), ImGuiCond_Always);
+    ImGuiWindowFlags flags =
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBackground;
+
+    ImGui::Begin("NEXUS_CORE", nullptr, flags);
+
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    ImVec2 wp = ImGui::GetWindowPos();
+    ImVec2 ws = ImGui::GetWindowSize();
+    float  W  = ws.x;
+    float  H  = ws.y;
+
+    ImU32 bgDeep     = IM_COL32(8, 8, 16, 252);
+    ImU32 bgCard     = IM_COL32(20, 20, 32, 250);
+    ImU32 bgInset    = IM_COL32(30, 30, 46, 255);
+    ImU32 border     = IM_COL32(60, 60, 88, 255);
+    ImU32 borderGlow = IM_COL32(90, 90, 130, 255);
+    ImU32 accent     = ImGui::ColorConvertFloat4ToU32(g_ThemeColor);
+    ImU32 accent2    = IM_COL32(120, 200, 255, 255);
+    ImU32 accent3    = IM_COL32(255, 180, 80, 255);
+
+    ImU32 textMain   = IM_COL32(245, 245, 255, 255);
+    ImU32 textDim    = IM_COL32(160, 160, 190, 255);
+
+    ImU32 green      = IM_COL32(0, 240, 140, 255);
+    ImU32 redColor   = IM_COL32(255, 90, 90, 255);
+    ImU32 purple     = IM_COL32(180, 120, 255, 255);
+    ImU32 cyan       = IM_COL32(80, 220, 255, 255);
+    ImU32 yellow     = IM_COL32(255, 220, 100, 255);
+    ImU32 pink       = IM_COL32(255, 120, 200, 255);
+
+    // Frame
+    ImVec2 p1 = wp;
+    ImVec2 p2 = ImVec2(wp.x + W, wp.y + H);
+
+    draw->AddRectFilled(ImVec2(p1.x - 5, p1.y - 5), ImVec2(p2.x + 5, p2.y + 5), (accent & 0x00FFFFFF) | (25 << 24), 22.0f);
+    draw->AddRectFilled(ImVec2(p1.x + 5, p1.y + 8), ImVec2(p2.x + 5, p2.y + 8), IM_COL32(0, 0, 0, 140), 18.0f);
+    draw->AddRectFilled(p1, p2, bgDeep, 18.0f);
+    draw->AddRect(ImVec2(p1.x + 1, p1.y + 1), ImVec2(p2.x - 1, p2.y - 1), borderGlow, 17.0f, 0, 1.6f);
+    draw->AddRectFilledMultiColor(ImVec2(p1.x + 20, p1.y), ImVec2(p2.x - 20, p1.y + 3), accent, accent2, accent2, accent);
+
+    // Header
+    float pad   = 34.0f * scale_y;
+    float headY = wp.y + pad * 0.85f;
+    ImFont* titleFont = g_BoldFont ? g_BoldFont : ImGui::GetFont();
+
+    const char* title = "M O H A M M A D";
+    float titleSize = 30.0f * scale_y;
+    float chW = 20.0f * scale_y;
+    float tx = wp.x + pad;
+    ImU32 grad[4] = { accent, accent2, purple, pink };
+    for (int i = 0; title[i]; i++) {
+        if (title[i] == ' ') { tx += chW * 0.35f; continue; }
+        char buf[2] = { title[i], 0 };
+        ImU32 col = grad[i % 4];
+        draw->AddText(titleFont, titleSize, ImVec2(tx, headY), col, buf);
+        tx += chW;
+    }
+
+    float lineY = headY + 40.0f * scale_y;
+    for (int i = 0; i < 12; i++) {
+        float x = wp.x + pad + i * (17.0f * scale_y);
+        ImU32 dc = (i % 2 == 0) ? accent : accent2;
+        draw->AddLine(ImVec2(x, lineY), ImVec2(x + 9.0f * scale_y, lineY), dc, 2.0f);
+    }
+
+    // Close button
+    float closeSize = 42.0f * scale_y;
+    ImVec2 closePos(wp.x + W - pad - closeSize, headY - 6.0f * scale_y);
+
+    ImGui::SetCursorScreenPos(closePos);
+    ImGui::PushID("nexus_close");
+    if (ImGui::InvisibleButton("##close", ImVec2(closeSize, closeSize))) {
+        g_ShowNexusMenu = false;
+    }
+    bool closeHov = ImGui::IsItemHovered();
+    ImGui::PopID();
+
+    ImVec2 closeCenter(closePos.x + closeSize * 0.5f, closePos.y + closeSize * 0.5f);
+    float  closeRad = closeSize * 0.5f;
+    ImU32 closeCol = closeHov ? IM_COL32(255, 90, 90, 255) : IM_COL32(200, 60, 60, 220);
+
+    if (closeHov) {
+        draw->AddCircleFilled(closeCenter, closeRad + 4.0f, (closeCol & 0x00FFFFFF) | (60 << 24), 32);
+    }
+    draw->AddCircleFilled(closeCenter, closeRad, closeCol, 32);
+    draw->AddCircle(closeCenter, closeRad, IM_COL32(255, 255, 255, 100), 32, 1.4f);
+
+    float xOff = closeRad * 0.42f;
+    ImU32 xCol = IM_COL32(255, 255, 255, 255);
+    draw->AddLine(ImVec2(closeCenter.x - xOff, closeCenter.y - xOff), ImVec2(closeCenter.x + xOff, closeCenter.y + xOff), xCol, 3.0f);
+    draw->AddLine(ImVec2(closeCenter.x + xOff, closeCenter.y - xOff), ImVec2(closeCenter.x - xOff, closeCenter.y + xOff), xCol, 3.0f);
+
+    // ACTIVE badge
+    float badgeW = 130.0f * scale_y;
+    float badgeH = 36.0f * scale_y;
+    ImVec2 bP1 = ImVec2(closePos.x - badgeW - 14.0f * scale_y, headY - 3.0f * scale_y);
+    ImVec2 bP2 = ImVec2(bP1.x + badgeW, bP1.y + badgeH);
+
+    bool connected = (game_pid > 0 && lib_base > 0);
+    ImU32 liveCol = connected ? green : redColor;
+
+    draw->AddRectFilled(bP1, bP2, (liveCol & 0x00FFFFFF) | (40 << 24), badgeH * 0.5f);
+    draw->AddRect(bP1, bP2, (liveCol & 0x00FFFFFF) | (200 << 24), badgeH * 0.5f, 0, 1.6f);
+
+    float pulse = 0.55f + 0.45f * sinf((float)ImGui::GetTime() * 3.0f);
+    ImVec2 dotC = ImVec2(bP1.x + 22.0f * scale_y, bP1.y + badgeH * 0.5f);
+    draw->AddCircleFilled(dotC, 10.0f * scale_y, (liveCol & 0x00FFFFFF) | ((int)(90 * pulse) << 24));
+    draw->AddCircleFilled(dotC, 5.5f * scale_y, liveCol);
+
+    const char* badgeTxt = connected ? "ACTIVE" : "OFFLINE";
+    ImVec2 bSz = titleFont->CalcTextSizeA(15.0f * scale_y, FLT_MAX, 0, badgeTxt);
+    draw->AddText(titleFont, 15.0f * scale_y, ImVec2(dotC.x + 14.0f * scale_y, bP1.y + (badgeH - bSz.y) * 0.5f), liveCol, badgeTxt);
+
+    // Hero box
+    float heroY = lineY + 32.0f * scale_y;
+    float nxW = 250.0f * scale_y;
+    float nxH = 100.0f * scale_y;
+    ImVec2 nxP1 = ImVec2(wp.x + pad, heroY);
+    ImVec2 nxP2 = ImVec2(nxP1.x + nxW, nxP1.y + nxH);
+
+    draw->AddRectFilled(ImVec2(nxP1.x - 3, nxP1.y - 3), ImVec2(nxP2.x + 3, nxP2.y + 3), (accent & 0x00FFFFFF) | (40 << 24), 13.0f);
+    draw->AddRectFilled(nxP1, nxP2, bgCard, 12.0f);
+    draw->AddRect(nxP1, nxP2, accent, 12.0f, 0, 2.0f);
+
+    float tick = 16.0f * scale_y;
+    draw->AddLine(nxP1, ImVec2(nxP1.x + tick, nxP1.y), accent2, 3.0f);
+    draw->AddLine(nxP1, ImVec2(nxP1.x, nxP1.y + tick), accent2, 3.0f);
+    draw->AddLine(ImVec2(nxP2.x, nxP2.y), ImVec2(nxP2.x - tick, nxP2.y), accent2, 3.0f);
+    draw->AddLine(ImVec2(nxP2.x, nxP2.y), ImVec2(nxP2.x, nxP2.y - tick), accent2, 3.0f);
+
+    const char* nxs = "N E X U S";
+    float nexusSize = 26.0f * scale_y;
+    ImVec2 nxsSz = titleFont->CalcTextSizeA(nexusSize, FLT_MAX, 0, nxs);
+    draw->AddText(titleFont, nexusSize, ImVec2(nxP1.x + (nxW - nxsSz.x) * 0.5f, nxP1.y + (nxH - nxsSz.y) * 0.5f), cyan, nxs);
+
+    float scX = nxP2.x + 46.0f * scale_y;
+    draw->AddText(titleFont, 20.0f * scale_y, ImVec2(scX, heroY + 8.0f * scale_y), textMain, "SYSTEM CORE");
+    draw->AddRectFilled(ImVec2(scX, heroY + 34.0f * scale_y), ImVec2(scX + 170.0f * scale_y, heroY + 36.5f * scale_y), accent3, 2.0f);
+
+    ImVec2 cDot = ImVec2(scX + 10.0f * scale_y, heroY + 62.0f * scale_y);
+    draw->AddCircleFilled(cDot, 7.0f * scale_y, (liveCol & 0x00FFFFFF) | (80 << 24));
+    draw->AddCircleFilled(cDot, 4.5f * scale_y, liveCol);
+    draw->AddText(titleFont, 15.0f * scale_y, ImVec2(cDot.x + 16.0f * scale_y, cDot.y - 10.0f * scale_y), green, connected ? "CONNECTED" : "DISCONNECTED");
+
+    // Tab Bar
+    float tabY = heroY + nxH + 26.0f * scale_y;
+    float tabH = 52.0f * scale_y;
+    float tabW = W - pad * 2;
+    ImVec2 tP1 = ImVec2(wp.x + pad, tabY);
+    ImVec2 tP2 = ImVec2(tP1.x + tabW, tP1.y + tabH);
+
+    draw->AddRectFilled(tP1, tP2, bgInset, 10.0f);
+    draw->AddRect(tP1, tP2, border, 10.0f, 0, 1.4f);
+
+    const char* tabNames[4] = { "AIM", "VISUALS", "MISC", "CONFIG" };
+    ImU32 tabColors[4]      = { redColor, cyan, yellow, purple };
+    int tabCount = 4;
+    float slotW = tabW / (float)tabCount;
+
+    for (int i = 0; i < tabCount; i++) {
+        ImVec2 sP1 = ImVec2(tP1.x + slotW * i, tP1.y);
+        ImVec2 sP2 = ImVec2(sP1.x + slotW, tP2.y);
+        bool active = (g_NexusTab == i);
+        ImU32 tabCol = tabColors[i];
+
+        ImGui::SetCursorScreenPos(sP1);
+        ImGui::PushID(9000 + i);
+        if (ImGui::InvisibleButton("##tab", ImVec2(slotW, tabH))) {
+            g_NexusTab = i;
+        }
+        bool hovered = ImGui::IsItemHovered();
+        ImGui::PopID();
+
+        if (active) {
+            draw->AddRectFilled(ImVec2(sP1.x + 4, sP1.y + 4), ImVec2(sP2.x - 4, sP2.y - 4), (tabCol & 0x00FFFFFF) | (90 << 24), 8.0f);
+            draw->AddRectFilled(ImVec2(sP1.x + 6, sP1.y + 6), ImVec2(sP2.x - 6, sP2.y - 6), (tabCol & 0x00FFFFFF) | (180 << 24), 6.0f);
+            draw->AddRect(ImVec2(sP1.x + 6, sP1.y + 6), ImVec2(sP2.x - 6, sP2.y - 6), tabCol, 6.0f, 0, 1.8f);
+            draw->AddRectFilled(ImVec2(sP1.x + 6, sP2.y - 4), ImVec2(sP2.x - 6, sP2.y - 1), tabCol, 2.0f);
+        } else if (hovered) {
+            draw->AddRectFilled(ImVec2(sP1.x + 6, sP1.y + 6), ImVec2(sP2.x - 6, sP2.y - 6), (tabCol & 0x00FFFFFF) | (50 << 24), 6.0f);
+            draw->AddRect(ImVec2(sP1.x + 6, sP1.y + 6), ImVec2(sP2.x - 6, sP2.y - 6), (tabCol & 0x00FFFFFF) | (140 << 24), 6.0f, 0, 1.4f);
+        } else {
+            draw->AddRectFilled(ImVec2(sP1.x + 6, sP1.y + 6), ImVec2(sP2.x - 6, sP2.y - 6), (tabCol & 0x00FFFFFF) | (18 << 24), 6.0f);
+        }
+
+        float diaX = sP1.x + 30.0f * scale_y;
+        float diaY = (sP1.y + sP2.y) * 0.5f;
+        ImU32 diaCol = active ? IM_COL32(255, 255, 255, 255) : tabCol;
+        draw->AddQuadFilled(
+            ImVec2(diaX, diaY - 6.0f * scale_y),
+            ImVec2(diaX + 6.0f * scale_y, diaY),
+            ImVec2(diaX, diaY + 6.0f * scale_y),
+            ImVec2(diaX - 6.0f * scale_y, diaY),
+            diaCol);
+
+        ImVec2 txtSz = titleFont->CalcTextSizeA(17.0f * scale_y, FLT_MAX, 0, tabNames[i]);
+        draw->AddText(titleFont, 17.0f * scale_y, ImVec2(diaX + 20.0f * scale_y, diaY - txtSz.y * 0.5f), active ? IM_COL32(255, 255, 255, 255) : tabCol, tabNames[i]);
+    }
+
+    // Panels
+    float bodyY = tP2.y + 24.0f * scale_y;
+    float bodyH = H - (bodyY - wp.y) - 78.0f * scale_y;
+    float cardW = (tabW - 24.0f * scale_y) * 0.5f;
+
+    auto DrawPanel = [&](ImVec2 cp1, ImVec2 cp2, const char* pTitle, ImU32 titleCol) {
+        draw->AddRectFilled(ImVec2(cp1.x + 3, cp1.y + 5), ImVec2(cp2.x + 3, cp2.y + 5), IM_COL32(0, 0, 0, 110), 14.0f);
+        draw->AddRectFilled(ImVec2(cp1.x - 2, cp1.y - 2), ImVec2(cp2.x + 2, cp2.y + 2), (titleCol & 0x00FFFFFF) | (28 << 24), 16.0f);
+        draw->AddRectFilled(cp1, cp2, bgCard, 14.0f);
+        draw->AddRect(cp1, cp2, border, 14.0f, 0, 1.5f);
+
+        float tLine = 18.0f * scale_y;
+        draw->AddLine(cp1, ImVec2(cp1.x + tLine, cp1.y), titleCol, 2.6f);
+        draw->AddLine(cp1, ImVec2(cp1.x, cp1.y + tLine), titleCol, 2.6f);
+        draw->AddLine(ImVec2(cp2.x, cp2.y), ImVec2(cp2.x - tLine, cp2.y), titleCol, 2.6f);
+        draw->AddLine(ImVec2(cp2.x, cp2.y), ImVec2(cp2.x, cp2.y - tLine), titleCol, 2.6f);
+
+        draw->AddText(titleFont, 20.0f * scale_y, ImVec2(cp1.x + 22.0f * scale_y, cp1.y + 18.0f * scale_y), titleCol, pTitle);
+        draw->AddRectFilled(ImVec2(cp1.x + 22.0f * scale_y, cp1.y + 50.0f * scale_y), ImVec2(cp2.x - 22.0f * scale_y, cp1.y + 51.5f * scale_y), (titleCol & 0x00FFFFFF) | (150 << 24), 1.0f);
+    };
+
+    ImVec2 c1P1 = ImVec2(wp.x + pad, bodyY);
+    ImVec2 c1P2 = ImVec2(c1P1.x + cardW, c1P1.y + bodyH);
+    ImVec2 c2P1 = ImVec2(c1P2.x + 24.0f * scale_y, bodyY);
+    ImVec2 c2P2 = ImVec2(c2P1.x + cardW, c2P1.y + bodyH);
+
+    auto ModuleRow = [&](ImVec2 cp1, ImVec2 cp2, float y, const char* label, bool* value, const char* uid, ImU32 rowAccent) {
+        float rowY = cp1.y + y;
+        float dotX = cp1.x + 34.0f * scale_y;
+        float dotY = rowY + 10.0f * scale_y;
+
+        if (*value) {
+            draw->AddCircleFilled(ImVec2(dotX, dotY), 12.0f * scale_y, (green & 0x00FFFFFF) | (70 << 24));
+        }
+        draw->AddCircleFilled(ImVec2(dotX, dotY), 7.5f * scale_y, *value ? ((green & 0x00FFFFFF) | (80 << 24)) : IM_COL32(60, 60, 72, 90));
+        draw->AddCircleFilled(ImVec2(dotX, dotY), 4.5f * scale_y, *value ? green : IM_COL32(90, 90, 108, 255));
+
+        draw->AddText(titleFont, 17.0f * scale_y, ImVec2(dotX + 22.0f * scale_y, rowY), *value ? textMain : textDim, label);
+
+        const char* st = *value ? "ON" : "OFF";
+        float pillW = 62.0f * scale_y;
+        float pillH = 28.0f * scale_y;
+        ImVec2 pp1(cp2.x - pillW - 24.0f * scale_y, rowY - 4.0f * scale_y);
+        ImVec2 pp2(pp1.x + pillW, pp1.y + pillH);
+
+        ImU32 pillCol = *value ? green : rowAccent;
+        ImU32 pillBg  = *value ? ((green & 0x00FFFFFF) | (80 << 24)) : ((rowAccent & 0x00FFFFFF) | (60 << 24));
+
+        draw->AddRectFilled(ImVec2(pp1.x - 2, pp1.y - 2), ImVec2(pp2.x + 2, pp2.y + 2), (pillCol & 0x00FFFFFF) | (50 << 24), pillH * 0.5f + 2.0f);
+        draw->AddRectFilled(pp1, pp2, pillBg, pillH * 0.5f);
+        draw->AddRect(pp1, pp2, pillCol, pillH * 0.5f, 0, 1.8f);
+
+        ImVec2 stSz = titleFont->CalcTextSizeA(14.0f * scale_y, FLT_MAX, 0, st);
+        draw->AddText(titleFont, 14.0f * scale_y, ImVec2(pp1.x + (pillW - stSz.x) * 0.5f, pp1.y + 6.0f * scale_y), pillCol, st);
+
+        ImGui::SetCursorScreenPos(ImVec2(cp1.x + 10, rowY - 6.0f * scale_y));
+        ImGui::PushID(uid);
+        if (ImGui::InvisibleButton("##mod", ImVec2(cp2.x - cp1.x - 20.0f, 34.0f * scale_y))) {
+            *value = !(*value);
+        }
+        ImGui::PopID();
+    };
+
+    auto InfoRow = [&](ImVec2 cp1, ImVec2 cp2, float y, const char* key, const char* val, ImU32 valCol) {
+        float rowY = cp1.y + y;
+        draw->AddText(titleFont, 16.0f * scale_y, ImVec2(cp1.x + 34.0f * scale_y, rowY), textDim, key);
+        ImVec2 vSz = titleFont->CalcTextSizeA(16.0f * scale_y, FLT_MAX, 0, val);
+        draw->AddText(titleFont, 16.0f * scale_y, ImVec2(cp2.x - 34.0f * scale_y - vSz.x, rowY), valCol, val);
+        draw->AddLine(ImVec2(cp1.x + 28.0f * scale_y, rowY + 26.0f * scale_y), ImVec2(cp2.x - 28.0f * scale_y, rowY + 26.0f * scale_y), IM_COL32(50, 50, 70, 255), 1.2f);
+    };
+
+    // Left Panel
+    const char* leftTitle  = "";
+    ImU32       leftColor  = accent;
+    if (g_NexusTab == 0)      { leftTitle = "AIM PANEL";    leftColor = redColor; }
+    else if (g_NexusTab == 1) { leftTitle = "VISUAL PANEL"; leftColor = cyan; }
+    else if (g_NexusTab == 2) { leftTitle = "MISC PANEL";   leftColor = yellow; }
+    else                       { leftTitle = "CONFIG PANEL"; leftColor = purple; }
+
+    DrawPanel(c1P1, c1P2, leftTitle, leftColor);
+
+    float rowStep = 46.0f * scale_y;
+    float rowBase = 70.0f * scale_y;
+
+    if (g_NexusTab == 0) {
+        ModuleRow(c1P1, c1P2, rowBase,               "AIM BOT",    &Aimbot,     "n_aim1", redColor);
+        ModuleRow(c1P1, c1P2, rowBase + rowStep,     "AIM LOCK",   &AimLock,    "n_aim_lock", redColor);
+        ModuleRow(c1P1, c1P2, rowBase + rowStep * 2, "SILENT",     &AimSilent,  "n_aim2", redColor);
+        ModuleRow(c1P1, c1P2, rowBase + rowStep * 3, "VISIBLE",    &AimVisible, "n_aim3", redColor);
+        ModuleRow(c1P1, c1P2, rowBase + rowStep * 4, "AIM MAGNET", &g_AimMagnetUi, "n_aim_magnet_ui", redColor);
+
+        float fovY = c1P1.y + rowBase + rowStep * 4 + 48.0f * scale_y;
+        draw->AddText(titleFont, 16.0f * scale_y, ImVec2(c1P1.x + 34.0f * scale_y, fovY), textDim, "FOV");
+
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%.0f", AimFov);
+        ImVec2 bSz2 = titleFont->CalcTextSizeA(16.0f * scale_y, FLT_MAX, 0, buf);
+        draw->AddText(titleFont, 16.0f * scale_y, ImVec2(c1P2.x - 34.0f * scale_y - bSz2.x, fovY), accent2, buf);
+
+        float tx1 = c1P1.x + 34.0f * scale_y;
+        float tx2 = c1P2.x - 34.0f * scale_y;
+        float ty  = fovY + 24.0f * scale_y;
+        float th  = 5.0f;
+
+        draw->AddRectFilled(ImVec2(tx1, ty), ImVec2(tx2, ty + th), IM_COL32(55, 55, 75, 255), 2.5f);
+        float tFov = AimFov / 360.0f;
+        float kx = tx1 + (tx2 - tx1) * tFov;
+
+        draw->AddRectFilledMultiColor(ImVec2(tx1, ty), ImVec2(kx, ty + th), accent, accent2, accent2, accent);
+        draw->AddCircleFilled(ImVec2(kx, ty + th * 0.5f), 11.0f * scale_y, accent);
+        draw->AddCircleFilled(ImVec2(kx, ty + th * 0.5f), 7.5f * scale_y, IM_COL32(255, 255, 255, 255));
+        draw->AddCircleFilled(ImVec2(kx, ty + th * 0.5f), 4.0f * scale_y, accent);
+
+        ImGui::SetCursorScreenPos(ImVec2(tx1, ty - 12.0f));
+        ImGui::PushID("nexus_fov");
+        ImGui::InvisibleButton("##fov", ImVec2(tx2 - tx1, 30.0f));
+        if (ImGui::IsItemActive()) {
+            float m = (ImGui::GetMousePos().x - tx1) / (tx2 - tx1);
+            m = std::max(0.0f, std::min(1.0f, m));
+            AimFov = m * 360.0f;
+        }
+        ImGui::PopID();
+    }
+    else if (g_NexusTab == 1) {
+        ModuleRow(c1P1, c1P2, rowBase,               "BOX ESP",   &showBox,      "n_vis1", cyan);
+        ModuleRow(c1P1, c1P2, rowBase + rowStep,     "LINE",      &showLine,     "n_vis2", cyan);
+        ModuleRow(c1P1, c1P2, rowBase + rowStep * 2, "SKELETON",  &showSkeleton, "n_vis_skel", cyan);
+        ModuleRow(c1P1, c1P2, rowBase + rowStep * 3, "HEALTH",    &showHealth,   "n_vis3", cyan);
+        ModuleRow(c1P1, c1P2, rowBase + rowStep * 4, "NAME",      &showName,     "n_vis4", cyan);
+        ModuleRow(c1P1, c1P2, rowBase + rowStep * 5, "DISTANCE",  &showDistance, "n_vis5", cyan);
+        ModuleRow(c1P1, c1P2, rowBase + rowStep * 6, "COUNT",     &showCount,    "n_vis_cnt", cyan);
+    }
+    else if (g_NexusTab == 2) {
+        ModuleRow(c1P1, c1P2, rowBase,               "SPEED",     &SpeedHackV2, "n_msc1", yellow);
+        ModuleRow(c1P1, c1P2, rowBase + rowStep,     "GHOST",     &GhostHack,   "n_msc2", yellow);
+        ModuleRow(c1P1, c1P2, rowBase + rowStep * 2, "NO RELOAD", &NoReload,    "n_msc3", yellow);
+        ModuleRow(c1P1, c1P2, rowBase + rowStep * 3, "NO RECOIL", &NoRecoil,    "n_msc4", yellow);
+        ModuleRow(c1P1, c1P2, rowBase + rowStep * 4, "360 ALERT", &is3600,      "n_msc5", yellow);
+    }
+    else {
+        float y0 = c1P1.y + 70.0f * scale_y;
+        draw->AddText(titleFont, 16.0f * scale_y, ImVec2(c1P1.x + 34.0f * scale_y, y0), textMain, "Box Color");
+
+        ImGui::SetCursorScreenPos(ImVec2(c1P1.x + 34.0f * scale_y, y0 + 26.0f * scale_y));
+        ImGui::PushID("n_boxcol");
+        ImGui::ColorEdit4("##bc", (float*)&boxCustomColor,
+            ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_AlphaPreviewHalf);
+        ImGui::PopID();
+
+        ImGui::SetCursorScreenPos(ImVec2(c1P1.x + 88.0f * scale_y, y0 + 26.0f * scale_y));
+        ImGui::SetNextItemWidth(cardW - 122.0f * scale_y);
+        const char* colorModes[] = { "Custom", "Health", "Distance", "Rainbow", "Cyan",
+                                     "Green", "Purple", "Orange", "Red", "White" };
+        ImGui::Combo("##bm", &boxColorMode, colorModes, IM_ARRAYSIZE(colorModes));
+
+        float y1 = y0 + 72.0f * scale_y;
+        draw->AddText(titleFont, 16.0f * scale_y, ImVec2(c1P1.x + 34.0f * scale_y, y1), textMain, "Line Color");
+
+        ImGui::SetCursorScreenPos(ImVec2(c1P1.x + 34.0f * scale_y, y1 + 26.0f * scale_y));
+        ImGui::PushID("n_linecol");
+        ImGui::ColorEdit4("##lc", (float*)&lineCustomColor,
+            ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_AlphaPreviewHalf);
+        ImGui::PopID();
+
+        ImGui::SetCursorScreenPos(ImVec2(c1P1.x + 88.0f * scale_y, y1 + 26.0f * scale_y));
+        ImGui::SetNextItemWidth(cardW - 122.0f * scale_y);
+        ImGui::Combo("##lm", &lineColorMode, colorModes, IM_ARRAYSIZE(colorModes));
+
+        float y2 = y1 + 72.0f * scale_y;
+        draw->AddText(titleFont, 16.0f * scale_y, ImVec2(c1P1.x + 34.0f * scale_y, y2), textMain, "Theme");
+
+        for (int i = 0; i < 6; i++) {
+            ImGui::SetCursorScreenPos(ImVec2(c1P1.x + 34.0f * scale_y + (float)i * 48.0f * scale_y, y2 + 26.0f * scale_y));
+            ImGui::PushID(700 + i);
+            if (ImGui::ColorButton("##sw", g_ThemeSwatches[i], 0, ImVec2(38, 38))) {
+                g_ThemeColorArr[0] = g_ThemeSwatches[i].x;
+                g_ThemeColorArr[1] = g_ThemeSwatches[i].y;
+                g_ThemeColorArr[2] = g_ThemeSwatches[i].z;
+                g_ThemeColorArr[3] = g_ThemeSwatches[i].w;
+            }
+            ImGui::PopID();
+        }
+
+        ImGui::SetCursorScreenPos(ImVec2(c1P1.x + 34.0f * scale_y, y2 + 82.0f * scale_y));
+        ImGui::PushStyleColor(ImGuiCol_Button, g_darkMode ? IM_COL32(80, 80, 220, 220) : IM_COL32(255, 200, 80, 220));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, g_darkMode ? IM_COL32(110, 110, 240, 255) : IM_COL32(255, 220, 120, 255));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, g_darkMode ? IM_COL32(60, 60, 200, 255) : IM_COL32(230, 180, 60, 255));
+        if (ImGui::Button(g_darkMode ? "DARK MODE" : "LIGHT MODE", ImVec2(170.0f * scale_y, 45.0f * scale_y))) {
+            g_darkMode = !g_darkMode;
+        }
+        ImGui::PopStyleColor(3);
+
+        ImGui::SetCursorScreenPos(ImVec2(c1P2.x - 204.0f * scale_y, y2 + 82.0f * scale_y));
+        ImGui::PushStyleColor(ImGuiCol_Button,        IM_COL32(220, 60, 60, 220));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(255, 90, 90, 255));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  IM_COL32(180, 40, 40, 255));
+        if (ImGui::Button("EXIT", ImVec2(170.0f * scale_y, 45.0f * scale_y))) {
+            exit(0);
+        }
+        ImGui::PopStyleColor(3);
+    }
+
+    // Right Panel
+    DrawPanel(c2P1, c2P2, "SYSTEM INFO", accent2);
+
+    float infoStart = 76.0f * scale_y;
+    float infoStep  = 46.0f * scale_y;
+
+    InfoRow(c2P1, c2P2, infoStart, "STATUS", connected ? "READY" : "OFFLINE", connected ? green : redColor);
+
+    char pidBuf[32];
+    snprintf(pidBuf, sizeof(pidBuf), "%d", game_pid);
+    InfoRow(c2P1, c2P2, infoStart + infoStep, "PID", (game_pid > 0) ? pidBuf : "NONE", (game_pid > 0) ? accent3 : textDim);
+
+    char libBuf[32];
+    snprintf(libBuf, sizeof(libBuf), "0x%lx", (unsigned long)lib_base);
+    InfoRow(c2P1, c2P2, infoStart + infoStep * 2, "LIB BASE", (lib_base > 0) ? libBuf : "NONE", (lib_base > 0) ? cyan : textDim);
+
+    const char* dNames[] = { "NONE", "RT HOOK", "RT DEV", "DEV COMPAT", "QX 10-11", "KPM NEO" };
+    const char* dName = (选择值 >= 1 && 选择值 <= 5) ? dNames[选择值] : "ARMED";
+    InfoRow(c2P1, c2P2, infoStart + infoStep * 3, "DRIVER", dName, green);
+
+    InfoRow(c2P1, c2P2, infoStart + infoStep * 4, "MODE", (const char*[]){ "AIM", "VISUALS", "MISC", "CONFIG" }[g_NexusTab], purple);
+
+    const char* coreTxt = "N E X U S";
+    float coreSize = 32.0f * scale_y;
+    ImVec2 coreSz = titleFont->CalcTextSizeA(coreSize, FLT_MAX, 0, coreTxt);
+    ImVec2 corePos = ImVec2(c2P1.x + (cardW - coreSz.x) * 0.5f, c2P2.y - 80.0f * scale_y);
+    draw->AddText(titleFont, coreSize, corePos, cyan, coreTxt);
+
+    const char* cap = "K E R N E L   C O R E";
+    float capSize = 12.0f * scale_y;
+    ImVec2 capSz = titleFont->CalcTextSizeA(capSize, FLT_MAX, 0, cap);
+    draw->AddText(titleFont, capSize, ImVec2(c2P1.x + (cardW - capSz.x) * 0.5f, c2P2.y - 40.0f * scale_y), textDim, cap);
+
+    // Footer
+    const char* foot = "N E X U S   K E R N E L";
+    float footSize = 16.0f * scale_y;
+    ImVec2 fSz = titleFont->CalcTextSizeA(footSize, FLT_MAX, 0, foot);
+    float fx = wp.x + (W - fSz.x) * 0.5f;
+    float fy = H - 44.0f * scale_y;
+
+    draw->AddLine(ImVec2(wp.x + pad, fy + 12.0f * scale_y), ImVec2(wp.x + W * 0.30f, fy + 12.0f * scale_y), accent2, 1.5f);
+    draw->AddLine(ImVec2(wp.x + W * 0.70f, fy + 12.0f * scale_y), ImVec2(wp.x + W - pad, fy + 12.0f * scale_y), accent2, 1.5f);
+
+    ImVec2 fDot  = ImVec2(wp.x + W * 0.30f + 8.0f * scale_y, fy + 12.0f * scale_y);
+    ImVec2 fDot2 = ImVec2(wp.x + W * 0.70f - 8.0f * scale_y, fy + 12.0f * scale_y);
+    draw->AddCircleFilled(fDot,  6.0f * scale_y, accent);
+    draw->AddCircleFilled(fDot2, 6.0f * scale_y, accent2);
+
+    float ftx = fx;
+    ImU32 fcols[3] = { accent, accent2, purple };
+    for (int i = 0; foot[i]; i++) {
+        if (foot[i] == ' ') { ftx += footSize * 0.5f; continue; }
+        char buf[2] = { foot[i], 0 };
+        draw->AddText(titleFont, footSize, ImVec2(ftx, fy), fcols[i % 3], buf);
+        ftx += titleFont->CalcTextSizeA(footSize, FLT_MAX, 0, buf).x;
+    }
+
+    ImGui::End();
+}
+
+namespace ui::menu {
+
+void render() {
+    RenderFloatingLogo();
+    if (g_ShowNexusMenu) {
+        RenderMenu();
+    }
+}
+
+} // namespace ui::menu

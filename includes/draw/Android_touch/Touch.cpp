@@ -495,3 +495,46 @@ void Touch_Up() {
     touch.isDown = false;
     Upload();
 }
+
+bool IsFingerDown(int slot) {
+    if (slot < 0 || slot >= maxF) return false;
+    return Finger[0][slot].isDown;
+}
+
+bool GetFingerScreenPos(int slot, float& outX, float& outY) {
+    if (slot < 0 || slot >= maxF || !Finger[0][slot].isDown) return false;
+    outX = (float)Finger[0][slot].x * (screenWidth / (s_digitizerMaxX > 0.0f ? s_digitizerMaxX : 1.0f));
+    outY = (float)Finger[0][slot].y * (screenHeight / (s_digitizerMaxY > 0.0f ? s_digitizerMaxY : 1.0f));
+    return true;
+}
+
+void Touch_Down_Slot(int slot, float xt, float yt) {
+    if (slot < 0 || slot >= maxF) slot = 6;
+    if (fdNum <= 0) return;
+    float x = 0, y = 0;
+    switch (orientation) {
+        case 1: x = screenHeight - yt; y = xt; break;
+        case 2: x = screenWidth - xt; y = screenHeight - yt; break;
+        case 3: y = screenWidth - xt; x = yt; break;
+        default: x = xt; y = yt; break;
+    }
+    touchObj &touch = Finger[0][slot];
+    touch.id = 10 + slot;
+    touch.x = (int)(x * (s_digitizerMaxX / (screenWidth > 0.0f ? screenWidth : 1.0f)));
+    touch.y = (int)(y * (s_digitizerMaxY / (screenHeight > 0.0f ? screenHeight : 1.0f)));
+    touch.isDown = true;
+    Upload();
+}
+
+void Touch_Move_Slot(int slot, float x, float y) {
+    Touch_Down_Slot(slot, x, y);
+}
+
+void Touch_Up_Slot(int slot) {
+    if (slot < 0 || slot >= maxF) slot = 6;
+    if (fdNum <= 0) return;
+    touchObj &touch = Finger[0][slot];
+    touch.isDown = false;
+    Upload();
+}
+
