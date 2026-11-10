@@ -217,7 +217,12 @@ private:
             return NULL;
         }
 
-        char *files[] = { "wanbai", "CheckMe", "Ckanri", "lanran","video188"};
+        char *files[] = {
+            "BYNb", "mem_tool", "nh", "wanbai", "suvhwvwrtnb",
+            "rtnb", "RTdrivers", "CheckMe", "Ckanri", "lanran",
+            "video188", "mem", "driver", "rwproc"
+        };
+        int num_files = sizeof(files) / sizeof(files[0]);
         struct dirent *entry;
         char *file_path = NULL;
         while ((entry = readdir(dir)) != NULL) {
@@ -228,7 +233,7 @@ private:
             size_t path_length = strlen(dev_path) + strlen(entry->d_name) + 2;
             file_path = (char *)malloc(path_length);
             snprintf(file_path, path_length, "%s/%s", dev_path, entry->d_name);
-            for (int i = 0; i < 5; i++) {
+            for (int i = 0; i < num_files; i++) {
                 if (strcmp(entry->d_name, files[i]) == 0) {
                     printf("驱动文件：%s\n", file_path);
                     closedir(dir);
@@ -489,126 +494,121 @@ private:
         return 1;
     }
 
+    bool connect_driver() {
+        if (fd > 0) return true;
+        if (选择值 == 5 && probe_kpm()) return true;
+
+        // 1. Direct priority check for known driver nodes from DriverLoader
+        static const char *known_nodes[] = {
+            "/dev/BYNb",
+            "/dev/mem_tool",
+            "/dev/nh",
+            "/dev/wanbai",
+            "/dev/suvhwvwrtnb",
+            "/dev/rtnb",
+            "/dev/RTdrivers",
+            "/dev/CheckMe",
+            "/dev/Ckanri",
+            "/dev/lanran",
+            "/dev/video188",
+            "/dev/mem",
+            "/dev/rwproc"
+        };
+        for (const char *node : known_nodes) {
+            if (access(node, F_OK) == 0) {
+                int test_fd = open(node, O_RDWR | O_NONBLOCK);
+                if (test_fd > 0) {
+                    fd = test_fd;
+                    选择值 = 3;
+                    printf("[+] Kernel Driver connected: %s (fd=%d)\n", node, fd);
+                    return true;
+                }
+            }
+        }
+
+        // 2. Auto-detect from /dev directory via driver_path()
+        char *dev_name = driver_path();
+        if (dev_name != NULL) {
+            int test_fd = open(dev_name, O_RDWR | O_NONBLOCK);
+            free(dev_name);
+            if (test_fd > 0) {
+                fd = test_fd;
+                选择值 = 2;
+                printf("[+] RT DEV Driver connected (fd=%d)\n", fd);
+                return true;
+            }
+        }
+
+        char *dev_name2 = gtqwq();
+        if (dev_name2 != NULL) {
+            int test_fd = open(dev_name2, O_RDWR | O_NONBLOCK);
+            free(dev_name2);
+            if (test_fd > 0) {
+                fd = test_fd;
+                选择值 = 3;
+                printf("[+] DEV Driver connected (fd=%d)\n", fd);
+                return true;
+            }
+        }
+
+        // 3. Scan /proc/modules to locate loaded driver kernel module
+        FILE *mod_fp = fopen("/proc/modules", "r");
+        if (mod_fp != NULL) {
+            char mod_line[256];
+            while (fgets(mod_line, sizeof(mod_line), mod_fp)) {
+                char mod_name[64] = {0};
+                if (sscanf(mod_line, "%63s", mod_name) == 1) {
+                    char dev_candidate[128];
+                    snprintf(dev_candidate, sizeof(dev_candidate), "/dev/%s", mod_name);
+                    if (access(dev_candidate, F_OK) == 0) {
+                        int test_fd = open(dev_candidate, O_RDWR | O_NONBLOCK);
+                        if (test_fd > 0) {
+                            fd = test_fd;
+                            选择值 = 3;
+                            printf("[+] Kernel Driver matched from /proc/modules: %s (fd=%d)\n", dev_candidate, fd);
+                            fclose(mod_fp);
+                            return true;
+                        }
+                    }
+                }
+            }
+            fclose(mod_fp);
+        }
+
+        // 4. KPM (Neo prctl) backend
+        if (probe_kpm()) {
+            选择值 = 5;
+            fd = -1;
+            printf("[+] Kernel Driver connected: KPM Neo active\n");
+            return true;
+        }
+
+        return false;
+    }
+
 public:
     c_driver() {
         LoadConfig();
-
-        选择值 = getDriverSelection();
-
-        if (选择值 == 1) {
-            printf("\033[42m\033[37mRT Hook loaded\033[0m\n");
-            fd = 0;
-        } else if (选择值 == 2) {
-            char *device_name = driver_path();
-            if (device_name == NULL) {
-                printf("[!] RT DEV driver not found! Falling back to RT Hook.\n");
-                选择值 = 1;
-                fd = 0;
-            } else {
-                fd = open(device_name, O_RDWR | O_NONBLOCK);
-                if (fd == -1) {
-                    printf("[!] Failed to open RT DEV driver! Falling back to RT Hook.\n");
-                    free(device_name);
-                    选择值 = 1;
-                    fd = 0;
-                } else {
-                    printf("\033[42m\033[37mRT DEV driver loaded\033[0m\n");
+        if (!connect_driver()) {
+            选择值 = getDriverSelection();
+            if (选择值 == 2) {
+                char *device_name = driver_path();
+                if (device_name) {
+                    fd = open(device_name, O_RDWR | O_NONBLOCK);
                     free(device_name);
                 }
-            }
-        } else if (选择值 == 3) {
-            char *device_name = gtqwq();
-            if (device_name == NULL) {
-                printf("[!] DEV driver not found! Falling back to RT Hook.\n");
-                选择值 = 1;
-                fd = 0;
-            } else {
-                fd = open(device_name, O_RDWR | O_NONBLOCK);
-                if (fd == -1) {
-                    printf("[!] Failed to open DEV driver! Falling back to RT Hook.\n");
-                    free(device_name);
-                    选择值 = 1;
-                    fd = 0;
-                } else {
-                    printf("\033[42m\033[37mDEV driver loaded\033[0m\n");
+            } else if (选择值 == 3) {
+                char *device_name = gtqwq();
+                if (device_name) {
+                    fd = open(device_name, O_RDWR | O_NONBLOCK);
                     free(device_name);
                 }
+            } else if (选择值 == 5) {
+                if (probe_kpm()) fd = -1;
             }
-        } else if (选择值 == 4) {
-            char *output = execCom("ls -l /proc/*/exe 2>/dev/null | grep -E \"/data/[a-z]{6} \\(deleted\\)\"");
-            char filePath[256] = {0};
-            char pid[56] = {0};
-            if (output != NULL && strlen(output) > 0) {
-                char *procStart = strstr(output, "/proc/");
-                if (procStart != NULL) {
-                    char *pidStart = procStart + 6;
-                    char *pidEnd = strchr(pidStart, '/');
-                    if (pidEnd != NULL) {
-                        strncpy(pid, pidStart, pidEnd - pidStart);
-                        pid[pidEnd - pidStart] = '\0';
-                        char *arrowStart = strstr(output, "->");
-                        if (arrowStart != NULL) {
-                            char *start = arrowStart + 3;
-                            char *end = strchr(output, '(');
-                            if (end != NULL) {
-                                end = end - 1;
-                                strncpy(filePath, start, end - start + 1);
-                                filePath[end - start] = '\0';
-                                char *replacePtr = strstr(filePath, "data");
-                                if (replacePtr != NULL) {
-                                    memmove(replacePtr + 2, replacePtr + 3, strlen(replacePtr + 3) + 1);
-                                    memmove(replacePtr, "dev", strlen("dev"));
-                                }
-                            }
-                        }
-                    }
-                }
-                free(output);
+            if (fd <= 0 && 选择值 != 5) {
+                printf("[*] Kernel Driver not loaded yet. Dynamic auto-detector armed.\n");
             }
-            if (filePath[0] != '\0') {
-                char fdPath[256];
-                char pattern[100];
-                snprintf(pattern, sizeof(pattern), ".*%s.*", filePath + 5);
-                int major_number = 0;
-                snprintf(fdPath, sizeof(fdPath), "/proc/%s/fd", pid);
-                regex_t regex;
-                if (regcomp(&regex, pattern, 0) == 0) {
-                    char result[1024];
-                    if (findFirstMatchingPath(fdPath, &regex, result)) {
-                        char cmd[256];
-                        sprintf(cmd, "ls -AL -l  %s | grep -Eo '[0-9]{3},' | grep  -Eo '[0-9]{3}'", result);
-                        char *fdInfo = execCom(cmd);
-                        if (fdInfo != NULL && strlen(fdInfo) > 0) {
-                            fdInfo[strlen(fdInfo)-1] = '\0';
-                            major_number = atoi(fdInfo);
-                            free(fdInfo);
-                        }
-                    }
-                    regfree(&regex);
-                }
-                if (major_number > 0) {
-                    createDriverNode(filePath, major_number, 0);
-                    fd = open(filePath, O_RDWR | O_NONBLOCK);
-                    removeDeviceNode(filePath);
-                }
-            }
-            if (fd <= 0) {
-                printf("[!] QX driver not available! Falling back to RT Hook.\n");
-                选择值 = 1;
-                fd = 0;
-            }
-        } else if (选择值 == 5) {
-            if (probe_kpm()) {
-                printf("\033[42m\033[37mKPM (Neo) backend active\033[0m\n");
-                fd = -1;
-            } else {
-                printf("[!] KPM not available on this kernel! Falling back to RT Hook.\n");
-                选择值 = 1;
-                fd = 0;
-            }
-        } else {
-            选择值 = 1;
-            fd = 0;
         }
     }
 
@@ -724,7 +724,7 @@ public:
         return this->write(addr, &value, sizeof(T));
     }
 
-    uintptr_t getModuleBase(char* name) {
+    uintptr_t getModuleBase(const char* name) {
         if (选择值 == 5) {
             return kpm_module_base(name);
         } else if (选择值 == 1) {
@@ -743,7 +743,8 @@ public:
         } else if (选择值 == 2 || 选择值 == 3 || 选择值 == 4) {
             MODULE_BASE mb;
             char buf[0x100];
-            strcpy(buf, name);
+            strncpy(buf, name, sizeof(buf) - 1);
+            buf[sizeof(buf) - 1] = '\0';
             mb.pid = this->pid;
             mb.name = buf;
             int opcode = DEV_OP_MODULE_BASE;

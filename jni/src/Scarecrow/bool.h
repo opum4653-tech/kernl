@@ -120,20 +120,24 @@ uint64_t get_module_base(const char* module_name, const char* perms) {
   line[1024];
   snprintf(path, sizeof(path), "/proc/%d/maps", game_pid);
   FILE* maps = fopen(path, "rt");
-  if (!maps) return 0;
-
-  while (fgets(line, sizeof(line), maps)) {
-    if (strstr(line, module_name) && strstr(line, perms)) {
-      uint64_t start = 0,
-      end = 0;
-      sscanf(line, "%lx-%lx", &start, &end);
-      if ((end - start) < 0x5100000) {
-        returned = start;
-        break;
+  if (maps) {
+    while (fgets(line, sizeof(line), maps)) {
+      if (strstr(line, module_name) && strstr(line, perms)) {
+        uint64_t start = 0,
+        end = 0;
+        sscanf(line, "%lx-%lx", &start, &end);
+        if ((end - start) < 0x5100000) {
+          returned = start;
+          break;
+        }
       }
     }
+    fclose(maps);
   }
-  fclose(maps);
+
+  if (returned == 0 && driver) {
+    returned = driver->getModuleBase(module_name);
+  }
   return returned;
 }
 

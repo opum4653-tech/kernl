@@ -84,6 +84,6 @@ endif
 
 LOCAL_STATIC_LIBRARIES := curl ssl crypto libevdev
 
-LOCAL_LDLIBS := -llog -landroid -lEGL -lGLESv3 -lz
+LOCAL_LDLIBS := -llog -landroid -lEGL -lGLESv3 -lz -ldl
 
 include $(BUILD_EXECUTABLE)

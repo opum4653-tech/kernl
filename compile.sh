@@ -1,1 +1,2 @@
-/data/user/0/com.aide.plus/no_backup/ndksupport-1710240003/android-ndk-aide/ndk-build
+#!/bin/sh
+ndk-build NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=jni/Android.mk NDK_APPLICATION_MK=jni/Application.mk "$@"
