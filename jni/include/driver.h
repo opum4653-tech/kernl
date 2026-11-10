@@ -492,6 +492,7 @@ private:
         return 0;
     }
 
+public:
     bool connect_driver() {
         if (fd > 0) return true;
         if (选择值 == 5 && probe_kpm()) return true;
