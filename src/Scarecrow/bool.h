@@ -119,26 +119,8 @@ uint64_t get_module_base(const char* module_name, const char* perms) {
     uintptr_t base = driver->getModuleBase(module_name);
     if (base > 0) return static_cast<uint64_t>(base);
   }
-  uint64_t returned = 0;
-  char path[64],
-  line[1024];
-  snprintf(path, sizeof(path), "/proc/%d/maps", game_pid);
-  FILE* maps = fopen(path, "rt");
-  if (!maps) return 0;
-
-  while (fgets(line, sizeof(line), maps)) {
-    if (strstr(line, module_name) && strstr(line, perms)) {
-      uint64_t start = 0,
-      end = 0;
-      sscanf(line, "%lx-%lx", &start, &end);
-      if ((end - start) < 0x5100000) {
-        returned = start;
-        break;
-      }
-    }
-  }
-  fclose(maps);
-  return returned;
+  // Pure Kernel Driver Mode: Zero userland proc maps fallback
+  return 0;
 }
 
 // Write bytes to memory — now driver-aware via Memory::ProcessWrite

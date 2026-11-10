@@ -177,58 +177,67 @@ static void RenderFloatingLogo() {
         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoFocusOnAppearing |
         ImGuiWindowFlags_NoBringToFrontOnFocus;
 
-    ImGui::Begin("##NEXUS_LOGO_BTN", nullptr, flags);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    if (ImGui::Begin("##NEXUS_LOGO_BTN", nullptr, flags)) {
+        ImDrawList* draw = ImGui::GetWindowDrawList();
+        ImVec2 wp  = ImGui::GetWindowPos();
+        ImVec2 ctr = ImVec2(wp.x + logoSize * 0.5f, wp.y + logoSize * 0.5f);
+        float  rad = logoSize * 0.44f;
 
-    ImDrawList* draw = ImGui::GetWindowDrawList();
-    ImVec2 wp  = ImGui::GetWindowPos();
-    ImVec2 ctr = ImVec2(wp.x + logoSize * 0.5f, wp.y + logoSize * 0.5f);
-    float  rad = logoSize * 0.44f;
+        ImGui::SetCursorScreenPos(wp);
+        bool clicked = ImGui::InvisibleButton("##logoClick", ImVec2(logoSize, logoSize));
 
-    ImGui::SetCursorScreenPos(wp);
-    ImGui::InvisibleButton("##logoClick", ImVec2(logoSize, logoSize));
+        const bool hovered     = ImGui::IsItemHovered();
+        const bool active      = ImGui::IsItemActive();
+        const bool deactivated = ImGui::IsItemDeactivated();
+        const ImVec2 mouse     = ImGui::GetMousePos();
 
-    const bool hovered = ImGui::IsItemHovered();
-    const bool active  = ImGui::IsItemActive();
-    const ImVec2 mouse = ImGui::GetMousePos();
-
-    if (ImGui::IsItemActivated()) {
-        g_LogoDragStart  = mouse;
-        g_LogoDragOffset = ImVec2(mouse.x - logoPos.x, mouse.y - logoPos.y);
-        g_LogoDragging   = false;
-        s_logoJustMoved  = false;
-    }
-
-    if (active && !g_LogoDragging) {
-        const float dx = mouse.x - g_LogoDragStart.x;
-        const float dy = mouse.y - g_LogoDragStart.y;
-        if (sqrtf(dx * dx + dy * dy) > g_LogoDragThreshold) {
-            g_LogoDragging  = true;
-            s_logoJustMoved = true;
+        if (ImGui::IsItemActivated()) {
+            g_LogoDragStart  = mouse;
+            g_LogoDragOffset = ImVec2(mouse.x - logoPos.x, mouse.y - logoPos.y);
+            g_LogoDragging   = false;
+            s_logoJustMoved  = false;
         }
-    }
 
-    if (g_LogoDragging && active) {
-        float newX = mouse.x - g_LogoDragOffset.x;
-        float newY = mouse.y - g_LogoDragOffset.y;
-
-        newX = std::max(margin, std::min(newX, screen.x - logoSize - margin));
-        newY = std::max(margin, std::min(newY, screen.y - logoSize - margin));
-
-        g_LogoX = newX;
-        g_LogoY = newY / (screen.y > 0.0f ? screen.y : 1.0f);
-    }
-
-    if (ImGui::IsItemDeactivated()) {
-        if (!g_LogoDragging && !s_logoJustMoved && hovered) {
-            g_ShowNexusMenu = !g_ShowNexusMenu;
-        } else if (g_LogoDragging) {
-            ui::menu::save_logo_pos();
+        if (active && !g_LogoDragging) {
+            const float dx = mouse.x - g_LogoDragStart.x;
+            const float dy = mouse.y - g_LogoDragStart.y;
+            if (sqrtf(dx * dx + dy * dy) > 12.0f) {
+                g_LogoDragging  = true;
+                s_logoJustMoved = true;
+            }
         }
-        g_LogoDragging  = false;
-        s_logoWasDraggingLastFrame = false;
-    }
 
-    s_logoWasDraggingLastFrame = g_LogoDragging;
+        if (g_LogoDragging && active) {
+            float newX = mouse.x - g_LogoDragOffset.x;
+            float newY = mouse.y - g_LogoDragOffset.y;
+
+            newX = std::max(margin, std::min(newX, screen.x - logoSize - margin));
+            newY = std::max(margin, std::min(newY, screen.y - logoSize - margin));
+
+            g_LogoX = newX;
+            g_LogoY = newY / (screen.y > 0.0f ? screen.y : 1.0f);
+        }
+
+        static double s_last_toggle_time = 0.0;
+        double cur_time = ImGui::GetTime();
+
+        if (clicked || (deactivated && !s_logoJustMoved)) {
+            if (cur_time - s_last_toggle_time > 0.25) {
+                g_ShowNexusMenu = !g_ShowNexusMenu;
+                s_last_toggle_time = cur_time;
+            }
+            s_logoJustMoved = false;
+            g_LogoDragging  = false;
+        } else if (deactivated) {
+            if (g_LogoDragging) {
+                ui::menu::save_logo_pos();
+            }
+            s_logoJustMoved = false;
+            g_LogoDragging  = false;
+        }
+
+        s_logoWasDraggingLastFrame = g_LogoDragging;
 
     ImU32 accent = ImGui::ColorConvertFloat4ToU32(g_ThemeColor);
     ImU32 cyan   = IM_COL32(80, 220, 255, 255);
@@ -300,7 +309,9 @@ static void RenderFloatingLogo() {
         draw->AddText(bold, hSize, ImVec2(ctr.x - hSz.x * 0.5f, iy + 4.0f), (cyan & 0x00FFFFFF) | (200 << 24), hintTxt);
     }
 
+    }
     ImGui::End();
+    ImGui::PopStyleVar();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -308,21 +319,37 @@ static void RenderFloatingLogo() {
 // ═══════════════════════════════════════════════════════════
 
 static void RenderMenu() {
-    g_MenuWidth  = 1250.0f;
-    g_MenuHeight = 850.0f;
+    ImGuiIO& io = ImGui::GetIO();
+    ImVec2 screen = io.DisplaySize;
+
+    // Sizing responsive to display resolution
+    g_MenuWidth  = std::min(1180.0f, screen.x * 0.94f);
+    g_MenuHeight = std::min(820.0f, screen.y * 0.94f);
 
     float scale_y = g_MenuHeight / 900.0f;
     scale_y = std::max(0.70f, std::min(scale_y, 1.10f));
 
     ApplyCustomTheme(scale_y);
 
+    // Initial centering position and persistent drag coordinates
+    static ImVec2 s_menu_pos(-1.0f, -1.0f);
+    if (s_menu_pos.x < 0.0f || s_menu_pos.x > screen.x || s_menu_pos.y > screen.y) {
+        s_menu_pos = ImVec2((screen.x - g_MenuWidth) * 0.5f, (screen.y - g_MenuHeight) * 0.5f);
+    }
+    s_menu_pos.x = std::max(0.0f, std::min(s_menu_pos.x, screen.x - g_MenuWidth));
+    s_menu_pos.y = std::max(0.0f, std::min(s_menu_pos.y, screen.y - g_MenuHeight));
+
     ImGui::SetNextWindowSize(ImVec2(g_MenuWidth, g_MenuHeight), ImGuiCond_Always);
+    ImGui::SetNextWindowPos(s_menu_pos, ImGuiCond_Always);
+
     ImGuiWindowFlags flags =
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
         ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar |
-        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBackground;
+        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBackground |
+        ImGuiWindowFlags_NoMove;
 
-    ImGui::Begin("NEXUS_CORE", nullptr, flags);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    if (ImGui::Begin("NEXUS_CORE", nullptr, flags)) {
 
     ImDrawList* draw = ImGui::GetWindowDrawList();
     ImVec2 wp = ImGui::GetWindowPos();
@@ -384,8 +411,19 @@ static void RenderMenu() {
         draw->AddLine(ImVec2(x, lineY), ImVec2(x + 9.0f * scale_y, lineY), dc, 2.0f);
     }
 
-    // Close button
+    // Header Drag Handle: Allows moving the menu anywhere on screen by dragging the top header
     float closeSize = 42.0f * scale_y;
+    float headerH = 65.0f * scale_y;
+    ImGui::SetCursorScreenPos(wp);
+    ImGui::InvisibleButton("##NexusHeaderDragBar", ImVec2(W - pad - closeSize - 20.0f * scale_y, headerH));
+    if (ImGui::IsItemActive()) {
+        s_menu_pos.x += io.MouseDelta.x;
+        s_menu_pos.y += io.MouseDelta.y;
+        s_menu_pos.x = std::max(0.0f, std::min(s_menu_pos.x, screen.x - g_MenuWidth));
+        s_menu_pos.y = std::max(0.0f, std::min(s_menu_pos.y, screen.y - g_MenuHeight));
+    }
+
+    // Close button
     ImVec2 closePos(wp.x + W - pad - closeSize, headY - 6.0f * scale_y);
 
     ImGui::SetCursorScreenPos(closePos);
@@ -777,7 +815,9 @@ static void RenderMenu() {
         ftx += titleFont->CalcTextSizeA(footSize, FLT_MAX, 0, buf).x;
     }
 
+    }
     ImGui::End();
+    ImGui::PopStyleVar();
 }
 
 namespace ui::menu {
