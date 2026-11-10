@@ -88,9 +88,6 @@ void load_logo_pos() {
     }
 }
 
-}
-namespace ui::menu {
-
 static void ApplyCustomTheme(float scale_y = 1.0f) {
     ImGuiStyle& style = ImGui::GetStyle();
     ImVec4* colors = style.Colors;
@@ -820,8 +817,6 @@ static void RenderMenu() {
     ImGui::PopStyleVar();
 }
 
-namespace ui::menu {
-
 void render() {
     RenderFloatingLogo();
     if (g_ShowMenu) {
@@ -830,4 +825,3 @@ void render() {
 }
 
 }
-namespace ui::menu {
