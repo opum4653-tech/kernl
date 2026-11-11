@@ -323,8 +323,12 @@ void render() {
         bool clicked = ImGui::IsItemClicked();
         bool active = ImGui::IsItemActive();
         bool deactivated = ImGui::IsItemDeactivated();
+        static bool s_was_activated = false;
+        static double s_last_toggle_time = 0.0;
+        double cur_time = ImGui::GetTime();
 
-        if (clicked) {
+        if (clicked || ImGui::IsItemActivated()) {
+            s_was_activated = true;
             s_click_down_pos = mousePos;
             s_moved_drag = false;
             s_is_dragging = false;
@@ -340,13 +344,19 @@ void render() {
             }
         }
 
-        if (deactivated && !s_moved_drag) {
-            g_ShowMenu = !g_ShowMenu;
+        // Startup safety: ignore touches during first 1.5s to prevent loader launch tap from opening menu
+        if (cur_time > 1.5 && s_was_activated && deactivated && !s_moved_drag) {
+            if (cur_time - s_last_toggle_time > 0.30) {
+                g_ShowMenu = !g_ShowMenu;
+                s_last_toggle_time = cur_time;
+            }
             s_moved_drag = false;
             s_is_dragging = false;
+            s_was_activated = false;
         } else if (deactivated) {
             s_moved_drag = false;
             s_is_dragging = false;
+            s_was_activated = false;
         }
 
         DrawCircularLogo(dl, center, logoRadius, s_is_dragging);
