@@ -19,7 +19,7 @@ namespace ImGui {
     IMGUI_API void ClearActiveID();
 }
 
-extern std::atomic<bool> main_thread_flag;
+extern bool main_thread_flag;
 extern int abs_ScreenX;
 extern int abs_ScreenY;
 extern int native_window_screen_x;
