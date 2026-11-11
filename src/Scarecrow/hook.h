@@ -563,9 +563,9 @@ Vector3 GetTargetPosition(uintptr_t enemy) {
   uintptr_t boneBase = 0;
   Vector3 offset(0, 0, 0);
   switch (selectedBoneIndex) {
-  case 0: boneBase = Read<uintptr_t>(enemy + Offsets::Bones_Head); offset = Vector3(0, 0.08f, 0); break;
+  case 0: boneBase = Read<uintptr_t>(enemy + Offsets::Bones_Head); offset = Vector3(0, 0.12f, 0); break;
   case 1: boneBase = Read<uintptr_t>(enemy + Offsets::Bones_Hip); offset = Vector3(0, 0.1f, 0); break;
-  default: boneBase = Read<uintptr_t>(enemy + Offsets::Bones_Head); offset = Vector3(0, 0.08f, 0); break;
+  default: boneBase = Read<uintptr_t>(enemy + Offsets::Bones_Head); offset = Vector3(0, 0.12f, 0); break;
   }
   if (!IsValidPointer(boneBase)) return Vector3::Zero();
   Vector3 bonePos = GetNodePosition(boneBase);
@@ -694,7 +694,7 @@ namespace aimsilent {
                 if (IsValidPointer(targetNode)) {
                     Vector3 targetPos = GetNodePosition(targetNode);
                     if (targetPos.X != 0 || targetPos.Y != 0 || targetPos.Z != 0) {
-                        if (isHeadshot) targetPos.Y += 0.08f;
+                        if (isHeadshot) targetPos.Y += 0.12f;
                         else targetPos.Y -= 0.08f;
 
                         Vector3 startPos = Read<Vector3>(aimingInfo + Offsets::Player_AimingInfoStartPos);
@@ -1133,16 +1133,16 @@ void AimbotMenu(float sw, float sh, uintptr_t libAddress) {
     g_TouchViewMatrix = matrix;
   }
 
-  uintptr_t dictAddr = Read<uintptr_t>(m_Match + 0x148);
-  if (!IsValidPointer(dictAddr)) {
-    dictAddr = Read<uintptr_t>(BaseGame + Offsets::Match_PlayerDict);
-  }
-  if (!IsValidPointer(dictAddr)) {
-    dictAddr = Read<uintptr_t>(BaseGame + 0xC8);
-  }
-  if (!IsValidPointer(dictAddr)) return;
-
+  uintptr_t dictAddr = Read<uintptr_t>(BaseGame + Offsets::Match_PlayerDict);
   MonoDictionary dict(dictAddr);
+  if (!dict.valid) {
+    dictAddr = Read<uintptr_t>(BaseGame + 0xC8);
+    dict = MonoDictionary(dictAddr);
+  }
+  if (!dict.valid) {
+    dictAddr = Read<uintptr_t>(m_Match + 0x148);
+    dict = MonoDictionary(dictAddr);
+  }
   if (!dict.valid) return;
 
   Vector3 LocalPosition = GetNodePosition(GetPlayerHeadTF(localPlayer));
@@ -1157,6 +1157,10 @@ void AimbotMenu(float sw, float sh, uintptr_t libAddress) {
 
     if (Read<bool>(enemy + Offsets::Player_IsDead)) continue;
 
+    auto isClientBot = Read<int>(enemy + Offsets::Player_ClientBotCheck);
+    bool isBot = (isClientBot == 1);
+    if (IgnoreBot && isBot) continue;
+
     auto AvatarManager = Read<uintptr_t>(enemy + Offsets::Player_AvatarManager);
     if (IsValidPointer(AvatarManager)) {
       auto UmaAvatarSimple = Read<uintptr_t>(AvatarManager + Offsets::Avatar_UmaSimple);
@@ -1166,8 +1170,8 @@ void AimbotMenu(float sw, float sh, uintptr_t libAddress) {
 
         auto UmaData = Read<uintptr_t>(UmaAvatarSimple + Offsets::Avatar_UmaData);
         if (IsValidPointer(UmaData)) {
-          if (Read<bool>(UmaData + Offsets::Avatar_IsDead)) continue;
-          if (Read<bool>(UmaData + 0x81)) continue;
+          if (Read<bool>(UmaData + Offsets::Avatar_UmaData_LocalPlayer)) continue;
+          if (!isBot && Read<bool>(UmaData + Offsets::Avatar_UmaData_Teammate)) continue;
         }
       }
     }
@@ -1251,11 +1255,19 @@ void AimbotMenu(float sw, float sh, uintptr_t libAddress) {
     if (isFiring > 0 || AimLock) {
       Vector3 aimTargetHead = bestPos;
       if (selectedBoneIndex == 0) {
-        aimTargetHead.Y += 0.08f;
+        aimTargetHead.Y += 0.12f;
       }
       Quaternion targetRot = GetRotationToTheLocation(aimTargetHead, 0.0f, CameraPosition);
       Write<Quaternion>(localPlayer + Offsets::Player_ViewRotation, targetRot);
       Write<int>(localPlayer + Offsets::CallSetAimRotationCount, Read<int>(localPlayer + Offsets::CallSetAimRotationCount) + 1);
+
+      uintptr_t weapon = Read<uintptr_t>(localPlayer + Offsets::Player_Weapon);
+      if (IsValidPointer(weapon)) {
+        uintptr_t wdata = Read<uintptr_t>(weapon + Offsets::Weapon::Data);
+        if (IsValidPointer(wdata)) {
+          Write<float>(wdata + Offsets::Weapon::Recoil, 0.0f);
+        }
+      }
     }
   }
 
@@ -1272,7 +1284,7 @@ void AimbotMenu(float sw, float sh, uintptr_t libAddress) {
         uintptr_t headNode = Read<uintptr_t>(bestTarget + Offsets::Bones_Head);
         if (IsValidPointer(headNode)) {
           targetPos = GetNodePosition(headNode);
-          targetPos.Y += 0.08f;
+          targetPos.Y += 0.12f;
         }
       } else if (selectedBoneIndex == 1) {
         uintptr_t headNode = Read<uintptr_t>(bestTarget + Offsets::Bones_Head);
@@ -1322,6 +1334,14 @@ void AimbotMenu(float sw, float sh, uintptr_t libAddress) {
                 uintptr_t headCollider = Read<uintptr_t>(bestTarget + Offsets::Player_HeadCollider);
                 if (IsValidPointer(headCollider)) {
                   Write<uintptr_t>(bestTarget + Offsets::Player_AimTargetWrite, headCollider);
+                }
+              }
+
+              uintptr_t weapon = Read<uintptr_t>(localPlayer + Offsets::Player_Weapon);
+              if (IsValidPointer(weapon)) {
+                uintptr_t wdata = Read<uintptr_t>(weapon + Offsets::Weapon::Data);
+                if (IsValidPointer(wdata)) {
+                  Write<float>(wdata + Offsets::Weapon::Recoil, 0.0f);
                 }
               }
             }
@@ -1431,16 +1451,16 @@ void DrawESP(float sw, float sh, uintptr_t libAddress) {
     LocalPosition = GetNodePosition(GetPlayerHeadTF(localPlayer));
   }
 
-  uintptr_t dictAddr = Read<uintptr_t>(m_Match + 0x148);
-  if (!IsValidPointer(dictAddr)) {
-    dictAddr = Read<uintptr_t>(BaseGame + Offsets::Match_PlayerDict);
-  }
-  if (!IsValidPointer(dictAddr)) {
-    dictAddr = Read<uintptr_t>(BaseGame + 0xC8);
-  }
-  if (!IsValidPointer(dictAddr)) return;
-
+  uintptr_t dictAddr = Read<uintptr_t>(BaseGame + Offsets::Match_PlayerDict);
   MonoDictionary dict(dictAddr);
+  if (!dict.valid) {
+    dictAddr = Read<uintptr_t>(BaseGame + 0xC8);
+    dict = MonoDictionary(dictAddr);
+  }
+  if (!dict.valid) {
+    dictAddr = Read<uintptr_t>(m_Match + 0x148);
+    dict = MonoDictionary(dictAddr);
+  }
   if (!dict.valid) return;
 
   int tempPlayerCount = 0;
@@ -1454,14 +1474,18 @@ void DrawESP(float sw, float sh, uintptr_t libAddress) {
 
     if (Read<bool>(enemy + Offsets::Player_IsDead)) continue;
 
+    auto isClientBot = Read<int>(enemy + Offsets::Player_ClientBotCheck);
+    bool isBot = (isClientBot == 1);
+    if (IgnoreBot && isBot) continue;
+
     auto AvatarManager = Read<uintptr_t>(enemy + Offsets::Player_AvatarManager);
     if (IsValidPointer(AvatarManager)) {
       auto UmaAvatarSimple = Read<uintptr_t>(AvatarManager + Offsets::Avatar_UmaSimple);
       if (IsValidPointer(UmaAvatarSimple)) {
         auto UmaData = Read<uintptr_t>(UmaAvatarSimple + Offsets::Avatar_UmaData);
         if (IsValidPointer(UmaData)) {
-          if (Read<bool>(UmaData + Offsets::Avatar_IsDead)) continue;
-          if (Read<bool>(UmaData + 0x81)) continue;
+          if (Read<bool>(UmaData + Offsets::Avatar_UmaData_LocalPlayer)) continue;
+          if (!isBot && Read<bool>(UmaData + Offsets::Avatar_UmaData_Teammate)) continue;
         }
       }
     }
@@ -1562,7 +1586,7 @@ void DrawESP(float sw, float sh, uintptr_t libAddress) {
             if (IsValidPointer(targetBone)) {
                 Vector3 worldT = GetNodePosition(targetBone);
                 if (worldT != Vector3::Zero()) {
-                    if (TouchCfg.TargetBone == 0) worldT.Y += 0.08f;
+                    if (TouchCfg.TargetBone == 0) worldT.Y += 0.12f;
                     Vector3 screenT = WorldToScreenPoint(matrix, worldT);
                     if (screenT.X > 0 && screenT.Y > 0 && screenT.X < abs_ScreenX && screenT.Y < abs_ScreenY) {
                         float scrDistT = sqrtf((screenT.X - abs_ScreenX / 2.0f) * (screenT.X - abs_ScreenX / 2.0f) +

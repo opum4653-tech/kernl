@@ -306,6 +306,8 @@ public:
         if (!valid || i < 0 || i >= count) return 0;
         int hashCode = Memory::Read<int>(entries_head + i * 0x18);
         if (hashCode < 0) return 0;
+        uintptr_t key = Memory::Read<uintptr_t>(entries_head + i * 0x18 + 0x08);
+        if (!key) return 0;
         return Memory::Read<uintptr_t>(entries_head + i * 0x18 + 0x10);
     }
 };
