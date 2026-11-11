@@ -64,7 +64,7 @@ namespace Offsets {
     }
 
     namespace Camera {
-        constexpr uintptr_t Follow               = 0x28;
+        constexpr uintptr_t Follow               = 0x30;
         constexpr uintptr_t IntPtr               = 0x10;
         constexpr uintptr_t Matrix               = 0x100;
     }

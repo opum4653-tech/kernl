@@ -288,14 +288,15 @@ public:
     explicit MonoDictionary(uintptr_t addr = 0) : address(addr), entries_head(0), count(0), valid(false) {
         if (!IsValidPointer(addr)) return;
 
-        struct { uintptr_t entries; uintptr_t count_and_pad; } header{};
-        if (Memory::ProcessRead(addr + 0x18, &header, sizeof(header)) != 0) return;
+        uintptr_t entries = Memory::Read<uintptr_t>(addr + 0x18);
+        if (!IsValidPointer(entries)) return;
 
-        if (!IsValidPointer(header.entries)) return;
-
-        entries_head = header.entries + 0x20;
-        count = static_cast<int>(header.count_and_pad & 0xFFFFFFFFu);
-        valid = (count > 0 && count < 0x1000);
+        entries_head = entries + 0x20;
+        count = Memory::Read<int>(addr + 0x20);
+        if (count <= 0 || count >= 1000) {
+            count = Memory::Read<int>(entries + 0x18);
+        }
+        valid = (count > 0 && count < 1000);
     }
 
     inline uintptr_t getValues() const { return entries_head; }
@@ -305,8 +306,6 @@ public:
         if (!valid || i < 0 || i >= count) return 0;
         int hashCode = Memory::Read<int>(entries_head + i * 0x18);
         if (hashCode < 0) return 0;
-        uintptr_t key = Memory::Read<uintptr_t>(entries_head + i * 0x18 + 0x08);
-        if (!key) return 0;
         return Memory::Read<uintptr_t>(entries_head + i * 0x18 + 0x10);
     }
 };

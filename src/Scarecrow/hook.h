@@ -147,8 +147,13 @@ void UpdateNoReload(uintptr_t localPlayer) {
     if (NoReload) {
         if (!origSaved) { origValue = Read<bool>(attrs + Offsets::ShootNoReload); origSaved = true; }
         Write<bool>(attrs + Offsets::ShootNoReload, true);
+        Write<bool>(attrs + 0x110, true);
     } else {
-        if (origSaved) { Write<bool>(attrs + Offsets::ShootNoReload, origValue); origSaved = false; }
+        if (origSaved) {
+            Write<bool>(attrs + Offsets::ShootNoReload, origValue);
+            Write<bool>(attrs + 0x110, false);
+            origSaved = false;
+        }
     }
 }
 
@@ -156,7 +161,10 @@ inline void UpdatePlayerAttributes(uintptr_t localPlayer) {
     if (!IsValidPointer(localPlayer)) return;
     uintptr_t attrs = Read<uintptr_t>(localPlayer + Offsets::PlayerAttributes);
     if (!IsValidPointer(attrs)) return;
-    // No player attribute features currently enabled
+    if (SpeedHackV2) {
+        Write<float>(attrs + 0x2C0, SpeedMultiplier);
+        Write<float>(attrs + 0x2BC, SpeedMultiplier);
+    }
 }
 
 void UpdateNoRecoil(uintptr_t localPlayer) {
@@ -1046,9 +1054,6 @@ void AimbotMenu(float sw, float sh, uintptr_t libAddress) {
 
   ApplySpeedHack(BaseGame);
 
-  bool matchActive = Read<bool>(BaseGame + Offsets::MatchIsRunning);
-  if (!matchActive) return;
-
   auto m_Match = Read<uintptr_t>(BaseGame + Offsets::BaseGame_Match);
   if (!IsValidPointer(m_Match)) return;
 
@@ -1092,13 +1097,19 @@ void AimbotMenu(float sw, float sh, uintptr_t libAddress) {
 
   auto FollowCamera = Read<uintptr_t>(localPlayer + Offsets::Cam_FollowCamera);
   uintptr_t Camera = 0;
-  if (IsValidPointer(FollowCamera)) Camera = Read<uintptr_t>(FollowCamera + Offsets::Cam_CameraObject);
+  if (IsValidPointer(FollowCamera)) {
+    Camera = Read<uintptr_t>(FollowCamera + 0x30);
+    if (!IsValidPointer(Camera)) Camera = Read<uintptr_t>(FollowCamera + 0x28);
+  }
   uintptr_t IntPtrCam = 0;
   if (IsValidPointer(Camera)) IntPtrCam = Read<uintptr_t>(Camera + Offsets::Cam_RawCameraData);
 
   if (!IsValidPointer(IntPtrCam)) {
     FollowCamera = Read<uintptr_t>(localPlayer + 0x690);
-    if (IsValidPointer(FollowCamera)) Camera = Read<uintptr_t>(FollowCamera + 0x28);
+    if (IsValidPointer(FollowCamera)) {
+      Camera = Read<uintptr_t>(FollowCamera + 0x30);
+      if (!IsValidPointer(Camera)) Camera = Read<uintptr_t>(FollowCamera + 0x28);
+    }
     if (IsValidPointer(Camera)) IntPtrCam = Read<uintptr_t>(Camera + 0x10);
   }
   if (!IsValidPointer(IntPtrCam)) return;
@@ -1110,7 +1121,13 @@ void AimbotMenu(float sw, float sh, uintptr_t libAddress) {
     g_TouchViewMatrix = matrix;
   }
 
-  uintptr_t dictAddr = Read<uintptr_t>(BaseGame + Offsets::Match_PlayerDict);
+  uintptr_t dictAddr = Read<uintptr_t>(m_Match + 0x148);
+  if (!IsValidPointer(dictAddr)) {
+    dictAddr = Read<uintptr_t>(BaseGame + Offsets::Match_PlayerDict);
+  }
+  if (!IsValidPointer(dictAddr)) {
+    dictAddr = Read<uintptr_t>(BaseGame + 0xC8);
+  }
   if (!IsValidPointer(dictAddr)) return;
 
   MonoDictionary dict(dictAddr);
@@ -1129,17 +1146,18 @@ void AimbotMenu(float sw, float sh, uintptr_t libAddress) {
     if (Read<bool>(enemy + Offsets::Player_IsDead)) continue;
 
     auto AvatarManager = Read<uintptr_t>(enemy + Offsets::Player_AvatarManager);
-    if (!IsValidPointer(AvatarManager)) continue;
-    auto UmaAvatarSimple = Read<uintptr_t>(AvatarManager + Offsets::Avatar_UmaSimple);
-    if (!IsValidPointer(UmaAvatarSimple)) continue;
+    if (IsValidPointer(AvatarManager)) {
+      auto UmaAvatarSimple = Read<uintptr_t>(AvatarManager + Offsets::Avatar_UmaSimple);
+      if (IsValidPointer(UmaAvatarSimple)) {
+        bool isVisible = Read<bool>(UmaAvatarSimple + Offsets::Avatar_IsVisible2);
+        if (AimVisible && !isVisible) continue;
 
-    bool isVisible = Read<bool>(UmaAvatarSimple + Offsets::Avatar_IsVisible2);
-    if (AimVisible && !isVisible) continue;
-
-    auto UmaData = Read<uintptr_t>(UmaAvatarSimple + Offsets::Avatar_UmaData);
-    if (IsValidPointer(UmaData)) {
-      if (Read<bool>(UmaData + Offsets::Avatar_IsDead)) continue;
-      if (Read<bool>(UmaData + 0x80)) continue;
+        auto UmaData = Read<uintptr_t>(UmaAvatarSimple + Offsets::Avatar_UmaData);
+        if (IsValidPointer(UmaData)) {
+          if (Read<bool>(UmaData + Offsets::Avatar_IsDead)) continue;
+          if (Read<bool>(UmaData + 0x81)) continue;
+        }
+      }
     }
 
     bool isKnocked = IsPlayerKnocked(enemy);
@@ -1156,7 +1174,7 @@ void AimbotMenu(float sw, float sh, uintptr_t libAddress) {
         }
       }
     }
-    if (enemyHealth <= 0) continue;
+    if (enemyHealth <= 0) enemyHealth = 100;
 
     if (Read<bool>(enemy + Offsets::Player_IsSpectating)) continue;
 
@@ -1316,9 +1334,6 @@ void DrawESP(float sw, float sh, uintptr_t libAddress) {
   auto BaseGame = Read<uintptr_t>(StaticFields + 0x8);
   if (!IsValidPointer(BaseGame)) return;
 
-  bool matchActive = Read<bool>(BaseGame + Offsets::MatchIsRunning);
-  if (!matchActive) return;
-
   auto m_Match = Read<uintptr_t>(BaseGame + Offsets::BaseGame_Match);
   if (!IsValidPointer(m_Match)) return;
 
@@ -1365,13 +1380,19 @@ void DrawESP(float sw, float sh, uintptr_t libAddress) {
 
   auto FollowCamera = Read<uintptr_t>(localPlayer + Offsets::Cam_FollowCamera);
   uintptr_t Camera = 0;
-  if (IsValidPointer(FollowCamera)) Camera = Read<uintptr_t>(FollowCamera + Offsets::Cam_CameraObject);
+  if (IsValidPointer(FollowCamera)) {
+    Camera = Read<uintptr_t>(FollowCamera + 0x30);
+    if (!IsValidPointer(Camera)) Camera = Read<uintptr_t>(FollowCamera + 0x28);
+  }
   uintptr_t IntPtrCam = 0;
   if (IsValidPointer(Camera)) IntPtrCam = Read<uintptr_t>(Camera + Offsets::Cam_RawCameraData);
 
   if (!IsValidPointer(IntPtrCam)) {
     FollowCamera = Read<uintptr_t>(localPlayer + 0x690);
-    if (IsValidPointer(FollowCamera)) Camera = Read<uintptr_t>(FollowCamera + 0x28);
+    if (IsValidPointer(FollowCamera)) {
+      Camera = Read<uintptr_t>(FollowCamera + 0x30);
+      if (!IsValidPointer(Camera)) Camera = Read<uintptr_t>(FollowCamera + 0x28);
+    }
     if (IsValidPointer(Camera)) IntPtrCam = Read<uintptr_t>(Camera + 0x10);
   }
 
@@ -1389,7 +1410,13 @@ void DrawESP(float sw, float sh, uintptr_t libAddress) {
     LocalPosition = GetNodePosition(GetPlayerHeadTF(localPlayer));
   }
 
-  uintptr_t dictAddr = Read<uintptr_t>(BaseGame + Offsets::Match_PlayerDict);
+  uintptr_t dictAddr = Read<uintptr_t>(m_Match + 0x148);
+  if (!IsValidPointer(dictAddr)) {
+    dictAddr = Read<uintptr_t>(BaseGame + Offsets::Match_PlayerDict);
+  }
+  if (!IsValidPointer(dictAddr)) {
+    dictAddr = Read<uintptr_t>(BaseGame + 0xC8);
+  }
   if (!IsValidPointer(dictAddr)) return;
 
   MonoDictionary dict(dictAddr);
@@ -1407,17 +1434,15 @@ void DrawESP(float sw, float sh, uintptr_t libAddress) {
     if (Read<bool>(enemy + Offsets::Player_IsDead)) continue;
 
     auto AvatarManager = Read<uintptr_t>(enemy + Offsets::Player_AvatarManager);
-    if (!IsValidPointer(AvatarManager)) continue;
-
-    auto UmaAvatarSimple = Read<uintptr_t>(AvatarManager + Offsets::Avatar_UmaSimple);
-    if (!IsValidPointer(UmaAvatarSimple)) continue;
-
-    bool isVisible = Read<bool>(UmaAvatarSimple + Offsets::Avatar_IsVisible2);
-
-    auto UmaData = Read<uintptr_t>(UmaAvatarSimple + Offsets::Avatar_UmaData);
-    if (IsValidPointer(UmaData)) {
-      if (Read<bool>(UmaData + Offsets::Avatar_IsDead)) continue;
-      if (Read<bool>(UmaData + 0x80)) continue;
+    if (IsValidPointer(AvatarManager)) {
+      auto UmaAvatarSimple = Read<uintptr_t>(AvatarManager + Offsets::Avatar_UmaSimple);
+      if (IsValidPointer(UmaAvatarSimple)) {
+        auto UmaData = Read<uintptr_t>(UmaAvatarSimple + Offsets::Avatar_UmaData);
+        if (IsValidPointer(UmaData)) {
+          if (Read<bool>(UmaData + Offsets::Avatar_IsDead)) continue;
+          if (Read<bool>(UmaData + 0x81)) continue;
+        }
+      }
     }
 
     bool isKnocked = IsPlayerKnocked(enemy);
@@ -1434,7 +1459,7 @@ void DrawESP(float sw, float sh, uintptr_t libAddress) {
       }
     }
 
-    if (Health <= 0) continue;
+    if (Health <= 0) Health = 100;
 
     auto isClientBot = Read<int>(enemy + Offsets::Player_ClientBotCheck);
     if (IgnoreBot && isClientBot == 1) continue;
