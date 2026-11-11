@@ -563,9 +563,9 @@ Vector3 GetTargetPosition(uintptr_t enemy) {
   uintptr_t boneBase = 0;
   Vector3 offset(0, 0, 0);
   switch (selectedBoneIndex) {
-  case 0: boneBase = Read<uintptr_t>(enemy + Offsets::Bones_Head); break;
+  case 0: boneBase = Read<uintptr_t>(enemy + Offsets::Bones_Head); offset = Vector3(0, 0.08f, 0); break;
   case 1: boneBase = Read<uintptr_t>(enemy + Offsets::Bones_Hip); offset = Vector3(0, 0.1f, 0); break;
-  default: boneBase = Read<uintptr_t>(enemy + Offsets::Bones_Head); break;
+  default: boneBase = Read<uintptr_t>(enemy + Offsets::Bones_Head); offset = Vector3(0, 0.08f, 0); break;
   }
   if (!IsValidPointer(boneBase)) return Vector3::Zero();
   Vector3 bonePos = GetNodePosition(boneBase);
@@ -694,7 +694,7 @@ namespace aimsilent {
                 if (IsValidPointer(targetNode)) {
                     Vector3 targetPos = GetNodePosition(targetNode);
                     if (targetPos.X != 0 || targetPos.Y != 0 || targetPos.Z != 0) {
-                        if (isHeadshot) targetPos.Y += 0.04f;
+                        if (isHeadshot) targetPos.Y += 0.08f;
                         else targetPos.Y -= 0.08f;
 
                         Vector3 startPos = Read<Vector3>(aimingInfo + Offsets::Player_AimingInfoStartPos);
@@ -706,8 +706,20 @@ namespace aimsilent {
                         hookDir.Y = targetPos.Y - startPos.Y;
                         hookDir.Z = targetPos.Z - startPos.Z;
 
-                        Write<Vector3>(aimingInfo + Offsets::Player_AimingInfoDirection, hookDir);
-                        Write<Vector3>(aimingInfo + Offsets::sAim4, hookDir);
+                        float dist = sqrtf(hookDir.X * hookDir.X + hookDir.Y * hookDir.Y + hookDir.Z * hookDir.Z);
+                        if (dist > 0.0001f) {
+                            Vector3 normDir(hookDir.X / dist, hookDir.Y / dist, hookDir.Z / dist);
+                            Write<Vector3>(aimingInfo + Offsets::Player_AimingInfoDirection, normDir);
+                            Write<Vector3>(aimingInfo + Offsets::sAim4, normDir);
+                            Write<bool>(aimingInfo + 0x71, false);
+                        }
+
+                        if (isHeadshot) {
+                            uintptr_t headCollider = Read<uintptr_t>(currentTarget + Offsets::Player_HeadCollider);
+                            if (IsValidPointer(headCollider)) {
+                                Write<uintptr_t>(currentTarget + Offsets::Player_AimTargetWrite, headCollider);
+                            }
+                        }
                     }
                 }
             }
@@ -1228,30 +1240,39 @@ void AimbotMenu(float sw, float sh, uintptr_t libAddress) {
 
   if (bestTarget && Aimbot) {
     auto CameraPosition = GetPosition(GetPlayerMainCamera(localPlayer));
+    if (CameraPosition == Vector3::Zero()) {
+      CameraPosition = LocalPosition;
+    }
     int isFiring = Read<int>(localPlayer + Offsets::Player_FiringState);
     if (!isFiring) {
       isFiring = Read<bool>(localPlayer + Offsets::sAim1) ? 1 : 0;
     }
 
     if (isFiring > 0 || AimLock) {
-      Quaternion targetRot = GetRotationToTheLocation(bestPos, 0.0f, CameraPosition);
+      Vector3 aimTargetHead = bestPos;
+      if (selectedBoneIndex == 0) {
+        aimTargetHead.Y += 0.08f;
+      }
+      Quaternion targetRot = GetRotationToTheLocation(aimTargetHead, 0.0f, CameraPosition);
       Write<Quaternion>(localPlayer + Offsets::Player_ViewRotation, targetRot);
+      Write<int>(localPlayer + Offsets::CallSetAimRotationCount, Read<int>(localPlayer + Offsets::CallSetAimRotationCount) + 1);
     }
   }
 
-  if (bestTarget && AimVisible) {
+  if (bestTarget && (AimVisible || AimSilent || Aimbot || AimLock)) {
     bool isFiring = Read<bool>(localPlayer + Offsets::sAim1);
     if (!isFiring) {
       isFiring = (Read<int>(localPlayer + Offsets::Player_FiringState) > 0);
     }
 
-    if (isFiring) {
+    if (isFiring || AimLock) {
       Vector3 targetPos = Vector3::Zero();
 
       if (selectedBoneIndex == 0) {
         uintptr_t headNode = Read<uintptr_t>(bestTarget + Offsets::Bones_Head);
         if (IsValidPointer(headNode)) {
           targetPos = GetNodePosition(headNode);
+          targetPos.Y += 0.08f;
         }
       } else if (selectedBoneIndex == 1) {
         uintptr_t headNode = Read<uintptr_t>(bestTarget + Offsets::Bones_Head);
@@ -1541,6 +1562,7 @@ void DrawESP(float sw, float sh, uintptr_t libAddress) {
             if (IsValidPointer(targetBone)) {
                 Vector3 worldT = GetNodePosition(targetBone);
                 if (worldT != Vector3::Zero()) {
+                    if (TouchCfg.TargetBone == 0) worldT.Y += 0.08f;
                     Vector3 screenT = WorldToScreenPoint(matrix, worldT);
                     if (screenT.X > 0 && screenT.Y > 0 && screenT.X < abs_ScreenX && screenT.Y < abs_ScreenY) {
                         float scrDistT = sqrtf((screenT.X - abs_ScreenX / 2.0f) * (screenT.X - abs_ScreenX / 2.0f) +

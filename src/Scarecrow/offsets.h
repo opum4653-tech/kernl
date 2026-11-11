@@ -194,7 +194,7 @@ namespace Offsets {
     constexpr uintptr_t sAim2 = Player_AimInfo;
     constexpr uintptr_t sAim3 = Bullet_SpawnPos;
     constexpr uintptr_t sAim4 = Bullet_DirWrite;
-    constexpr uintptr_t CallSetAimRotationCount = 0x79C;
+    constexpr uintptr_t CallSetAimRotationCount = 0x810;
 
     constexpr uintptr_t IsGrounded = Player_IsGrounded;
     constexpr uintptr_t CurrentGroundState = 0xD0;
