@@ -1170,8 +1170,8 @@ void AimbotMenu(float sw, float sh, uintptr_t libAddress) {
 
         auto UmaData = Read<uintptr_t>(UmaAvatarSimple + Offsets::Avatar_UmaData);
         if (IsValidPointer(UmaData)) {
-          if (Read<bool>(UmaData + Offsets::Avatar_UmaData_LocalPlayer)) continue;
-          if (!isBot && Read<bool>(UmaData + Offsets::Avatar_UmaData_Teammate)) continue;
+          if (Read<bool>(UmaData + Offsets::UmaData_LocalPlayer)) continue;
+          if (!isBot && Read<bool>(UmaData + Offsets::UmaData_Teammate)) continue;
         }
       }
     }
@@ -1484,8 +1484,8 @@ void DrawESP(float sw, float sh, uintptr_t libAddress) {
       if (IsValidPointer(UmaAvatarSimple)) {
         auto UmaData = Read<uintptr_t>(UmaAvatarSimple + Offsets::Avatar_UmaData);
         if (IsValidPointer(UmaData)) {
-          if (Read<bool>(UmaData + Offsets::Avatar_UmaData_LocalPlayer)) continue;
-          if (!isBot && Read<bool>(UmaData + Offsets::Avatar_UmaData_Teammate)) continue;
+          if (Read<bool>(UmaData + Offsets::UmaData_LocalPlayer)) continue;
+          if (!isBot && Read<bool>(UmaData + Offsets::UmaData_Teammate)) continue;
         }
       }
     }
@@ -1506,15 +1506,10 @@ void DrawESP(float sw, float sh, uintptr_t libAddress) {
 
     if (Health <= 0) Health = 100;
 
-    auto isClientBot = Read<int>(enemy + Offsets::Player_ClientBotCheck);
-    if (IgnoreBot && isClientBot == 1) continue;
-
     char currentName[64];
     memset(currentName, 0, 64);
-    bool isBot = false;
 
-    if (isClientBot == 1) {
-      isBot = true;
+    if (isBot) {
       strcpy(currentName, "BOT");
       tempBotCount++;
     } else {
