@@ -137,34 +137,21 @@ bool animateHealthBar = false;
 char PlayerName[64];
 
 void UpdateNoReload(uintptr_t localPlayer) {
+    if (!NoReload) return;
     if (!IsValidPointer(localPlayer)) return;
     uintptr_t attrs = Read<uintptr_t>(localPlayer + Offsets::PlayerAttributes);
     if (!IsValidPointer(attrs)) return;
-    static uintptr_t lastAttrs = 0;
-    static bool origSaved = false;
-    static bool origValue = false;
-    if (attrs != lastAttrs) { lastAttrs = attrs; origSaved = false; origValue = false; }
-    if (NoReload) {
-        if (!origSaved) { origValue = Read<bool>(attrs + Offsets::ShootNoReload); origSaved = true; }
-        Write<bool>(attrs + Offsets::ShootNoReload, true);
-        Write<bool>(attrs + 0x110, true);
-    } else {
-        if (origSaved) {
-            Write<bool>(attrs + Offsets::ShootNoReload, origValue);
-            Write<bool>(attrs + 0x110, false);
-            origSaved = false;
-        }
-    }
+    Write<bool>(attrs + Offsets::ShootNoReload, true);
+    Write<bool>(attrs + 0x110, true);
 }
 
 inline void UpdatePlayerAttributes(uintptr_t localPlayer) {
+    if (!SpeedHackV2) return;
     if (!IsValidPointer(localPlayer)) return;
     uintptr_t attrs = Read<uintptr_t>(localPlayer + Offsets::PlayerAttributes);
     if (!IsValidPointer(attrs)) return;
-    if (SpeedHackV2) {
-        Write<float>(attrs + 0x2C0, SpeedMultiplier);
-        Write<float>(attrs + 0x2BC, SpeedMultiplier);
-    }
+    Write<float>(attrs + 0x2C0, SpeedMultiplier);
+    Write<float>(attrs + 0x2BC, SpeedMultiplier);
 }
 
 void UpdateNoRecoil(uintptr_t localPlayer) {
@@ -213,6 +200,7 @@ static auto GetPosition(uintptr_t Transform) {
   auto transformObjValue = Read<uintptr_t>(Transform + Offsets::Transform_TransformToObj);
   if (!IsValidPointer(transformObjValue)) return pos;
   auto indexValue = Read<uintptr_t>(transformObjValue + Offsets::Transform_ObjToIndex);
+  if (indexValue >= 0x10000) return pos;
   auto matrixValue = Read<uintptr_t>(transformObjValue + Offsets::Transform_ObjToMatrix);
   if (!IsValidPointer(matrixValue)) return pos;
   auto matrixListValue = Read<uintptr_t>(matrixValue + Offsets::Transform_MatrixList);
@@ -224,7 +212,7 @@ static auto GetPosition(uintptr_t Transform) {
   auto tries = 0;
   auto transformIndexValue = Read<int>(matrixIndicesValue + (indexValue * Offsets::Transform_IndexSize));
 
-  while (transformIndexValue >= 0 && tries < maxTries) {
+  while (transformIndexValue >= 0 && transformIndexValue < 0x10000 && tries < maxTries) {
     tries++;
     uintptr_t matrixItemPtr = matrixListValue + (transformIndexValue * Offsets::Transform_MatrixSize);
     if (!IsValidPointer(matrixItemPtr)) break;
@@ -1036,15 +1024,11 @@ void InitTouchAimbot() {
 
 void ApplySpeedHack(uintptr_t BaseGame) {
   if (!IsValidPointer(BaseGame)) return;
+  if (!SpeedHackV2) return;
   auto TimeService = Read<uintptr_t>(BaseGame + Offsets::Engine_TimeService);
   if (!IsValidPointer(TimeService)) return;
-
-  if (SpeedHackV2) {
-    float mappedSpeed = 0.033f + ((SpeedMultiplier - 1.0f) / 4.0f) * 0.026f;
-    Write<float>(TimeService + Offsets::Engine_TimeServiceSpeed, mappedSpeed);
-  } else {
-    Write<float>(TimeService + Offsets::Engine_TimeServiceSpeed, 0.033f);
-  }
+  float mappedSpeed = 0.033f + ((SpeedMultiplier - 1.0f) / 4.0f) * 0.026f;
+  Write<float>(TimeService + Offsets::Engine_TimeServiceSpeed, mappedSpeed);
 }
 
 void AimbotMenu(float sw, float sh, uintptr_t libAddress) {
@@ -1063,6 +1047,9 @@ void AimbotMenu(float sw, float sh, uintptr_t libAddress) {
 
   auto BaseGame = Read<uintptr_t>(StaticFields + 0x8);
   if (!IsValidPointer(BaseGame)) return;
+
+  bool matchActive = Read<bool>(BaseGame + Offsets::MatchIsRunning);
+  if (!matchActive) return;
 
   ApplySpeedHack(BaseGame);
 
@@ -1096,11 +1083,9 @@ void AimbotMenu(float sw, float sh, uintptr_t libAddress) {
 
   if (!IsValidPointer(localPlayer)) return;
 
-  auto Ghost = localPlayer + Offsets::GhostHack;
   if (GhostHack) {
+    auto Ghost = localPlayer + Offsets::GhostHack;
     Write<bool>(Ghost, true);
-  } else {
-    Write<bool>(Ghost, false);
   }
 
   UpdateNoReload(localPlayer);
@@ -1127,6 +1112,7 @@ void AimbotMenu(float sw, float sh, uintptr_t libAddress) {
   if (!IsValidPointer(IntPtrCam)) return;
 
   auto matrix = Read<D3DMatrix>(IntPtrCam + Offsets::Cam_ViewMatrix);
+  if (matrix._11 == 0.0f && matrix._22 == 0.0f) return;
 
   {
     std::lock_guard<std::mutex> lock(g_TouchAimMtx);
@@ -1374,6 +1360,9 @@ void DrawESP(float sw, float sh, uintptr_t libAddress) {
 
   auto BaseGame = Read<uintptr_t>(StaticFields + 0x8);
   if (!IsValidPointer(BaseGame)) return;
+
+  bool matchActive = Read<bool>(BaseGame + Offsets::MatchIsRunning);
+  if (!matchActive) return;
 
   auto m_Match = Read<uintptr_t>(BaseGame + Offsets::BaseGame_Match);
   if (!IsValidPointer(m_Match)) return;

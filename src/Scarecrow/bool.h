@@ -293,10 +293,10 @@ public:
 
         entries_head = entries + 0x20;
         count = Memory::Read<int>(addr + 0x20);
-        if (count <= 0 || count >= 1000) {
+        if (count <= 0 || count > 120) {
             count = Memory::Read<int>(entries + 0x18);
         }
-        valid = (count > 0 && count < 1000);
+        valid = (count > 0 && count <= 120);
     }
 
     inline uintptr_t getValues() const { return entries_head; }
@@ -308,7 +308,9 @@ public:
         if (hashCode < 0) return 0;
         uintptr_t key = Memory::Read<uintptr_t>(entries_head + i * 0x18 + 0x08);
         if (!key) return 0;
-        return Memory::Read<uintptr_t>(entries_head + i * 0x18 + 0x10);
+        uintptr_t val = Memory::Read<uintptr_t>(entries_head + i * 0x18 + 0x10);
+        if (!IsValidPointer(val)) return 0;
+        return val;
     }
 };
 
