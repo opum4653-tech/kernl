@@ -4,6 +4,7 @@
 #include "Android_touch/TouchHelperA.h"
 #include "driver.h"
 #include "cfg.hpp"
+#include "../globals.hpp"
 #include "../other/memory.hpp"
 #include "../func/esp.hpp"
 #include "../func/aim/aim.hpp"
