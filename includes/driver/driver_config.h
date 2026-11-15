@@ -33,70 +33,18 @@ struct AppConfig {
 };
 
 static AppConfig g_appConfig;
-// Stealth storage path isolated in root /data/local/tmp/. Never expose plaintext files on /storage/emulated/0/
-static std::string configPath = "/data/local/tmp/.nin_drv_cfg";
 
 inline void SaveConfig() {
-    // Clean up any legacy public traces from external storage
+    // 0% storage footprint - keep settings in RAM only
+    unlink("/data/local/tmp/.nin_drv_cfg");
     unlink("/storage/emulated/0/VoidHaxConfig.txt");
-
-    std::ofstream file(configPath);
-    if (!file.is_open()) {
-        return;
-    }
-    file << "DRIVER_OPTION=" << g_appConfig.driverOption << "\n";
-    file << "CAPTURE_MODE=" << g_appConfig.captureMode << "\n";
-    file.close();
 }
 
 inline bool LoadConfig() {
-    // Clean up any legacy public traces from external storage
+    // 0% storage footprint - load defaults into RAM
+    unlink("/data/local/tmp/.nin_drv_cfg");
     unlink("/storage/emulated/0/VoidHaxConfig.txt");
-
-    std::ifstream file(configPath);
-    if (!file.is_open()) {
-        return false;
-    }
-
-    std::string line;
-    while (std::getline(file, line)) {
-        if (line.empty() || line[0] == '#') continue;
-
-        line.erase(0, line.find_first_not_of(" \t\n\r"));
-        line.erase(line.find_last_not_of(" \t\n\r") + 1);
-
-        size_t equalsPos = line.find('=');
-        if (equalsPos == std::string::npos) continue;
-
-        std::string key = line.substr(0, equalsPos);
-        std::string value = line.substr(equalsPos + 1);
-
-        value.erase(0, value.find_first_not_of(" \t\n\r"));
-        value.erase(value.find_last_not_of(" \t\n\r") + 1);
-
-        if (key == "DRIVER_OPTION") {
-            try { g_appConfig.driverOption = std::stoi(value); } catch (...) {}
-        } else if (key == "CAPTURE_MODE") {
-            try { g_appConfig.captureMode = std::stoi(value); } catch (...) {}
-        }
-    }
-
-    file.close();
-
-    if (g_appConfig.driverOption < 1 || g_appConfig.driverOption > 5) {
-        g_appConfig.driverOption = 0;
-        return false;
-    }
-
-    if (g_appConfig.captureMode < 1 || g_appConfig.captureMode > 2) {
-        g_appConfig.captureMode = 0;
-        return false;
-    }
-
     g_appConfig.settingsLoaded = true;
-    printf("[Config] Loaded successfully!\n");
-    printf("[Config] Driver Option: %d\n", g_appConfig.driverOption);
-    printf("[Config] Capture Mode: %d\n", g_appConfig.captureMode);
     return true;
 }
 

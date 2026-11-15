@@ -206,31 +206,6 @@ static void handleTouchScroll() {
     }
 }
 
-static const char* get_logo_pos_file() {
-    static std::string path = "";
-    if (!path.empty()) return path.c_str();
-    const char* dirs[] = {
-        "/data/data/com.andorid.ninmods/files",
-        "/data/local/tmp",
-        "/sdcard/Android/data/com.andorid.ninmods/files"
-    };
-    for (const char* dir : dirs) {
-        std::string p = std::string(dir) + "/.pill_pos";
-        if (access(p.c_str(), R_OK) == 0) {
-            path = p;
-            return path.c_str();
-        }
-    }
-    for (const char* dir : dirs) {
-        if (access(dir, W_OK) == 0) {
-            path = std::string(dir) + "/.pill_pos";
-            return path.c_str();
-        }
-    }
-    path = "/data/local/tmp/.pill_pos";
-    return path.c_str();
-}
-
 static ImVec2 s_logo_pos = ImVec2(-1.0f, -1.0f);
 
 // ----------------------------------------------------------------------------
@@ -326,22 +301,11 @@ static bool DrawSegmentedButtons(const char* str_id, int* selected, const char* 
 namespace ui::menu {
 
 void save_logo_pos() {
-    std::ofstream f(get_logo_pos_file());
-    if (f.is_open()) {
-        f << s_logo_pos.x << " " << s_logo_pos.y;
-        f.close();
-    }
+    // 0% storage footprint - keep position in RAM only
 }
 
 void load_logo_pos() {
-    std::ifstream f(get_logo_pos_file());
-    if (f.is_open()) {
-        float x, y;
-        if (f >> x >> y) {
-            s_logo_pos = ImVec2(x, y);
-        }
-        f.close();
-    }
+    // 0% storage footprint - keep position in RAM only
 }
 
 void render() {

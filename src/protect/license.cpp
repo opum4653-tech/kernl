@@ -56,88 +56,11 @@ static float s_toast_timer = 0.0f;
 static JavaVM* s_jvm = nullptr;
 static jobject s_activity = nullptr;
 
-static std::string get_storage_path() {
-    if (s_jvm && s_activity) {
-        JNIEnv* env = nullptr;
-        jint res = s_jvm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
-        bool attached = false;
-        if (res == JNI_EDETACHED) {
-            if (s_jvm->AttachCurrentThread(&env, nullptr) == JNI_OK) attached = true;
-        }
-        if (env) {
-            jclass ctxClass = env->GetObjectClass(s_activity);
-            if (ctxClass) {
-                jmethodID getFilesDir = env->GetMethodID(ctxClass, "getFilesDir", "()Ljava/io/File;");
-                if (getFilesDir) {
-                    jobject fileObj = env->CallObjectMethod(s_activity, getFilesDir);
-                    if (fileObj) {
-                        jclass fileClass = env->GetObjectClass(fileObj);
-                        if (fileClass) {
-                            jmethodID getAbsPath = env->GetMethodID(fileClass, "getAbsolutePath", "()Ljava/lang/String;");
-                            if (getAbsPath) {
-                                jstring pathStr = reinterpret_cast<jstring>(env->CallObjectMethod(fileObj, getAbsPath));
-                                if (pathStr) {
-                                    const char* chars = env->GetStringUTFChars(pathStr, nullptr);
-                                    std::string dir = chars ? chars : "";
-                                    if (chars) env->ReleaseStringUTFChars(pathStr, chars);
-                                    env->DeleteLocalRef(pathStr);
-                                    if (!dir.empty()) {
-                                        env->DeleteLocalRef(fileClass);
-                                        env->DeleteLocalRef(fileObj);
-                                        env->DeleteLocalRef(ctxClass);
-                                        if (attached) s_jvm->DetachCurrentThread();
-                                        return dir + "/license.dat";
-                                    }
-                                }
-                            }
-                            env->DeleteLocalRef(fileClass);
-                        }
-                        env->DeleteLocalRef(fileObj);
-                    }
-                }
-                env->DeleteLocalRef(ctxClass);
-            }
-            if (attached) s_jvm->DetachCurrentThread();
-        }
-    }
-
-    const char* loader_dirs[] = {
-        "/data/data/com.andorid.ninmods/files/logs",
-        "/data/data/com.andorid.ninmods/files",
-        "/data/user/0/com.andorid.ninmods/files",
-        "/data/local/tmp",
-        "/sdcard/Android/data/com.andorid.ninmods/files"
-    };
-    // First, look for an already existing license file
-    for (const char* ld : loader_dirs) {
-        std::string p = std::string(ld) + "/.nin_license.dat";
-        if (access(p.c_str(), R_OK) == 0) {
-            return p;
-        }
-    }
-    // Otherwise, pick the first accessible writable directory
-    for (const char* ld : loader_dirs) {
-        mkdir(ld, 0777);
-        if (access(ld, W_OK) == 0) {
-            return std::string(ld) + "/.nin_license.dat";
-        }
-    }
-
-    return "";
-}
-
+// 100% LIVE SERVER AUTHENTICATION (0% DISK STORAGE):
+// Authenticated directly against backend server via HTTPS.
+// Absolute zero files created or stored on disk.
 static void save_state_to_disk() {
-    std::string path = get_storage_path();
-    if (path.empty()) return;
-    FILE* fp = fopen(path.c_str(), "w");
-    if (!fp) return;
-
-    fprintf(fp, "v2\n%s\n%lld\n%lld\n",
-        s_stored_key.c_str(),
-        static_cast<long long>(s_last_seen_ts),
-        static_cast<long long>(s_online_expiry_ts)
-    );
-    fclose(fp);
+    // Zero disk footprint
 }
 
 static void evaluate_state(time_t now) {
@@ -176,6 +99,8 @@ namespace lic {
         return 0;
     }
 
+    static bool verify_license_online(const std::string& key);
+
     void init() {
         std::lock_guard<std::mutex> lock(s_lic_mutex);
         if (s_initialized) return;
@@ -185,44 +110,18 @@ namespace lic {
         s_clock_tampered = false;
         s_is_valid = false;
 
-        std::string path = get_storage_path();
-        if (!path.empty()) {
-            FILE* fp = fopen(path.c_str(), "r");
-            if (fp) {
-                char header[16] = {0};
-                char keyBuf[128] = {0};
-                long long ts = 0;
-                long long exp_ts = 0;
+        // Cleanup any legacy disk files leftover from old versions (enforce 0% storage)
+        unlink("/dev/.nin_hwid");
+        unlink("/data/local/tmp/.nin_license.dat");
+        unlink("/data/local/tmp/.nin_hwid");
+        unlink("/data/local/tmp/.pill_pos");
+        unlink("/data/local/tmp/.nin_drv_cfg");
 
-                if (fscanf(fp, "%15s\n%127s\n%lld\n%lld", header, keyBuf, &ts, &exp_ts) >= 2) {
-                    if (strcmp(header, "v2") == 0) {
-                        s_stored_key = keyBuf;
-                        s_last_seen_ts = static_cast<time_t>(ts);
-                        s_online_expiry_ts = static_cast<time_t>(exp_ts);
-                        time_t now_check = time(nullptr);
-                        if (s_online_expiry_ts > 0 && now_check < s_online_expiry_ts) {
-                            s_online_verified = true;
-                        }
-                    } else if (strcmp(header, "v1") == 0) {
-                        s_stored_key = keyBuf;
-                        s_last_seen_ts = static_cast<time_t>(ts);
-                    }
-                }
-                fclose(fp);
-            }
-        }
-
-        time_t now = time(nullptr);
-
-        if (s_last_seen_ts > 0 && now < (s_last_seen_ts - 86400)) {
-            s_clock_tampered = true;
-            s_is_valid = false;
-        } else {
-            s_last_seen_ts = std::max(now, s_last_seen_ts);
-            evaluate_state(now);
-            if (!s_stored_key.empty()) {
-                save_state_to_disk();
-            }
+        // 100% In-Memory Live Verification: Get key strictly from memory/environment
+        const char* env_key = getenv("NIN_LICENSE_KEY");
+        if (env_key && strlen(env_key) > 0) {
+            s_stored_key = env_key;
+            verify_license_online(s_stored_key);
         }
 
         s_initialized = true;
@@ -247,28 +146,7 @@ namespace lic {
             return std::string(env_hwid);
         }
 
-        const char* hwid_candidates[] = {
-            "/dev/.nin_hwid",
-            "/data/data/com.andorid.ninmods/files/.nin_hwid",
-            "/data/user/0/com.andorid.ninmods/files/.nin_hwid",
-            "/data/local/tmp/.nin_hwid",
-            "/sdcard/Android/data/com.andorid.ninmods/files/.nin_hwid"
-        };
-        for (const char* path : hwid_candidates) {
-            FILE* fp_file = fopen(path, "r");
-            if (fp_file) {
-                char buf[128] = {0};
-                if (fgets(buf, sizeof(buf), fp_file)) {
-                    buf[strcspn(buf, "\r\n")] = 0;
-                    if (strlen(buf) > 0) {
-                        fclose(fp_file);
-                        return std::string(buf);
-                    }
-                }
-                fclose(fp_file);
-            }
-        }
-
+        // 100% In-Memory Hardware ID Query (Zero Disk Storage)
         char buf[128] = {0};
         FILE* fp = popen("getprop ro.serialno 2>/dev/null", "r");
         if (fp) {
