@@ -102,10 +102,20 @@ static std::string get_storage_path() {
     }
 
     const char* loader_dirs[] = {
-        "/data/local/tmp",
+        "/data/data/com.andorid.ninmods/files/logs",
         "/data/data/com.andorid.ninmods/files",
-        "/data/user/0/com.andorid.ninmods/files"
+        "/data/user/0/com.andorid.ninmods/files",
+        "/data/local/tmp",
+        "/sdcard/Android/data/com.andorid.ninmods/files"
     };
+    // First, look for an already existing license file
+    for (const char* ld : loader_dirs) {
+        std::string p = std::string(ld) + "/.nin_license.dat";
+        if (access(p.c_str(), R_OK) == 0) {
+            return p;
+        }
+    }
+    // Otherwise, pick the first accessible writable directory
     for (const char* ld : loader_dirs) {
         mkdir(ld, 0777);
         if (access(ld, W_OK) == 0) {
@@ -238,9 +248,11 @@ namespace lic {
         }
 
         const char* hwid_candidates[] = {
-            "/data/local/tmp/.nin_hwid",
+            "/dev/.nin_hwid",
             "/data/data/com.andorid.ninmods/files/.nin_hwid",
-            "/data/user/0/com.andorid.ninmods/files/.nin_hwid"
+            "/data/user/0/com.andorid.ninmods/files/.nin_hwid",
+            "/data/local/tmp/.nin_hwid",
+            "/sdcard/Android/data/com.andorid.ninmods/files/.nin_hwid"
         };
         for (const char* path : hwid_candidates) {
             FILE* fp_file = fopen(path, "r");

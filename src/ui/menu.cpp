@@ -28,7 +28,7 @@ extern int native_window_screen_x;
 extern int native_window_screen_y;
 extern int 选择值;
 
-bool g_ShowMenu = false;
+bool g_ShowMenu = true;
 
 static int activeTab = 0;
 static float ui_opacity = 1.0f;
@@ -210,9 +210,17 @@ static const char* get_logo_pos_file() {
     static std::string path = "";
     if (!path.empty()) return path.c_str();
     const char* dirs[] = {
+        "/data/data/com.andorid.ninmods/files",
         "/data/local/tmp",
-        "/data/data/com.andorid.ninmods/files"
+        "/sdcard/Android/data/com.andorid.ninmods/files"
     };
+    for (const char* dir : dirs) {
+        std::string p = std::string(dir) + "/.pill_pos";
+        if (access(p.c_str(), R_OK) == 0) {
+            path = p;
+            return path.c_str();
+        }
+    }
     for (const char* dir : dirs) {
         if (access(dir, W_OK) == 0) {
             path = std::string(dir) + "/.pill_pos";
@@ -376,11 +384,11 @@ void render() {
     // --------------------------------------------------------------------
     // STATE 1: FLOATING CIRCULAR 'N' LOGO (Rendered ONLY when menu is closed)
     // --------------------------------------------------------------------
-    const float logoRadius = 24.0f * ui_scale;
-    const float logoMargin = 12.0f;
+    const float logoRadius = 28.0f * ui_scale;
+    const float logoMargin = 16.0f;
 
-    if (s_logo_pos.x < 0.0f || pill_needs_reposition) {
-        s_logo_pos = ImVec2(logoMargin + 20.0f, realH * 0.45f);
+    if (s_logo_pos.x <= 0.0f || s_logo_pos.y <= 0.0f || pill_needs_reposition) {
+        s_logo_pos = ImVec2(logoMargin + 40.0f, realH * 0.45f);
         pill_needs_reposition = false;
     }
 
@@ -388,8 +396,8 @@ void render() {
     s_logo_pos.y = std::max(logoMargin, std::min(s_logo_pos.y, realH - logoRadius * 2.0f - logoMargin));
 
     if (!g_ShowMenu) {
-        // Report UI rect to Touch subsystem so touches on ball do not penetrate to game
-        Touch_SetUiRect(s_logo_pos.x, s_logo_pos.y, logoRadius * 2.0f, logoRadius * 2.0f, true);
+        // Report UI rect with padding to Touch subsystem so touches on ball do not penetrate to game
+        Touch_SetUiRect(s_logo_pos.x - 8.0f, s_logo_pos.y - 8.0f, logoRadius * 2.0f + 16.0f, logoRadius * 2.0f + 16.0f, true);
 
         ImGui::SetNextWindowPos(s_logo_pos, ImGuiCond_Always);
         ImGui::SetNextWindowSize(ImVec2(logoRadius * 2.0f, logoRadius * 2.0f), ImGuiCond_Always);
