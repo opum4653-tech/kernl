@@ -2,7 +2,6 @@
 #include "imgui.h"
 #include "Android_draw/draw.h"
 #include "Android_touch/TouchHelperA.h"
-#include "other/logger.hpp"
 #include "driver.h"
 #include <string>
 #include <cmath>
@@ -211,20 +210,17 @@ static const char* get_logo_pos_file() {
     static std::string path = "";
     if (!path.empty()) return path.c_str();
     const char* dirs[] = {
-        "/data/data/com.andorid.ninmods/files/logs",
-        "/data/user/0/com.andorid.ninmods/files/logs",
-        "/sdcard/Android/data/com.andorid.ninmods/files/logs"
+        "/data/local/tmp",
+        "/data/data/com.andorid.ninmods/files",
+        "/sdcard/Android/data/com.andorid.ninmods/files"
     };
     for (const char* dir : dirs) {
-        mkdir(dir, 0777);
         if (access(dir, W_OK) == 0) {
-            path = std::string(dir) + "/ninmods_logo_pos.txt";
+            path = std::string(dir) + "/.pill_pos";
             return path.c_str();
         }
     }
-    mkdir("/data/data/com.andorid.ninmods/files", 0777);
-    mkdir("/data/data/com.andorid.ninmods/files/logs", 0777);
-    path = "/data/data/com.andorid.ninmods/files/logs/ninmods_logo_pos.txt";
+    path = "/data/local/tmp/.pill_pos";
     return path.c_str();
 }
 

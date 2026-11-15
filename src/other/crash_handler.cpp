@@ -7,26 +7,9 @@
 #include <android/log.h>
 
 static void safe_sig_handler(int sig, siginfo_t* info, void* context) {
-    const char* sig_name = "UNKNOWN";
-    if (sig == SIGSEGV) sig_name = "SIGSEGV (Invalid Memory Access / Null Pointer)";
-    else if (sig == SIGBUS) sig_name = "SIGBUS (Alignment / Unmapped Memory Fault)";
-    else if (sig == SIGFPE) sig_name = "SIGFPE (Arithmetic Exception)";
-    else if (sig == SIGILL) sig_name = "SIGILL (Illegal Instruction)";
-    else if (sig == SIGABRT) sig_name = "SIGABRT (Abort Signal)";
-
-    void* fault_addr = info ? info->si_addr : nullptr;
-
-    fprintf(stderr, "\n=======================================================\n");
-    fprintf(stderr, "[-] CRASH INTERCEPTED BY CRASH_GUARD!\n");
-    fprintf(stderr, "[-] Signal : %s (%d)\n", sig_name, sig);
-    fprintf(stderr, "[-] Address: %p\n", fault_addr);
-    fprintf(stderr, "[-] Intercepted safely. Halting process cleanly.\n");
-    fprintf(stderr, "=======================================================\n\n");
-    fflush(stderr);
-
-    __android_log_print(ANDROID_LOG_FATAL, "CrashGuard", "[-] Intercepted fatal signal %d (%s) at %p", sig, sig_name, fault_addr);
-
-    // Clean exit to prevent terminal error 139 / Segmentation fault notice
+    (void)sig;
+    (void)info;
+    (void)context;
     _exit(0);
 }
 

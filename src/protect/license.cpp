@@ -14,9 +14,8 @@
 #include <android/log.h>
 #include <curl/curl.h>
 
-#define LIC_LOG_TAG "ninmods_lic"
-#define LIC_LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LIC_LOG_TAG, __VA_ARGS__)
-#define LIC_LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LIC_LOG_TAG, __VA_ARGS__)
+#define LIC_LOGI(...) do {} while(0)
+#define LIC_LOGE(...) do {} while(0)
 
 static constexpr unsigned char K_TELEGRAM_URL_BYTES[20] = {
     0x0A, 0x16, 0x16, 0x12, 0x11, 0x58, 0x4D, 0x4D, 0x16, 0x4C,

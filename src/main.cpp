@@ -5,7 +5,6 @@
 #include "other/memory.hpp"
 #include "other/crash_handler.hpp"
 #include "other/display_manager.hpp"
-#include "other/logger.hpp"
 #include "driver.h"
 #include "FONTS/MAIN_FONT.h"
 #include "FONTS/ICONS.h"
@@ -25,8 +24,7 @@
 #include <string>
 #include <atomic>
 
-#define LOG_TAG "ninmods-kernel"
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+#define LOGI(...) do {} while(0)
 
 ImFont* g_IconFont = nullptr;
 ImFont* g_BoldFont = nullptr;
@@ -137,10 +135,6 @@ static bool check_license_gate(int argc, char** argv) {
 }
 
 static int start_overlay() {
-    LOGI("=== ninmods-kernel starting ===");
-    printf("[*] Probing display dimensions and screen orientation...\n");
-    fflush(stdout);
-
     screen_config();
 
     ::abs_ScreenX = (displayInfo.height > displayInfo.width ? displayInfo.height : displayInfo.width);
@@ -224,8 +218,6 @@ int main(int argc, char* argv[]) {
     if (!check_license_gate(argc, argv)) {
         return 1;
     }
-
-    print_dashboard();
 
     return start_overlay();
 }
