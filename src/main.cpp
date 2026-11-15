@@ -156,7 +156,7 @@ static int start_overlay() {
     ImGuiIO& io = ImGui::GetIO();
     LoadCustomIconFonts(io);
 
-    Touch_Init(displayInfo.width, displayInfo.height, displayInfo.orientation, true);
+    Touch_Init(displayInfo.width, displayInfo.height, displayInfo.orientation, false);
     InitTouchAimbot();
     ui::menu::load_logo_pos();
 

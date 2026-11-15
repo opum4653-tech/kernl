@@ -1,7 +1,7 @@
 #include "menu.hpp"
 #include "imgui.h"
 #include "Android_draw/draw.h"
-#include "Android_touch/Touch.hpp"
+#include "Android_touch/TouchHelperA.h"
 #include "other/logger.hpp"
 #include "driver.h"
 #include <string>
@@ -283,7 +283,9 @@ void render() {
     if (ui_scale < 0.65f) ui_scale = 0.65f;
     if (ui_scale > 1.45f) ui_scale = 1.45f;
 
-    // 1. FLOATING CIRCULAR 'N' LOGO
+    // --------------------------------------------------------------------
+    // STATE 1: FLOATING CIRCULAR 'N' LOGO (Rendered ONLY when menu is closed)
+    // --------------------------------------------------------------------
     const float logoRadius = 24.0f * ui_scale;
     const float logoMargin = 12.0f;
 
@@ -295,87 +297,93 @@ void render() {
     s_logo_pos.x = std::max(logoMargin, std::min(s_logo_pos.x, realW - logoRadius * 2.0f - logoMargin));
     s_logo_pos.y = std::max(logoMargin, std::min(s_logo_pos.y, realH - logoRadius * 2.0f - logoMargin));
 
-    ImGui::SetNextWindowPos(s_logo_pos, ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(logoRadius * 2.0f, logoRadius * 2.0f), ImGuiCond_Always);
-
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-
-    ImGuiWindowFlags logoFlags = ImGuiWindowFlags_NoTitleBar |
-                                 ImGuiWindowFlags_NoResize |
-                                 ImGuiWindowFlags_NoScrollbar |
-                                 ImGuiWindowFlags_NoSavedSettings |
-                                 ImGuiWindowFlags_NoBackground;
-
-    if (ImGui::Begin("##NinmodsKernelPill", nullptr, logoFlags)) {
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-        ImVec2 winP = ImGui::GetWindowPos();
-        ImVec2 center(winP.x + logoRadius, winP.y + logoRadius);
-
-        ImGui::SetCursorPos(ImVec2(0, 0));
-        ImGui::InvisibleButton("##LogoTouchZone", ImVec2(logoRadius * 2.0f, logoRadius * 2.0f));
-
-        static ImVec2 s_click_down_pos(0, 0);
-        static bool s_is_dragging = false;
-        static bool s_moved_drag = false;
-
-        ImVec2 mousePos = io.MousePos;
-        bool clicked = ImGui::IsItemClicked();
-        bool active = ImGui::IsItemActive();
-        bool deactivated = ImGui::IsItemDeactivated();
-        static bool s_was_activated = false;
-        static double s_last_toggle_time = 0.0;
-        double cur_time = ImGui::GetTime();
-
-        if (clicked || ImGui::IsItemActivated()) {
-            s_was_activated = true;
-            s_click_down_pos = mousePos;
-            s_moved_drag = false;
-            s_is_dragging = false;
-        }
-
-        if (active) {
-            float dist = std::hypot(mousePos.x - s_click_down_pos.x, mousePos.y - s_click_down_pos.y);
-            if (dist > 8.0f) {
-                s_is_dragging = true;
-                s_moved_drag = true;
-                s_logo_pos = ImVec2(mousePos.x - logoRadius, mousePos.y - logoRadius);
-                save_logo_pos();
-            }
-        }
-
-        // Startup safety: ignore touches during first 1.5s to prevent loader launch tap from opening menu
-        if (cur_time > 1.5 && s_was_activated && deactivated && !s_moved_drag) {
-            if (cur_time - s_last_toggle_time > 0.30) {
-                g_ShowMenu = !g_ShowMenu;
-                s_last_toggle_time = cur_time;
-            }
-            s_moved_drag = false;
-            s_is_dragging = false;
-            s_was_activated = false;
-        } else if (deactivated) {
-            s_moved_drag = false;
-            s_is_dragging = false;
-            s_was_activated = false;
-        }
-
-        DrawCircularLogo(dl, center, logoRadius, s_is_dragging);
-
-        bool connected = (game_pid > 0 && lib_base > 0);
-        ImU32 stCol = connected ? IM_COL32(0, 240, 140, 255) : IM_COL32(255, 90, 90, 255);
-        ImVec2 stDot(center.x + logoRadius * 0.68f, center.y - logoRadius * 0.68f);
-        dl->AddCircleFilled(stDot, 6.0f, (stCol & 0x00FFFFFF) | (90 << 24));
-        dl->AddCircleFilled(stDot, 4.0f, (stCol & 0x00FFFFFF) | (180 << 24));
-        dl->AddCircleFilled(stDot, 2.5f, stCol);
-    }
-    ImGui::End();
-    ImGui::PopStyleVar(2);
-
     if (!g_ShowMenu) {
+        // Report UI rect to Touch subsystem so touches on ball do not penetrate to game
+        Touch_SetUiRect(s_logo_pos.x, s_logo_pos.y, logoRadius * 2.0f, logoRadius * 2.0f, true);
+
+        ImGui::SetNextWindowPos(s_logo_pos, ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(logoRadius * 2.0f, logoRadius * 2.0f), ImGuiCond_Always);
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+
+        ImGuiWindowFlags logoFlags = ImGuiWindowFlags_NoTitleBar |
+                                     ImGuiWindowFlags_NoResize |
+                                     ImGuiWindowFlags_NoScrollbar |
+                                     ImGuiWindowFlags_NoSavedSettings |
+                                     ImGuiWindowFlags_NoBackground;
+
+        if (ImGui::Begin("##NinmodsKernelPill", nullptr, logoFlags)) {
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            ImVec2 winP = ImGui::GetWindowPos();
+            ImVec2 center(winP.x + logoRadius, winP.y + logoRadius);
+
+            ImGui::SetCursorPos(ImVec2(0, 0));
+            ImGui::InvisibleButton("##LogoTouchZone", ImVec2(logoRadius * 2.0f, logoRadius * 2.0f));
+
+            static ImVec2 s_click_down_pos(0, 0);
+            static bool s_is_dragging = false;
+            static bool s_moved_drag = false;
+
+            ImVec2 mousePos = io.MousePos;
+            bool clicked = ImGui::IsItemClicked();
+            bool active = ImGui::IsItemActive();
+            bool deactivated = ImGui::IsItemDeactivated();
+            static bool s_was_activated = false;
+            static double s_last_toggle_time = 0.0;
+            double cur_time = ImGui::GetTime();
+
+            if (clicked || ImGui::IsItemActivated()) {
+                s_was_activated = true;
+                s_click_down_pos = mousePos;
+                s_moved_drag = false;
+                s_is_dragging = false;
+            }
+
+            if (active) {
+                float dist = std::hypot(mousePos.x - s_click_down_pos.x, mousePos.y - s_click_down_pos.y);
+                if (dist > 8.0f) {
+                    s_is_dragging = true;
+                    s_moved_drag = true;
+                    s_logo_pos = ImVec2(mousePos.x - logoRadius, mousePos.y - logoRadius);
+                    save_logo_pos();
+                }
+            }
+
+            // Smooth tap toggle without artificial startup delay
+            if (s_was_activated && (clicked || (deactivated && !s_moved_drag))) {
+                if (cur_time - s_last_toggle_time > 0.25) {
+                    g_ShowMenu = true;
+                    s_last_toggle_time = cur_time;
+                }
+                s_moved_drag = false;
+                s_is_dragging = false;
+                s_was_activated = false;
+            } else if (deactivated) {
+                s_moved_drag = false;
+                s_is_dragging = false;
+                s_was_activated = false;
+            }
+
+            DrawCircularLogo(dl, center, logoRadius, s_is_dragging);
+
+            bool connected = (game_pid > 0 && lib_base > 0);
+            ImU32 stCol = connected ? IM_COL32(0, 240, 140, 255) : IM_COL32(255, 90, 90, 255);
+            ImVec2 stDot(center.x + logoRadius * 0.68f, center.y - logoRadius * 0.68f);
+            dl->AddCircleFilled(stDot, 6.0f, (stCol & 0x00FFFFFF) | (90 << 24));
+            dl->AddCircleFilled(stDot, 4.0f, (stCol & 0x00FFFFFF) | (180 << 24));
+            dl->AddCircleFilled(stDot, 2.5f, stCol);
+        }
+        ImGui::End();
+        ImGui::PopStyleVar(2);
+
+        // Menu is closed, done for this frame
         return;
     }
 
-    // 2. MAIN UNIFIED ELECTRIC ORCHID GLASS MENU
+    // --------------------------------------------------------------------
+    // STATE 2: MAIN UNIFIED ELECTRIC ORCHID GLASS MENU (When menu is open)
+    // --------------------------------------------------------------------
     const float winW = std::max(500.0f * ui_scale, std::min(860.0f * ui_scale, realW * 0.92f));
     const float winH = std::max(360.0f * ui_scale, std::min(500.0f * ui_scale, realH * 0.92f));
 
@@ -428,6 +436,9 @@ void render() {
         ImVec2 winPos = ImGui::GetWindowPos();
         ImVec2 winSize = ImGui::GetWindowSize();
 
+        // Report full menu window rect to Touch subsystem so touches on menu do not penetrate to game
+        Touch_SetUiRect(winPos.x, winPos.y, winSize.x, winSize.y, true);
+
         // 1. TOP HEADER (BRANDING + STATUS + CLOSE)
         const float headerH = 50.0f;
         ImVec2 hMin = winPos;
@@ -478,6 +489,10 @@ void render() {
 
         if (ImGui::Button("##CloseKernelBtn", ImVec2(closeBtnSize, closeBtnSize))) {
             g_ShowMenu = false;
+            s_logo_pos = ImVec2(std::clamp(winPos.x, logoMargin, realW - logoRadius * 2.0f - logoMargin),
+                                std::clamp(winPos.y, logoMargin, realH - logoRadius * 2.0f - logoMargin));
+            save_logo_pos();
+            Touch_SetUiRect(s_logo_pos.x, s_logo_pos.y, logoRadius * 2.0f, logoRadius * 2.0f, true);
         }
         bool closeHovered = ImGui::IsItemHovered();
 
