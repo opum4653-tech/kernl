@@ -3,7 +3,6 @@
 #include "ui/menu.hpp"
 #include "protect/license.hpp"
 #include "other/memory.hpp"
-#include "other/crash_handler.hpp"
 #include "other/display_manager.hpp"
 #include "driver.h"
 #include "FONTS/MAIN_FONT.h"
@@ -212,8 +211,6 @@ static int start_overlay() {
 
 int main(int argc, char* argv[]) {
     prctl(PR_SET_NAME, "ninmods-kernel", 0, 0, 0);
-
-    crash_guard::install();
 
     if (!check_license_gate(argc, argv)) {
         return 1;
