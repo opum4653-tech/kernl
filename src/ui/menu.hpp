@@ -17,6 +17,7 @@ extern bool AimLock;
 extern bool AimSilent;
 extern bool AimVisible;
 extern float AimFov;
+extern bool showAimFov;
 
 extern bool showBox;
 extern bool showLine;
