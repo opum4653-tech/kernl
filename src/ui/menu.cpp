@@ -893,11 +893,11 @@ void render() {
 
                 ImGui::TextDisabled("PID:");
                 ImGui::SameLine(100);
-                ImGui::Text(proc::pid > 0 ? pidStr : "NONE");
+                ImGui::Text("%s", proc::pid > 0 ? pidStr : "NONE");
 
                 ImGui::TextDisabled("LIB BASE:");
                 ImGui::SameLine(100);
-                ImGui::Text(proc::lib > 0 ? libStr : "NONE");
+                ImGui::Text("%s", proc::lib > 0 ? libStr : "NONE");
 
                 ImGui::TextDisabled("DRIVER:");
                 ImGui::SameLine(100);

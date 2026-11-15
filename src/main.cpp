@@ -1,5 +1,6 @@
 #include "Android_draw/draw.h"
 #include "Android_touch/Touch.hpp"
+#include "globals.hpp"
 #include "ui/menu.hpp"
 #include "protect/license.hpp"
 #include "other/memory.hpp"
