@@ -7,9 +7,11 @@
 
 namespace Offsets {
 
-// Target Game Build Metadata
-    constexpr const char* GameVersion   = "OB55 / 1.132.1";
-    constexpr const char* TargetPackage = "com.dts.freefireth";
+// Target game build these positions were read from: OB55 / 1.132.1.
+// Keep this comment in sync with the file whenever a value is refreshed —
+// it is the only record of which build the numbers came from.
+// (The package name deliberately does not live here as a literal; the process
+//  matcher in src/other/memory.hpp carries it obfuscated.)
 
 // Base Chain (GameFacade → BaseGame → Match)
     namespace Base {
@@ -40,28 +42,43 @@ namespace Offsets {
         constexpr uintptr_t HeadTF               = 0x6A0;   // ITransformNode
         constexpr uintptr_t FootTF               = 0x6E8;   // ITransformNode
         constexpr uintptr_t Camera               = 0x690;   // FollowCamera
-        constexpr uintptr_t IsFiring             = 0x848;   // Boolean
+        constexpr uintptr_t IsFiring             = 0x850;   // Primary: isFiring (0x850 in FF, 0x848 in older builds)
+        constexpr uintptr_t IsFiring_Alt         = 0x848;   // Auxiliary: isFiring
         constexpr uintptr_t HP                   = 0x70;    // HP Pool Pointer
         constexpr uintptr_t Armor                = 0x74;    // Int32
         constexpr uintptr_t IsDead               = 0x7C;    // Boolean
         constexpr uintptr_t Avatar               = 0x770;   // AvatarManager
-        constexpr uintptr_t HeadCollider         = 0x738;   // Collider
+        constexpr uintptr_t HeadCollider         = 0x740;   // Primary: Head Collider (0x740 in FF 1.132.1 / FF Max)
+        constexpr uintptr_t HeadCollider_Alt     = 0x738;   // Auxiliary: Head Collider (0x738 in legacy FF)
+        constexpr uintptr_t LockedAimingCollider = 0x80;    // Primary: Collider on AttackableEntity (ColliderBody)
+        constexpr uintptr_t LockedAimingCollider_Alt = 0x78;// Auxiliary: AttackableEntity Current Collider
         constexpr uintptr_t IsBot                = 0x4A0;   // Boolean
         constexpr uintptr_t Name                 = 0x490;   // MonoString*
         constexpr uintptr_t Speed                = 0x560;   // Single (Default 1.0f)
-        constexpr uintptr_t AimInfo              = 0xE50;   // AimingInfo Pointer
+        constexpr uintptr_t AimInfo              = 0xE58;   // Primary: LastAimingInfoFromWeapon
+        constexpr uintptr_t AimInfo_Alt          = 0xE50;   // Auxiliary: AimingInfo
         constexpr uintptr_t Velocity             = 0xF0;    // Vector3
         constexpr uintptr_t IsGrounded           = 0x11C;   // Boolean
         constexpr uintptr_t FOVOffset            = 0x84;    // Single
         constexpr uintptr_t Weapon               = 0x600;   // WeaponOnHand
-        constexpr uintptr_t ColWrite             = 0x80;    // Collider Write
         constexpr uintptr_t DeathInfo            = 0x24A8;  // DeathInfo
+        constexpr uintptr_t Attributes           = 0x768;   // PlayerAttributes (0x768 Global, 0x770 Max)
+        constexpr uintptr_t Attributes_Max       = 0x770;   // PlayerAttributes Max
+        constexpr uintptr_t PhantomState         = 0x814;   // Boolean: Ghost / Phantom mode flag on Player
+        constexpr uintptr_t FlightFlag           = 0x2098;  // Boolean: Elevation flight state flag on Player
+    }
+
+// Transform Hierarchy Traversal (Unity Matrix Resolution)
+    namespace Transform {
+        constexpr uintptr_t Node                 = 0x10;    // Transform -> Component / Node
+        constexpr uintptr_t Obj                  = 0x10;    // Node -> TransformObj
+        constexpr uintptr_t MatrixPtr            = 0x38;    // TransformObj -> MatrixPtr
+        constexpr uintptr_t Position             = 0x90;    // MatrixPtr -> Vector3 Position
     }
 
 // Weapon Data Fields
     namespace Weapon {
         constexpr uintptr_t Data                 = 0x80;
-        constexpr uintptr_t Recoil               = 0x18;
     }
 
 // Avatar Visibility
@@ -146,17 +163,31 @@ namespace Offsets {
     constexpr uintptr_t Player_Armor             = Player::Armor;
     constexpr uintptr_t Player_IsDead            = Player::IsDead;
     constexpr uintptr_t Player_Avatar            = Player::Avatar;
-    constexpr uintptr_t Player_HedColider        = Player::HeadCollider;
+    constexpr uintptr_t Player_HeadCollider         = Player::HeadCollider;
+    constexpr uintptr_t Player_HedColider            = Player::HeadCollider;
+    constexpr uintptr_t Player_HeadCollider_Alt     = Player::HeadCollider_Alt;
+    constexpr uintptr_t Player_LockedAimingCollider = Player::LockedAimingCollider;
+    constexpr uintptr_t Player_LockedAimingCollider_Alt = Player::LockedAimingCollider_Alt;
+    constexpr uintptr_t Player_ColWrite             = Player::LockedAimingCollider;
     constexpr uintptr_t Player_IsBot             = Player::IsBot;
     constexpr uintptr_t Player_Name              = Player::Name;
     constexpr uintptr_t Player_Speed             = Player::Speed;
     constexpr uintptr_t Player_AimInfo           = Player::AimInfo;
+    constexpr uintptr_t Player_AimInfo_Alt       = Player::AimInfo_Alt;
     constexpr uintptr_t Player_Velocity          = Player::Velocity;
     constexpr uintptr_t Player_IsGrounded        = Player::IsGrounded;
     constexpr uintptr_t Player_FOVOffset         = Player::FOVOffset;
     constexpr uintptr_t Player_Weapon            = Player::Weapon;
-    constexpr uintptr_t Player_ColWrite          = Player::ColWrite;
     constexpr uintptr_t Player_DeathInfo         = Player::DeathInfo;
+    constexpr uintptr_t Player_Attributes        = Player::Attributes;
+    constexpr uintptr_t Player_Attributes_Max    = Player::Attributes_Max;
+    constexpr uintptr_t Player_PhantomState      = Player::PhantomState;
+    constexpr uintptr_t Player_FlightFlag        = Player::FlightFlag;
+
+    constexpr uintptr_t Transform_Node           = Transform::Node;
+    constexpr uintptr_t Transform_Obj            = Transform::Obj;
+    constexpr uintptr_t Transform_MatrixPtr      = Transform::MatrixPtr;
+    constexpr uintptr_t Transform_Position       = Transform::Position;
 
     constexpr uintptr_t Avatar_Uma               = Avatar::Uma;
     constexpr uintptr_t Uma_Visible              = Avatar::Uma_Visible;
@@ -172,7 +203,7 @@ namespace Offsets {
     constexpr uintptr_t HP_Value                 = 0x18;
 
     constexpr uintptr_t Weapon_Data              = Weapon::Data;
-    constexpr uintptr_t Weapon_Recoil            = Weapon::Recoil;
+    constexpr uintptr_t Weapon_Recoil            = 0x18;
 
     constexpr uintptr_t AimInfo_Direction        = Aim::Direction;
     constexpr uintptr_t AimInfo_StartPosition    = Aim::StartPosition;
