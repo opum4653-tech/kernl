@@ -97,11 +97,13 @@ namespace aimbot {
 
     inline void thread_start() {
         if (aim_thread_running().exchange(true)) return;
+        start_silent_writer();
         std::thread(loop).detach();
     }
 
     inline void thread_stop() {
         aim_thread_running().store(false);
+        stop_silent_writer();
         motion::reset();
     }
 

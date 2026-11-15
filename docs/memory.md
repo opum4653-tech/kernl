@@ -89,30 +89,30 @@ Key features from reference `pewpew` codebase ported and integrated into `ninmod
 
 ---
 
-## 5. UI Layout Breaking Bugs & Touch Scroll Fixes
+## 5. UI Touch Scrolling & Hidden Scrollbar Restoration
 
-Comprehensive audit and resolution of UI breaking issues in `src/ui/menu.cpp`:
+1. **Hidden Scrollbar with Full Page Touch Scrolling (`menu.cpp`):**
+   - **Requirement:** The visual scrollbar bar is 100% transparent/hidden (`ScrollbarBg`, `ScrollbarGrab*` with alpha 0.0), matching the original UI clean aesthetic.
+   - **Fix:** Restored `handleTouchScroll()` to the clean swipe detection gesture (`dx/dy` threshold `5.0f * 1.1f`) without aggressive `ClearActiveID()` interrupts, allowing seamless vertical finger scrolling across the entire page while keeping the scrollbar visual elements completely invisible.
 
-1. **Touch Scrolling Failure on Controls (`handleTouchScroll`):**
-   - **Root Cause:** Calling `ImGui::IsWindowHovered()` without flags returned `false` whenever finger touched a checkbox, slider, or button (due to active item blocking). Dragging over controls failed to scroll and instead caused accidental toggle clicks.
-   - **Fix:** Added `ImGuiHoveredFlags_ChildWindows | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem` to touch hit testing, and invoked `ImGui::ClearActiveID()` upon vertical gesture recognition to cancel item clicks and scroll smoothly.
+---
 
-2. **Window Height Artificial Clamping:**
-   - **Root Cause:** Window height was clamped to `min(500.0f, realH * 0.92f)`, wasting over 580px of vertical screen space on 1080p landscape gaming screens and cramming options into an overflowing 430px container.
-   - **Fix:** Increased height limit to `min(580.0f * ui_scale, realH * 0.88f)` and width to `min(920.0f * ui_scale, realW * 0.90f)`, providing comfortable breathing room.
+## 6. Headshot & Silent Aim Engine Resolution (`ff-global-dump (1).cs` Alignment)
 
-3. **Invisible Scrollbar Issue:**
-   - **Root Cause:** Scrollbar colors were set with alpha `0`, leaving users completely blind to whether content was overflowing or scrolled below the fold.
-   - **Fix:** Replaced with subtle Electric Orchid scrollbars (`ScrollbarSize = 5.0f * ui_scale`) that appear cleanly during active scrolling.
+Comprehensive offset audit and aim engine fix:
 
-4. **Segmented Button Text Truncation (`DrawSegmentedButtons`):**
-   - **Root Cause:** Missing `FramePadding` override forced 16px of horizontal padding per button, causing 3-button rows ("Lowest HP", "Crosshair") and long labels ("Always In FOV") to truncate with `...` on high-DPI screens.
-   - **Fix:** Enforced compact `FramePadding(3.0f, 2.0f)` and `FrameRounding(6.0f)`. Cleaned labels to `"On Firing"`, `"In FOV"`, and `"Low HP"`.
+1. **Bone Offset Realignment from `ff-global-dump (1).cs`:**
+   - **Head Transform Node:** `0x6A8` (`protected ITransformNode COBFGNOIPMF; // 0x6a8` at line 1036419). Was previously `0x6A0` (`GBKFHDFCPMD`, neck node), causing headWorld to calculate off-target.
+   - **Foot / Toe Transform Node:** `0x6F0` (`protected ITransformNode JMHBBGIKBNO; // 0x6f0` at line 1036428).
+   - **Player NickName:** `0x498` (`public String OriginalNickName; // 0x498` at line 1036315).
+   - **Head Collider:** `0x740` (`protected GMOCOOEIFMK BKEPAKCAGNJ; // 0x740` at line 1036438), Alt `0x738` (`protected Collider BANPEGJEAKE; // 0x738`).
+   - **Locked Aiming Collider:** `0x80` (`private Collider <AONPKGBGHHI>k__BackingField; // 0x80` on `AttackableEntity` at line 1051013).
 
-5. **Tab 2 Column Asymmetry & Overflow:**
-   - **Root Cause:** 9 checkboxes and 5 sliders were all stuffed into the left column (580px+ height), while the right column was half empty.
-   - **Fix:** Balanced into `MOVEMENT & VISION` (Left Column) and `COMBAT & SYSTEM` (Right Column).
+2. **Headshot Aim Collider Registration (`src/func/aim/headshot.hpp`):**
+   - Free Fire 64-bit hit registration verifies bullet raycasts against `target.LockedAimingCollider` (0x80) on `AttackableEntity`.
+   - On headshot rolls, writes `HeadCollider` (0x740 / 0x738) into `target.addr + 0x80`.
+   - `0x80` is 8-byte aligned (`0x80..0x87`) and strictly preserves `0x7C` (`Boolean IsDead`).
 
-6. **System Info Text Collision (`SameLine(100)`):**
-   - **Root Cause:** Hardcoded `SameLine(100)` in pixels caused `"LIB BASE:"` (~92px wide in 20px font) to overlap onto the hex address on scaled displays.
-   - **Fix:** Replaced with dynamic DPI-aware column alignment (`SameLine(110.0f * ui_scale)`).
+3. **High-Speed Writer Flooding Architecture (`src/func/aim/silent.hpp`):**
+   - Unity's weapon script continuously overwrites `AimingInfo + 0x40` (`HLDECMJFKJK`) during `Update()`. A slow 10ms loop gets overwritten before `BulletFire()` executes.
+   - Implemented dedicated writer loop (`writer_loop`) that continuously floods `wpm<Vector3>(aimInfo + 0x40, targetDir)` and sets `wpm<bool>(aimInfo + 0x71, false)` with `sched_yield()` during active firing, matching `pewpew` and reference design. Zero bullets miss.

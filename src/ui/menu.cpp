@@ -174,8 +174,7 @@ static void handleTouchScroll() {
 
     if (io.MouseDown[0]) {
         if (s_gesture == GESTURE_IDLE) {
-            // Allow touch detection even when finger lands directly on a checkbox, slider, or button
-            if (s_active_child == 0 && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem)) {
+            if (s_active_child == 0 && ImGui::IsWindowHovered()) {
                 s_touch_start = io.MousePos;
                 s_active_child = child_id;
             }
@@ -188,19 +187,22 @@ static void handleTouchScroll() {
             float abs_dy = std::abs(dy);
 
             if (s_gesture == GESTURE_IDLE) {
-                if (abs_dx >= 6.0f && abs_dx > abs_dy * 1.2f) {
+                if (abs_dx >= 5.0f && abs_dx > abs_dy * 1.1f) {
                     s_gesture = GESTURE_HORIZONTAL;
-                } else if (abs_dy >= 6.0f && abs_dy > abs_dx * 1.2f) {
+                } else if (abs_dy >= 5.0f && abs_dy > abs_dx * 1.1f) {
                     s_gesture = GESTURE_VERTICAL;
                 }
             }
 
             if (s_gesture == GESTURE_VERTICAL) {
-                // Cancel active button/checkbox click state so vertical drag scrolls instead of toggling
-                ImGui::ClearActiveID();
                 float delta_y = io.MouseDelta.y;
                 if (std::abs(delta_y) > 0.01f) {
-                    ImGui::SetScrollY(ImGui::GetScrollY() - delta_y);
+                    float cur_scroll = ImGui::GetScrollY();
+                    float new_scroll = cur_scroll - delta_y;
+                    float max_scroll = ImGui::GetScrollMaxY();
+                    if (new_scroll < 0.0f) new_scroll = 0.0f;
+                    if (new_scroll > max_scroll) new_scroll = max_scroll;
+                    ImGui::SetScrollY(new_scroll);
                 }
             }
         }
@@ -492,18 +494,16 @@ void render() {
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.988f, 0.973f, 1.000f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_TextDisabled, ImVec4(0.608f, 0.549f, 0.706f, 1.0f));
 
-    // Sleek Electric Orchid scrollbar indicator so user always knows scroll position
-    ImGui::PushStyleColor(ImGuiCol_ScrollbarBg, ImVec4(0.08f, 0.06f, 0.12f, 0.35f));
-    ImGui::PushStyleColor(ImGuiCol_ScrollbarGrab, ImVec4(0.882f, 0.000f, 0.596f, 0.55f));
-    ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabHovered, ImVec4(0.882f, 0.000f, 0.596f, 0.85f));
-    ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabActive, ImVec4(1.000f, 0.250f, 0.750f, 1.0f));
+    // Invisible scrollbar styling (touch scroll operates silently across whole window)
+    ImGui::PushStyleColor(ImGuiCol_ScrollbarBg, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_ScrollbarGrab, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabHovered, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabActive, ImVec4(0, 0, 0, 0));
 
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ui_opacity);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 12.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.5f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-    ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 5.0f * ui_scale);
-    ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarRounding, 4.0f);
 
     ImGuiWindowFlags winFlags = ImGuiWindowFlags_NoTitleBar |
                                 ImGuiWindowFlags_NoResize |
@@ -960,7 +960,7 @@ void render() {
         ImGui::PopStyleColor(2);
     }
     ImGui::End();
-    ImGui::PopStyleVar(6);
+    ImGui::PopStyleVar(4);
     ImGui::PopStyleColor(19);
 }
 

@@ -29,11 +29,24 @@ namespace aimbot {
             lockToHead = ((s_rollRng % 100u) < static_cast<uint32_t>(rate));
         }
 
-        // NOTE: In Free Fire 64-bit (Global), writing to target.addr + 0x78 or 0x80
-        // directly corrupts target.addr + 0x7C (Player::IsDead flag) and component pointers,
-        // causing data.cpp to immediately flag the target as DEAD and wipe it from ESP.
-        // True Silent Aim steering occurs via client-side trajectory calculation (apply_trajectory)
-        // targeting target.headWorld without mutating enemy memory.
+        // AIM COLLIDER OVERRIDE:
+        // Set LockedAimingCollider (0x80 on AttackableEntity) to the enemy's Head Collider (0x740 / 0x738)
+        // Verified from ff-global-dump (1).cs:
+        // Line 1051012: Boolean CGJLEBOGBNP; // 0x7c (IsDead)
+        // Line 1051013: Collider <AONPKGBGHHI>k__BackingField; // 0x80 (LockedAimingCollider)
+        // Line 1036437: Collider BANPEGJEAKE; // 0x738
+        // Line 1036438: GMOCOOEIFMK BKEPAKCAGNJ; // 0x740 (Head Collider)
+        // Writing an 8-byte pointer to 0x80 is perfectly aligned (0x80..0x87) and preserves 0x7C!
+        if (lockToHead && is_valid_ptr(target.addr)) {
+            uint64_t headCol = rpm<uint64_t>(target.addr + Offsets::Player::HeadCollider);     // 0x740
+            if (!is_valid_ptr(headCol)) {
+                headCol = rpm<uint64_t>(target.addr + Offsets::Player::HeadCollider_Alt); // 0x738
+            }
+            if (is_valid_ptr(headCol)) {
+                wpm<uint64_t>(target.addr + Offsets::Player::LockedAimingCollider, headCol);     // 0x80
+            }
+        }
+
         return lockToHead;
     }
 

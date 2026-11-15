@@ -1,23 +1,82 @@
 #pragma once
 #include "common.hpp"
+#include <sched.h>
+#include <unistd.h>
 
 namespace aimbot {
 
+    // Shared high-speed writer state matching pewpew & crack_master hook architecture
+    inline std::atomic<bool> s_writerRunning{false};
+    inline std::atomic<bool> s_hasSilentData{false};
+    inline std::mutex        s_silentLock;
+    inline uint64_t          s_silentAimInfo = 0;
+    inline Vector3           s_silentDir = Vector3::Zero();
+    inline std::thread       s_writerThread;
+
+    inline void clear_silent_data() {
+        if (s_hasSilentData.load(std::memory_order_relaxed) || s_silentAimInfo != 0) {
+            std::lock_guard<std::mutex> lock(s_silentLock);
+            s_hasSilentData.store(false, std::memory_order_relaxed);
+            s_silentAimInfo = 0;
+        }
+    }
+
+    // High-speed writer thread (Producer/Consumer Flooding):
+    // In Free Fire 64-bit, weapon logic in Update() continuously writes camera aim into AimingInfo+0x40.
+    // Flooding during firing guarantees the game's bullet spawn code reads our target direction vector.
+    inline void writer_loop() {
+        while (s_writerRunning.load(std::memory_order_relaxed)) {
+            if (!s_hasSilentData.load(std::memory_order_relaxed) || s_silentAimInfo == 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                continue;
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(s_silentLock);
+                if (s_hasSilentData.load(std::memory_order_relaxed) && s_silentAimInfo != 0) {
+                    wpm<Vector3>(s_silentAimInfo + Offsets::Aim::Direction, s_silentDir);
+                    wpm<bool>(s_silentAimInfo + 0x71, false);
+                }
+            }
+            sched_yield();
+        }
+    }
+
+    inline void start_silent_writer() {
+        if (s_writerRunning.exchange(true)) return;
+        s_writerThread = std::thread(writer_loop);
+    }
+
+    inline void stop_silent_writer() {
+        if (!s_writerRunning.exchange(false)) return;
+        clear_silent_data();
+        if (s_writerThread.joinable()) {
+            s_writerThread.join();
+        }
+    }
+
     // 3D Silent bullet trajectory calculation and steering
-    // Directly steers client-side bullet trajectory without touching camera rotation or weapon recoil.
     inline void apply_trajectory(uint64_t localPlayer, const PlayerData& target, bool lockToHead, bool isFiring) {
-        if (!is_valid_ptr(localPlayer)) return;
+        if (!is_valid_ptr(localPlayer)) {
+            clear_silent_data();
+            return;
+        }
 
         // Trajectory write should only execute when weapon is actively firing (or when trigger mode is Always In FOV)
-        if (!isFiring && cfg::aim::trigger_mode != 1) return;
+        if (!isFiring && cfg::aim::trigger_mode != 1) {
+            clear_silent_data();
+            return;
+        }
 
-        // Resolve Weapon AimingInfo (0xE58)
+        // Resolve Weapon AimingInfo (0xE58 primary, 0xE50 auxiliary)
         uint64_t aimInfoWeapon = rpm<uint64_t>(localPlayer + Offsets::Player::AimInfo);
         if (!is_valid_ptr(aimInfoWeapon)) {
-            // Fallback to auxiliary only if primary weapon AimInfo is uninitialized
             aimInfoWeapon = rpm<uint64_t>(localPlayer + Offsets::Player::AimInfo_Alt);
         }
-        if (!is_valid_ptr(aimInfoWeapon)) return;
+        if (!is_valid_ptr(aimInfoWeapon)) {
+            clear_silent_data();
+            return;
+        }
 
         // Read start position (0x4C). Must be a valid world coordinate.
         Vector3 bulletOrigin = rpm<Vector3>(aimInfoWeapon + Offsets::Aim::StartPosition);
@@ -28,11 +87,13 @@ namespace aimbot {
 
         if (bulletOrigin == Vector3::Zero() || bulletOrigin.sqrMagnitude() < 0.01f ||
             !std::isfinite(bulletOrigin.x) || !std::isfinite(bulletOrigin.y) || !std::isfinite(bulletOrigin.z)) {
-            return; // Never compute trajectory from invalid/zero origin
+            clear_silent_data();
+            return;
         }
 
         Vector3 target3D = target.headWorld;
         if (target3D == Vector3::Zero() || !std::isfinite(target3D.x) || !std::isfinite(target3D.y) || !std::isfinite(target3D.z)) {
+            clear_silent_data();
             return;
         }
 
@@ -46,24 +107,26 @@ namespace aimbot {
             if (!lockToHead) {
                 target3D.y -= 0.28f; // Chest on non-headshot rolls
             }
-            // When lockToHead is true, target3D stays strictly at target.headWorld
         }
 
-        // Compute delta vector
+        // Compute delta vector towards target
         Vector3 diff = target3D - bulletOrigin;
-        if (diff.sqrMagnitude() <= 1e-4f) return;
-
-        // CRITICAL: The Direction vector at AimingInfo+0x40 MUST BE A NORMALIZED UNIT VECTOR (|v| == 1.0).
-        // Passing an unnormalized distance vector (magnitude 20m..100m) into Unity's LookRotation causes
-        // camera rotation matrices to produce NaN / extreme values, breaking character and camera angles.
-        Vector3 shotDir = SafeNormalize(diff);
-        if (!std::isfinite(shotDir.x) || !std::isfinite(shotDir.y) || !std::isfinite(shotDir.z) || shotDir == Vector3::Zero()) {
+        if (diff.sqrMagnitude() <= 1e-4f) {
+            clear_silent_data();
             return;
         }
 
-        // Write unit direction vector to LastAimingInfoFromWeapon (0xE58 + 0x40)
-        // Steers client-side bullet trajectory directly towards target without mutating camera rotation or character matrices.
-        wpm<Vector3>(aimInfoWeapon + Offsets::Aim::Direction, shotDir);
+        // Steer bullet trajectory
+        {
+            std::lock_guard<std::mutex> lock(s_silentLock);
+            s_silentAimInfo = aimInfoWeapon;
+            s_silentDir = diff;
+            s_hasSilentData.store(true, std::memory_order_relaxed);
+        }
+
+        // Immediate write to ensure zero lag on initial bullet
+        wpm<Vector3>(aimInfoWeapon + Offsets::Aim::Direction, diff);
+        wpm<bool>(aimInfoWeapon + 0x71, false);
     }
 
 } // namespace aimbot

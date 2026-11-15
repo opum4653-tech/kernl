@@ -39,30 +39,30 @@ namespace Offsets {
 // Player Entity Fields
     namespace Player {
         constexpr uintptr_t Rotation             = 0x614;   // Vector3 (Pitch, Yaw, Roll)
-        constexpr uintptr_t HeadTF               = 0x6A0;   // ITransformNode
-        constexpr uintptr_t FootTF               = 0x6E8;   // ITransformNode
-        constexpr uintptr_t Camera               = 0x690;   // FollowCamera
-        constexpr uintptr_t IsFiring             = 0x850;   // Primary: isFiring (0x850 in FF, 0x848 in older builds)
-        constexpr uintptr_t IsFiring_Alt         = 0x848;   // Auxiliary: isFiring
+        constexpr uintptr_t HeadTF               = 0x6A8;   // Head ITransformNode (COBFGNOIPMF 0x6A8)
+        constexpr uintptr_t FootTF               = 0x6F0;   // Foot ITransformNode (JMHBBGIKBNO 0x6F0)
+        constexpr uintptr_t Camera               = 0x690;   // FollowCamera (AHNCPOJPPCL 0x690)
+        constexpr uintptr_t Camera_Alt           = 0x698;   // FollowCamera auxiliary
+        constexpr uintptr_t IsFiring             = 0x850;   // Primary: isFiring (KPAFBIDMPID 0x850)
+        constexpr uintptr_t IsFiring_Alt         = 0x848;   // Auxiliary: isFiring (<AHDLLHMLNFI> 0x848)
         constexpr uintptr_t HP                   = 0x70;    // HP Pool Pointer
         constexpr uintptr_t Armor                = 0x74;    // Int32
-        constexpr uintptr_t IsDead               = 0x7C;    // Boolean
-        constexpr uintptr_t Avatar               = 0x770;   // AvatarManager
-        constexpr uintptr_t HeadCollider         = 0x740;   // Primary: Head Collider (0x740 in FF 1.132.1 / FF Max)
-        constexpr uintptr_t HeadCollider_Alt     = 0x738;   // Auxiliary: Head Collider (0x738 in legacy FF)
-        constexpr uintptr_t LockedAimingCollider = 0x80;    // Primary: Collider on AttackableEntity (ColliderBody)
-        constexpr uintptr_t LockedAimingCollider_Alt = 0x78;// Auxiliary: AttackableEntity Current Collider
-        constexpr uintptr_t IsBot                = 0x4A0;   // Boolean
-        constexpr uintptr_t Name                 = 0x490;   // MonoString*
-        constexpr uintptr_t Speed                = 0x560;   // Single (Default 1.0f)
-        constexpr uintptr_t AimInfo              = 0xE58;   // Primary: LastAimingInfoFromWeapon
-        constexpr uintptr_t AimInfo_Alt          = 0xE50;   // Auxiliary: AimingInfo
+        constexpr uintptr_t IsDead               = 0x7C;    // Boolean (CGJLEBOGBNP 0x7C)
+        constexpr uintptr_t Avatar               = 0x770;   // AvatarManager (GGJOLDEEIEN 0x770)
+        constexpr uintptr_t HeadCollider         = 0x740;   // Primary: Head Collider (BKEPAKCAGNJ 0x740)
+        constexpr uintptr_t HeadCollider_Alt     = 0x738;   // Auxiliary: Head Collider (BANPEGJEAKE 0x738)
+        constexpr uintptr_t LockedAimingCollider = 0x80;    // Primary: Collider on AttackableEntity (<AONPKGBGHHI> 0x80)
+        constexpr uintptr_t IsBot                = 0x4A0;   // Boolean (IsClientBot 0x4A0)
+        constexpr uintptr_t Name                 = 0x498;   // MonoString* OriginalNickName (0x498)
+        constexpr uintptr_t Speed                = 0x560;   // Single (Speed 0x560)
+        constexpr uintptr_t AimInfo              = 0xE58;   // Primary: LastAimingInfoFromWeapon (PKIOAMDCOPB 0xE58)
+        constexpr uintptr_t AimInfo_Alt          = 0xE50;   // Auxiliary: AimingInfo (FDMIEDDNCEC 0xE50)
         constexpr uintptr_t Velocity             = 0xF0;    // Vector3
         constexpr uintptr_t IsGrounded           = 0x11C;   // Boolean
         constexpr uintptr_t FOVOffset            = 0x84;    // Single
-        constexpr uintptr_t Weapon               = 0x600;   // WeaponOnHand
+        constexpr uintptr_t Weapon               = 0x600;   // WeaponOnHand (ActiveUISightingWeapon 0x600)
         constexpr uintptr_t DeathInfo            = 0x24A8;  // DeathInfo
-        constexpr uintptr_t Attributes           = 0x768;   // PlayerAttributes (0x768 Global, 0x770 Max)
+        constexpr uintptr_t Attributes           = 0x768;   // PlayerAttributes (IODLOCEJIOK 0x768)
         constexpr uintptr_t Attributes_Max       = 0x770;   // PlayerAttributes Max
         constexpr uintptr_t PhantomState         = 0x814;   // Boolean: Ghost / Phantom mode flag on Player
         constexpr uintptr_t FlightFlag           = 0x2098;  // Boolean: Elevation flight state flag on Player
@@ -106,20 +106,21 @@ namespace Offsets {
 
 // Skeleton Bones (ITransformNode offsets inside Player)
     namespace Bone {
-        constexpr uintptr_t Head                 = 0x6A0;
-        constexpr uintptr_t Hip                  = 0x6A8;
-        constexpr uintptr_t Breast               = 0x6B0;
-        constexpr uintptr_t Root                 = 0x6C8;
-        constexpr uintptr_t LeftShoulder         = 0x708;
-        constexpr uintptr_t RightShoulder        = 0x710;
-        constexpr uintptr_t LeftAnkle            = 0x6D8;
-        constexpr uintptr_t RightAnkle           = 0x6E0;
-        constexpr uintptr_t LeftToe              = 0x6E8;
-        constexpr uintptr_t RightToe             = 0x6F0;
-        constexpr uintptr_t RightForeArm         = 0x728;
-        constexpr uintptr_t LeftForeArm          = 0x730;
-        constexpr uintptr_t RightHand            = 0x718;
-        constexpr uintptr_t LeftHand             = 0x720;
+        constexpr uintptr_t Head                 = 0x6A8;   // COBFGNOIPMF 0x6A8 (Primary Head)
+        constexpr uintptr_t Head_Alt             = 0x6A0;   // GBKFHDFCPMD 0x6A0 (Neck/Chest node)
+        constexpr uintptr_t Hip                  = 0x6B0;   // FFFPCADFFGA 0x6B0 (Pelvis/Hip)
+        constexpr uintptr_t Breast               = 0x6B8;   // CBHHCCNKOND 0x6B8 (Spine/Chest)
+        constexpr uintptr_t Root                 = 0x6D0;   // EJJBPONNECG 0x6D0 (Root)
+        constexpr uintptr_t LeftShoulder         = 0x710;   // FOELKAHABCD 0x710
+        constexpr uintptr_t RightShoulder        = 0x718;   // JLAECGNPCHC 0x718
+        constexpr uintptr_t LeftAnkle            = 0x6E0;   // EMNIJJCEKDD 0x6E0
+        constexpr uintptr_t RightAnkle           = 0x6E8;   // GMJLIMFHMAE 0x6E8
+        constexpr uintptr_t LeftToe              = 0x6F0;   // JMHBBGIKBNO 0x6F0 (Foot/Toe)
+        constexpr uintptr_t RightToe             = 0x6F8;   // ONEIIEEJLOC 0x6F8
+        constexpr uintptr_t RightForeArm         = 0x730;   // IMLDFGHNLBP 0x730
+        constexpr uintptr_t LeftForeArm          = 0x738;   // BANPEGJEAKE 0x738
+        constexpr uintptr_t RightHand            = 0x720;   // CLCEEJMGBGE 0x720
+        constexpr uintptr_t LeftHand             = 0x728;   // DJAOGHBOBOJ 0x728
     }
 
 // Loot & Drop Items
