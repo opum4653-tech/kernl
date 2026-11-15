@@ -894,8 +894,7 @@ void render() {
                 ImGui::Dummy(ImVec2(0, 4));
                 ImGui::TextDisabled("DRIVER & SYSTEM INFO");
 
-                const char* dNames[] = { "NONE", "RT HOOK", "RT DEV", "DEV COMPAT", "QX 10-11", "KPM NEO" };
-                const char* dName = (选择值 >= 1 && 选择值 <= 5) ? dNames[选择值] : "ARMED";
+                const char* dName = driver ? driver->get_driver_name() : "ARMED";
 
                 char pidStr[32];
                 snprintf(pidStr, sizeof(pidStr), "%d", proc::pid);

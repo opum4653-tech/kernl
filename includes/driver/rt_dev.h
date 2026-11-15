@@ -18,7 +18,7 @@ private:
             return NULL;
         }
 
-        const char *files[] = { "wanbai", "CheckMe", "Ckanri", "lanran", "video188" };
+        const char *files[] = { "wanbai", "CheckMe", "Ckanri", "lanran", "video188", "facking", "YBBBYN" };
         struct dirent *entry;
         char *file_path = NULL;
         while ((entry = readdir(dir)) != NULL) {
@@ -30,7 +30,7 @@ private:
             file_path = (char *)malloc(path_length);
             if (!file_path) continue;
             snprintf(file_path, path_length, "%s/%s", dev_path, entry->d_name);
-            for (int i = 0; i < 5; i++) {
+            for (int i = 0; i < 7; i++) {
                 if (strcmp(entry->d_name, files[i]) == 0) {
                     printf("驱动文件：%s\n", file_path);
                     closedir(dir);

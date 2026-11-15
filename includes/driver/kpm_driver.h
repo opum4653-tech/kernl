@@ -1,10 +1,16 @@
 #pragma once
 
 #include "driver_config.h"
+#include <sys/syscall.h>
+#include <sys/uio.h>
+#include <errno.h>
 
 // ============================================================
-// Driver Mode 5: KPM (Neo prctl Kernel Patch Module Backend)
+// Driver Mode 5: KPM (Dual-Engine: TB KPM + Neo KPM + PVM Fallback)
+// Matching and advancing beyond pewpew & crack_master architectures
 // ============================================================
+
+// 1. Neo KPM (0x4E41)
 #define NA_PRCTL_MAGIC      0x4E41
 #define NA_CMD_READ_MEM     1
 #define NA_CMD_WRITE_MEM    2
@@ -24,31 +30,108 @@ struct na_cmd {
     uint8_t  data[NA_MAX_RW_SIZE];
 };
 
+// 2. TB KPM (TongBao / TianBao KPM)
+#define PRCTL_MEM_READ      0x63687501
+#define PRCTL_MEM_WRITE     0x63687502
+
+struct mem_operation {
+    pid_t    target_pid;
+    uint64_t addr;
+    void    *buffer;
+    uint64_t size;
+};
+
+// 3. Direct Syscall R/W numbers for ARM64 / ARM fallback
+#if defined(__aarch64__)
+#define KPM_SYS_MEM_READV  270
+#define KPM_SYS_MEM_WRITEV 271
+#elif defined(__arm__)
+#define KPM_SYS_MEM_READV  376
+#define KPM_SYS_MEM_WRITEV 377
+#else
+#define KPM_SYS_MEM_READV  310
+#define KPM_SYS_MEM_WRITEV 311
+#endif
+
+enum EKpmEngine {
+    KPM_ENGINE_NONE = 0,
+    KPM_ENGINE_TB,      // TongBao KPM (0x63687501 / 0x63687502)
+    KPM_ENGINE_NEO,     // Neo KPM (0x4E41)
+    KPM_ENGINE_SYSCALL  // process_vm_readv / writev fallback
+};
+
 class c_kpm_driver {
 private:
     bool active = false;
     pid_t pid = -1;
+    EKpmEngine engine = KPM_ENGINE_NONE;
+
+    bool pvm_rw(uintptr_t addr, void *buffer, size_t size, bool is_write) {
+        if (this->pid <= 0 || !buffer || size == 0) return false;
+        struct iovec local[1];
+        struct iovec remote[1];
+        local[0].iov_base  = buffer;
+        local[0].iov_len   = size;
+        remote[0].iov_base = reinterpret_cast<void*>(addr);
+        remote[0].iov_len  = size;
+        long nr = is_write ? KPM_SYS_MEM_WRITEV : KPM_SYS_MEM_READV;
+        ssize_t bytes = syscall(nr, this->pid, local, 1, remote, 1, 0);
+        return (bytes == static_cast<ssize_t>(size));
+    }
 
 public:
-    c_kpm_driver() : active(false), pid(-1) {}
+    c_kpm_driver() : active(false), pid(-1), engine(KPM_ENGINE_NONE) {}
 
-    bool probe() {
+    bool probe_tb() {
+        mem_operation op = { 0, 0, nullptr, 0 };
+        errno = 0;
+        long r = syscall(__NR_prctl, PRCTL_MEM_READ, (unsigned long)&op, 0, 0, 0);
+        // Standard Linux kernel without TB KPM returns -1 with EINVAL.
+        // Loaded TB KPM module responds with 0 or EFAULT/ESRCH on probe.
+        if (r == 0 || (r == -1 && (errno == EFAULT || errno == ESRCH || errno == EPERM))) {
+            return true;
+        }
+        return false;
+    }
+
+    bool probe_neo() {
         na_cmd cmd;
-        prctl(0xDEAD, 0, 0, 0, 0);
         memset(&cmd, 0, sizeof(cmd));
         errno = 0;
         int r = prctl(NA_PRCTL_MAGIC, NA_CMD_GET_PID, (unsigned long)&cmd, 0, 0);
-        active = (r == 0);
-        return active;
+        return (r == 0);
     }
 
     bool init() {
-        if (probe()) {
-            printf("\033[42m\033[37mKPM (Neo) backend active\033[0m\n");
+        // Priority 1: Check TB KPM (TongBao / TianBao - fastest, direct pointer single-call)
+        if (probe_tb()) {
+            engine = KPM_ENGINE_TB;
+            active = true;
+            printf("\033[42m\033[37m[KPM] TB KPM (TongBao prctl 0x63687501) active\033[0m\n");
             return true;
-        } else {
-            printf("\033[41m\033[37m[FATAL] KPM not available on this kernel! Exiting...\033[0m\n");
-            return false;
+        }
+
+        // Priority 2: Check Neo KPM (0x4E41)
+        if (probe_neo()) {
+            engine = KPM_ENGINE_NEO;
+            active = true;
+            printf("\033[42m\033[37m[KPM] Neo KPM (prctl 0x4E41) active\033[0m\n");
+            return true;
+        }
+
+        // Priority 3: Fallback to direct process_vm_readv syscall (Zero-crash resilience)
+        engine = KPM_ENGINE_SYSCALL;
+        active = true;
+        printf("\033[43m\033[30m[KPM] Kernel KPM module not loaded. Enabled Syscall (PVM) Mode\033[0m\n");
+        return true;
+    }
+
+    const char* get_engine_name() const {
+        switch (engine) {
+            case KPM_ENGINE_TB:      return "TB KPM";
+            case KPM_ENGINE_NEO:     return "NEO KPM";
+            case KPM_ENGINE_SYSCALL: return "PVM SYSCALL";
+            default:                 return "INACTIVE";
         }
     }
 
@@ -63,53 +146,71 @@ public:
     bool read(uintptr_t addr, void *buffer, size_t size) {
         if (!active || pid <= 0 || !buffer || size == 0) return false;
 
-        uint8_t *dest = static_cast<uint8_t *>(buffer);
-        size_t bytes_left = size;
-        uintptr_t cur_addr = addr;
+        if (engine == KPM_ENGINE_TB) {
+            mem_operation op = { this->pid, (uint64_t)addr, buffer, (uint64_t)size };
+            return (syscall(__NR_prctl, PRCTL_MEM_READ, (unsigned long)&op, 0, 0, 0) == 0);
+        } else if (engine == KPM_ENGINE_NEO) {
+            // Chunked loop to completely fix the pewpew 4096-byte limit bug
+            uint8_t *dest = static_cast<uint8_t *>(buffer);
+            size_t bytes_left = size;
+            uintptr_t cur_addr = addr;
 
-        while (bytes_left > 0) {
-            size_t chunk = (bytes_left > NA_MAX_RW_SIZE) ? NA_MAX_RW_SIZE : bytes_left;
-            na_cmd cmd;
-            memset(&cmd, 0, sizeof(cmd));
-            cmd.pid  = (uint32_t)this->pid;
-            cmd.addr = (uint64_t)cur_addr;
-            cmd.size = (uint32_t)chunk;
+            while (bytes_left > 0) {
+                size_t chunk = (bytes_left > NA_MAX_RW_SIZE) ? NA_MAX_RW_SIZE : bytes_left;
+                na_cmd cmd;
+                memset(&cmd, 0, sizeof(cmd));
+                cmd.pid  = (uint32_t)this->pid;
+                cmd.addr = (uint64_t)cur_addr;
+                cmd.size = (uint32_t)chunk;
 
-            if (prctl(NA_PRCTL_MAGIC, NA_CMD_READ_MEM, (unsigned long)&cmd, 0, 0) != 0) return false;
-            if (cmd.result != 0) return false;
+                if (prctl(NA_PRCTL_MAGIC, NA_CMD_READ_MEM, (unsigned long)&cmd, 0, 0) != 0) return false;
+                if (cmd.result != 0) return false;
 
-            memcpy(dest, cmd.data, chunk);
-            dest += chunk;
-            cur_addr += chunk;
-            bytes_left -= chunk;
+                memcpy(dest, cmd.data, chunk);
+                dest += chunk;
+                cur_addr += chunk;
+                bytes_left -= chunk;
+            }
+            return true;
+        } else if (engine == KPM_ENGINE_SYSCALL) {
+            return pvm_rw(addr, buffer, size, false);
         }
-        return true;
+        return false;
     }
 
     bool write(uintptr_t addr, void *buffer, size_t size) {
         if (!active || pid <= 0 || !buffer || size == 0) return false;
 
-        const uint8_t *src = static_cast<const uint8_t *>(buffer);
-        size_t bytes_left = size;
-        uintptr_t cur_addr = addr;
+        if (engine == KPM_ENGINE_TB) {
+            mem_operation op = { this->pid, (uint64_t)addr, buffer, (uint64_t)size };
+            return (syscall(__NR_prctl, PRCTL_MEM_WRITE, (unsigned long)&op, 0, 0, 0) == 0);
+        } else if (engine == KPM_ENGINE_NEO) {
+            // Chunked loop to completely fix the pewpew 4096-byte limit bug
+            const uint8_t *src = static_cast<const uint8_t *>(buffer);
+            size_t bytes_left = size;
+            uintptr_t cur_addr = addr;
 
-        while (bytes_left > 0) {
-            size_t chunk = (bytes_left > NA_MAX_RW_SIZE) ? NA_MAX_RW_SIZE : bytes_left;
-            na_cmd cmd;
-            memset(&cmd, 0, sizeof(cmd));
-            cmd.pid  = (uint32_t)this->pid;
-            cmd.addr = (uint64_t)cur_addr;
-            cmd.size = (uint32_t)chunk;
-            memcpy(cmd.data, src, chunk);
+            while (bytes_left > 0) {
+                size_t chunk = (bytes_left > NA_MAX_RW_SIZE) ? NA_MAX_RW_SIZE : bytes_left;
+                na_cmd cmd;
+                memset(&cmd, 0, sizeof(cmd));
+                cmd.pid  = (uint32_t)this->pid;
+                cmd.addr = (uint64_t)cur_addr;
+                cmd.size = (uint32_t)chunk;
+                memcpy(cmd.data, src, chunk);
 
-            if (prctl(NA_PRCTL_MAGIC, NA_CMD_WRITE_MEM, (unsigned long)&cmd, 0, 0) != 0) return false;
-            if (cmd.result != 0) return false;
+                if (prctl(NA_PRCTL_MAGIC, NA_CMD_WRITE_MEM, (unsigned long)&cmd, 0, 0) != 0) return false;
+                if (cmd.result != 0) return false;
 
-            src += chunk;
-            cur_addr += chunk;
-            bytes_left -= chunk;
+                src += chunk;
+                cur_addr += chunk;
+                bytes_left -= chunk;
+            }
+            return true;
+        } else if (engine == KPM_ENGINE_SYSCALL) {
+            return pvm_rw(addr, buffer, size, true);
         }
-        return true;
+        return false;
     }
 
     uintptr_t get_module_base(const char *name) {
@@ -132,5 +233,6 @@ public:
 
     void close_driver() {
         active = false;
+        engine = KPM_ENGINE_NONE;
     }
 };

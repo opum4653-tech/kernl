@@ -49,7 +49,7 @@ public:
         printf("\033[1;36m[+] 2. RT DEV\033[0m\n");
         printf("\033[1;36m[+] 3. DEV (Most Compatible)\033[0m\n");
         printf("\033[1;36m[+] 4. QX10~11.4\033[0m\n");
-        printf("\033[1;36m[+] 5. KPM (Neo prctl)\033[0m\n");
+        printf("\033[1;36m[+] 5. KPM (Dual-Engine: TB KPM & Neo prctl)\033[0m\n");
         printf("\033[1;33m[?] Select an option (1-5): \033[0m");
         fflush(stdout);
 
@@ -152,6 +152,15 @@ public:
     template <typename T>
     bool write(uintptr_t addr, T value) {
         return this->write(addr, &value, sizeof(T));
+    }
+
+    const char* get_driver_name() const {
+        if (选择值 == 1) return "RT HOOK";
+        if (选择值 == 2) return "RT DEV";
+        if (选择值 == 3) return "DEV COMPAT";
+        if (选择值 == 4) return "QX 10-11";
+        if (选择值 == 5) return m_kpm_driver.get_engine_name();
+        return "ARMED";
     }
 
     uintptr_t getModuleBase(const char* name) {

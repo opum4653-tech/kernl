@@ -116,3 +116,20 @@ Comprehensive offset audit and aim engine fix:
 3. **High-Speed Writer Flooding Architecture (`src/func/aim/silent.hpp`):**
    - Unity's weapon script continuously overwrites `AimingInfo + 0x40` (`HLDECMJFKJK`) during `Update()`. A slow 10ms loop gets overwritten before `BulletFire()` executes.
    - Implemented dedicated writer loop (`writer_loop`) that continuously floods `wpm<Vector3>(aimInfo + 0x40, targetDir)` and sets `wpm<bool>(aimInfo + 0x71, false)` with `sched_yield()` during active firing, matching `pewpew` and reference design. Zero bullets miss.
+
+---
+
+## 7. Advanced Dual-Engine KPM & Driver Ecosystem
+
+Comprehensive modernization of Kernel Process Memory (`kpm_driver.h`) integrated and enhanced from `pewpew`:
+
+1. **Dual-Engine KPM (`includes/driver/kpm_driver.h`):**
+   - **TB KPM (TongBao / TianBao):** Uses `prctl(PRCTL_MEM_READ 0x63687501)` / `prctl(PRCTL_MEM_WRITE 0x63687502)`. Direct kernel ring-0 pointer transfer with zero device node footprint.
+   - **Neo KPM:** Uses `prctl(NA_PRCTL_MAGIC 0x4E41)` with command struct `na_cmd`.
+   - **Auto-Detection:** Automatically probes TB KPM first; if absent, probes Neo KPM.
+
+2. **Fixing PewPew Implementation Flaws:**
+   - **4096-Byte Limit Bug:** `pewpew` rejected any read/write greater than `NA_MAX_RW_SIZE` (`if (size > 4096) return false;`). Our implementation chunk-loops the request (`while (bytes_left > 0)`), supporting arbitrary buffer sizes without truncation.
+   - **Abrupt Termination (`exit(0)`):** `pewpew` called `exit(0)` when KPM was unavailable. Our driver features an intelligent fallback ladder to `process_vm_readv` (PVM Syscall mode), preventing crashes.
+   - **Expanded Node Scanner:** Added `"facking"` and `"YBBBYN"` to `rt_dev.h` device table.
+   - **Dynamic UI Telemetry:** `menu.cpp` Tab 2 dynamically reflects the active engine (`TB KPM`, `NEO KPM`, or `PVM SYSCALL`).
