@@ -3,10 +3,15 @@
 
 namespace aimbot {
 
+    // Accurate Free Fire sniper weapon IDs (AWM, Kar98k, M82B, M24, VSK94, etc.)
+    inline bool is_sniper_id(int id) {
+        return (id == 4 || id == 30060 || id == 65 || id == 21 || id == 64 || id == 128 || id == 129 || id == 45 || id == 75 || id == 197);
+    }
+
     // Evaluates headshot rate roll (0% - 100%) and configures head collider overrides
     inline bool evaluate_headshot(const PlayerData& target, bool isScoping) {
         float rate = cfg::aim::headshot_rate;
-        bool isSniperShot = (cfg::aim::sniper_aim && isScoping);
+        bool isSniperShot = (cfg::aim::sniper_aim && (isScoping || is_sniper_id(target.weaponType)));
         bool lockToHead = false;
 
         if (isSniperShot || rate >= 100.0f) {
