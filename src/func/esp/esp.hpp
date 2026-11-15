@@ -46,7 +46,7 @@ namespace func::esp {
 
             // 1. Tracer Line (Top, Center Reticle Dot, or Bottom)
             if (cfg::esp::tracer) {
-                drawTracer(dl, p, colBase);
+                drawTracer(dl, p, pb, colBase);
             }
 
             // 2. Bounding Box

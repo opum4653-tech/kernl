@@ -182,6 +182,15 @@ void drawBegin() {
         ::orientation = displayInfo.orientation;
         UpdateScreenData(displayInfo.width, displayInfo.height, displayInfo.orientation);
     }
+
+    // Keep global screen resolution in sync with hardware display state
+    float curW = (float)(displayInfo.height > displayInfo.width ? displayInfo.height : displayInfo.width);
+    float curH = (float)(displayInfo.height < displayInfo.width ? displayInfo.height : displayInfo.width);
+    if (curW > 0.0f && curH > 0.0f) {
+        extern float g_sw, g_sh;
+        ::g_sw = curW;
+        ::g_sh = curH;
+    }
     
     #ifdef USE_OPENGL
         ImGui_ImplOpenGL3_NewFrame();

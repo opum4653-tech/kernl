@@ -146,6 +146,10 @@ static int start_overlay() {
     ::native_window_screen_x = (displayInfo.height > displayInfo.width ? displayInfo.height : displayInfo.width);
     ::native_window_screen_y = (displayInfo.height < displayInfo.width ? displayInfo.height : displayInfo.width);
 
+    // Synchronize global viewport dimensions for accurate WorldToScreen projection
+    ::g_sw = (float)::native_window_screen_x;
+    ::g_sh = (float)::native_window_screen_y;
+
     if (!initGUI_draw(native_window_screen_x, native_window_screen_y, true, false)) {
         printf("[-] Failed to initialize native surface overlay.\n");
         return -1;

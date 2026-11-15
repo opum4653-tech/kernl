@@ -327,6 +327,10 @@ void render() {
     if (realW <= 0) realW = 2400.0f;
     if (realH <= 0) realH = 1080.0f;
 
+    // Dynamically synchronize global viewport dimensions for accurate WorldToScreen projection
+    g_sw = realW;
+    g_sh = realH;
+
     static int last_orientation = -1;
     static float last_screen_w = 0.0f;
     static float last_screen_h = 0.0f;
@@ -349,7 +353,8 @@ void render() {
     // --------------------------------------------------------------------
     // STATE 1: FLOATING CIRCULAR 'N' LOGO (Rendered ONLY when menu is closed)
     // --------------------------------------------------------------------
-    const float logoRadius = 28.0f * ui_scale;
+    // Enhanced size for high-DPI visibility and effortless touch interaction
+    const float logoRadius = 38.0f * ui_scale;
     const float logoMargin = 16.0f;
 
     if (s_logo_pos.x <= 0.0f || s_logo_pos.y <= 0.0f || pill_needs_reposition) {
