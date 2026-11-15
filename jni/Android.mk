@@ -77,8 +77,6 @@ LOCAL_C_INCLUDES := \
     $(LOCAL_PATH)/../includes/draw/ImGui/backends \
     $(LOCAL_PATH)/../includes/protect \
     $(LOCAL_PATH)/../src \
-    $(LOCAL_PATH)/../src/Scarecrow \
-    $(LOCAL_PATH)/../src/Vectors \
     $(LOCAL_PATH)/../src/ENC \
     $(LOCAL_PATH)/../src/FONTS \
     $(LOCAL_PATH)/../src/ui \

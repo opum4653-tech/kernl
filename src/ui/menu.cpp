@@ -4,6 +4,7 @@
 #include "Android_touch/TouchHelperA.h"
 #include "driver.h"
 #include "cfg.hpp"
+#include "../other/memory.hpp"
 #include "../func/esp.hpp"
 #include "../func/aim/aim.hpp"
 #include "../func/speed.hpp"
@@ -23,20 +24,11 @@ namespace ImGui {
 }
 
 extern bool main_thread_flag;
-extern int abs_ScreenX;
-extern int abs_ScreenY;
 extern int native_window_screen_x;
 extern int native_window_screen_y;
 extern int 选择值;
 
-extern int selectedBoneIndex;
-extern bool Ignorknock;
-extern bool IgnoreBot;
-extern int SilentAimPercentage;
-extern float SpeedMultiplier;
-
 bool g_ShowMenu = false;
-bool g_AimMagnetUi = false;
 
 static int activeTab = 0;
 static float ui_opacity = 1.0f;
@@ -466,7 +458,7 @@ void render() {
 
             DrawCircularLogo(dl, center, logoRadius, s_is_dragging);
 
-            bool connected = (game_pid > 0 && lib_base > 0);
+            bool connected = (proc::pid > 0 && proc::lib > 0);
             ImU32 stCol = connected ? IM_COL32(0, 240, 140, 255) : IM_COL32(255, 90, 90, 255);
             ImVec2 stDot(center.x + logoRadius * 0.68f, center.y - logoRadius * 0.68f);
             dl->AddCircleFilled(stDot, 6.0f, (stCol & 0x00FFFFFF) | (90 << 24));
@@ -562,7 +554,7 @@ void render() {
         dl->AddText(ImGui::GetFont(), 15.0f, ImVec2(brandPos.x + 92.0f, brandPos.y + 3.0f), theme_orchid::ColPrimaryLight, "KERNEL CORE");
 
         // Status pill
-        bool connected = (game_pid > 0 && lib_base > 0);
+        bool connected = (proc::pid > 0 && proc::lib > 0);
         const char* badgeText = connected ? "ACTIVE" : "OFFLINE";
         ImVec2 badgeSz = ImGui::CalcTextSize(badgeText);
         float badgeW = badgeSz.x + 24.0f;
@@ -678,17 +670,15 @@ void render() {
                 }
                 ImGui::Dummy(ImVec2(0, 6));
 
-                if (ImGui::Checkbox("ESP Box (Chaturbhuj)", &cfg::esp::box)) showBox = cfg::esp::box;
-                if (ImGui::Checkbox("ESP Health Bar (Right)", &cfg::esp::health)) showHealth = cfg::esp::health;
+                ImGui::Checkbox("ESP Box (Chaturbhuj)", &cfg::esp::box);
+                ImGui::Checkbox("ESP Health Bar (Right)", &cfg::esp::health);
                 ImGui::Checkbox("ESP Armor Bar", &cfg::esp::armor);
-                if (ImGui::Checkbox("ESP Laser Line", &cfg::esp::tracer)) showLine = cfg::esp::tracer;
-                if (ImGui::Checkbox("ESP Player Name", &cfg::esp::name)) showName = cfg::esp::name;
-                if (ImGui::Checkbox("ESP Distance", &cfg::esp::distance)) showDistance = cfg::esp::distance;
-                if (ImGui::Checkbox("ESP Bot Tag (AI)", &cfg::esp::bot_tag)) showCount = cfg::esp::bot_tag;
+                ImGui::Checkbox("ESP Laser Line", &cfg::esp::tracer);
+                ImGui::Checkbox("ESP Player Name", &cfg::esp::name);
+                ImGui::Checkbox("ESP Distance", &cfg::esp::distance);
+                ImGui::Checkbox("ESP Bot Tag (AI)", &cfg::esp::bot_tag);
                 ImGui::Checkbox("ESP Weapon Name", &cfg::esp::weapon);
                 ImGui::Checkbox("Firing Indicator", &cfg::esp::firing_ind);
-                ImGui::Checkbox("Skeleton ESP", &showSkeleton);
-                ImGui::Checkbox("360 Alert", &is3600);
 
                 handleTouchScroll();
             }
@@ -703,7 +693,7 @@ void render() {
                 cdl->AddLine(ImVec2(rpos.x, rpos.y - 4), ImVec2(rpos.x + 120, rpos.y - 4), theme_orchid::ColPrimary, 2.0f);
                 ImGui::Dummy(ImVec2(0, 4));
 
-                if (ImGui::Checkbox("Ignore Bot Players", &cfg::esp::ignore_bots)) IgnoreBot = cfg::esp::ignore_bots;
+                ImGui::Checkbox("Ignore Bot Players", &cfg::esp::ignore_bots);
                 ImGui::Checkbox("Crosshair Center", &cfg::esp::crosshair);
                 ImGui::Checkbox("Loot ESP", &cfg::esp::loot);
 
@@ -733,8 +723,6 @@ void render() {
                     ImGui::PushID(900 + i);
                     if (ImGui::ColorButton("##espcol", g_ThemeSwatches[i], 0, ImVec2(28 * ui_scale, 28 * ui_scale))) {
                         cfg::esp::box_col = g_ThemeSwatches[i];
-                        boxCustomColor = g_ThemeSwatches[i];
-                        lineCustomColor = g_ThemeSwatches[i];
                     }
                     if (i < 5) ImGui::SameLine();
                     ImGui::PopID();
@@ -762,19 +750,15 @@ void render() {
                 }
                 ImGui::Dummy(ImVec2(0, 6));
 
-                if (ImGui::Checkbox("Enable Aim Assist", &cfg::aim::enable)) Aimbot = cfg::aim::enable;
-                if (ImGui::Checkbox("Aim Silent", &cfg::aim::silent)) AimSilent = cfg::aim::silent;
+                ImGui::Checkbox("Enable Aim Assist", &cfg::aim::enable);
+                ImGui::Checkbox("Aim Silent", &cfg::aim::silent);
                 ImGui::Checkbox("Scope Aim (Instant Head)", &cfg::aim::scope_aim);
                 ImGui::Checkbox("Sniper Headshot Lock", &cfg::aim::sniper_aim);
-                ImGui::Checkbox("Aim Lock (Instant Snap)", &AimLock);
-                ImGui::Checkbox("Aim Magnet", &g_AimMagnetUi);
 
                 ImGui::Dummy(ImVec2(0, 4));
                 static const char* const boneLabels[] = { "Head", "Chest", "Hip" };
                 ImGui::TextDisabled("Target Aim Bone");
-                if (DrawSegmentedButtons("AimBone", &cfg::aim::target_bone, boneLabels, 3, 30.0f * ui_scale)) {
-                    selectedBoneIndex = cfg::aim::target_bone;
-                }
+                DrawSegmentedButtons("AimBone", &cfg::aim::target_bone, boneLabels, 3, 30.0f * ui_scale);
 
                 ImGui::Dummy(ImVec2(0, 4));
                 static const char* const triggerLabels[] = { "When Firing", "Always In FOV" };
@@ -792,9 +776,9 @@ void render() {
                 cdl->AddLine(ImVec2(lpos.x, lpos.y - 4), ImVec2(lpos.x + 100, lpos.y - 4), theme_orchid::ColPrimary, 2.0f);
                 ImGui::Dummy(ImVec2(0, 4));
 
-                if (ImGui::Checkbox("Ignore Knocked", &cfg::aim::ignore_knocked)) Ignorknock = cfg::aim::ignore_knocked;
-                if (ImGui::Checkbox("Ignore AI Bots", &cfg::aim::ignore_bots)) IgnoreBot = cfg::aim::ignore_bots;
-                if (ImGui::Checkbox("Visible Check", &cfg::aim::visible_check)) AimVisible = cfg::aim::visible_check;
+                ImGui::Checkbox("Ignore Knocked", &cfg::aim::ignore_knocked);
+                ImGui::Checkbox("Ignore AI Bots", &cfg::aim::ignore_bots);
+                ImGui::Checkbox("Visible Check", &cfg::aim::visible_check);
 
                 handleTouchScroll();
             }
@@ -809,20 +793,16 @@ void render() {
                 cdl->AddLine(ImVec2(rpos.x, rpos.y - 4), ImVec2(rpos.x + 125, rpos.y - 4), theme_orchid::ColPrimary, 2.0f);
                 ImGui::Dummy(ImVec2(0, 4));
 
-                if (ImGui::Checkbox("Draw FOV Circle", &cfg::aim::show_fov)) showAimFov = cfg::aim::show_fov;
+                ImGui::Checkbox("Draw FOV Circle", &cfg::aim::show_fov);
 
                 ImGui::Dummy(ImVec2(0, 4));
                 ImGui::SetNextItemWidth(-1);
-                if (ImGui::SliderFloat("##AimFovSlider", &cfg::aim::aim_fov, 10.0f, 360.0f, "%.0f deg")) {
-                    AimFov = cfg::aim::aim_fov;
-                }
+                ImGui::SliderFloat("##AimFovSlider", &cfg::aim::aim_fov, 10.0f, 360.0f, "%.0f deg");
                 ImGui::TextDisabled("Aim FOV Range (%.0f deg)", cfg::aim::aim_fov);
 
                 ImGui::Dummy(ImVec2(0, 4));
                 ImGui::SetNextItemWidth(-1);
-                if (ImGui::SliderFloat("##SilentRateSlider", &cfg::aim::headshot_rate, 0.0f, 100.0f, "%.0f%%")) {
-                    SilentAimPercentage = (int)cfg::aim::headshot_rate;
-                }
+                ImGui::SliderFloat("##SilentRateSlider", &cfg::aim::headshot_rate, 0.0f, 100.0f, "%.0f%%");
                 ImGui::TextDisabled("Silent Aim Hit Rate (%.0f%%)", cfg::aim::headshot_rate);
 
                 ImGui::Dummy(ImVec2(0, 4));
@@ -875,15 +855,15 @@ void render() {
                 }
                 ImGui::Dummy(ImVec2(0, 6));
 
-                ImGui::Checkbox("Speed Hack", &SpeedHackV2);
-                if (SpeedHackV2) {
+                ImGui::Checkbox("Speed Hack", &cfg::motion::speed_hack);
+                if (cfg::motion::speed_hack) {
                     ImGui::SetNextItemWidth(-1);
-                    ImGui::SliderFloat("##SpeedMult", &SpeedMultiplier, 1.0f, 5.0f, "%.1fx");
+                    ImGui::SliderFloat("##SpeedMult", &cfg::motion::speed_mult, 1.0f, 5.0f, "%.1fx");
                 }
 
-                ImGui::Checkbox("No Recoil", &NoRecoil);
-                ImGui::Checkbox("No Reload", &NoReload);
-                ImGui::Checkbox("Ghost Hack", &GhostHack);
+                ImGui::Checkbox("No Recoil", &cfg::motion::no_recoil);
+                ImGui::Checkbox("No Reload", &cfg::motion::no_reload);
+                ImGui::Checkbox("Ghost Hack", &cfg::motion::ghost_hack);
 
                 handleTouchScroll();
             }
@@ -902,10 +882,10 @@ void render() {
                 const char* dName = (选择值 >= 1 && 选择值 <= 5) ? dNames[选择值] : "ARMED";
 
                 char pidStr[32];
-                snprintf(pidStr, sizeof(pidStr), "%d", game_pid);
+                snprintf(pidStr, sizeof(pidStr), "%d", proc::pid);
 
                 char libStr[32];
-                snprintf(libStr, sizeof(libStr), "0x%lx", (unsigned long)lib_base);
+                snprintf(libStr, sizeof(libStr), "0x%lx", (unsigned long)proc::lib);
 
                 ImGui::TextDisabled("STATUS:");
                 ImGui::SameLine(100);
@@ -913,11 +893,11 @@ void render() {
 
                 ImGui::TextDisabled("PID:");
                 ImGui::SameLine(100);
-                ImGui::Text(game_pid > 0 ? pidStr : "NONE");
+                ImGui::Text(proc::pid > 0 ? pidStr : "NONE");
 
                 ImGui::TextDisabled("LIB BASE:");
                 ImGui::SameLine(100);
-                ImGui::Text(lib_base > 0 ? libStr : "NONE");
+                ImGui::Text(proc::lib > 0 ? libStr : "NONE");
 
                 ImGui::TextDisabled("DRIVER:");
                 ImGui::SameLine(100);

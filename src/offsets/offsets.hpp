@@ -239,4 +239,14 @@ namespace Offsets {
     constexpr uintptr_t Hip                      = Bone_Hip;
     constexpr uintptr_t Root                     = Bone_LeftToe;
 
+    // Engine TimeService & Speed Attributes
+    constexpr uintptr_t Engine_TimeService       = Base::BaseGame_Timer;
+    constexpr uintptr_t Engine_TimeServiceSpeed  = Base::Timer_Delta;
+    constexpr uintptr_t PlayerAttributes         = Player::Attributes_Max; // 0x770
+    constexpr uintptr_t RunSpeedUpScale          = 0x270;                  // Attribute speed factor
+    constexpr uintptr_t FallingSpeedUpScale      = 0x2BC;
+    constexpr uintptr_t GhostHack                = 0x814;
+    constexpr uintptr_t ShootNoReload            = 0x111;
+    constexpr uintptr_t Inventory_NoRecoil       = 0x18;
+
 } // namespace Offsets

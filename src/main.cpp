@@ -12,7 +12,6 @@
 #include "other/signature.hpp"
 #include "FONTS/MAIN_FONT.h"
 #include "FONTS/ICONS.h"
-#include "Scarecrow/hook.h"
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
@@ -167,38 +166,30 @@ static int start_overlay() {
 
         if (std::chrono::duration_cast<std::chrono::milliseconds>(currentCheckTime - lastProcessCheck).count() >= 1000) {
             lastProcessCheck = currentCheckTime;
-            if (game_pid <= 0) {
-                game_pid = getProcessID(packageName);
-                if (game_pid > 0) {
-                    Memory::g_pid = (pid_t)game_pid;
-                    proc::pid = game_pid;
+            if (proc::pid <= 0) {
+                proc::pid = get_pid();
+                if (proc::pid > 0) {
                     if (driver) {
-                        driver->initialize((pid_t)game_pid);
+                        driver->initialize((pid_t)proc::pid);
                         driver->init_key((char*)"ninmods_kernel");
                         driver->hide_process();
                     }
-                    lib_base = 0;
-                    lib_base2 = 0;
+                    proc::lib = 0;
                 }
             } else {
                 char pPath[64];
-                snprintf(pPath, sizeof(pPath), "/proc/%d", game_pid);
+                snprintf(pPath, sizeof(pPath), "/proc/%d", proc::pid);
                 if (access(pPath, F_OK) != 0) {
-                    game_pid = 0;
                     proc::pid = 0;
-                    lib_base = 0;
                     proc::lib = 0;
-                    lib_base2 = 0;
                     data::thread_stop();
                     aimbot::thread_stop();
                 }
             }
 
-            if (game_pid > 0 && lib_base == 0) {
-                lib_base = get_module_base(targetaLibName, PERM_EXEC);
-                if (lib_base > 0) {
-                    proc::lib = lib_base;
-                    lib_base2 = get_module_base(targetaLibName2, PERM_EXEC);
+            if (proc::pid > 0 && proc::lib == 0) {
+                proc::lib = get_lib("libil2cpp.so");
+                if (proc::lib > 0) {
                     data::thread_start();
                     aimbot::thread_start();
                 }
@@ -209,8 +200,8 @@ static int start_overlay() {
         {
             ui::menu::render();
 
-            if (game_pid > 0 && lib_base > 0) {
-                speed_system::tick(lib_base);
+            if (proc::pid > 0 && proc::lib > 0) {
+                speed_system::tick(proc::lib);
             }
         }
         drawEnd();

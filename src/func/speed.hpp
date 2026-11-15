@@ -2,12 +2,8 @@
 #include <cstdint>
 #include <cmath>
 #include "driver.h"
-#include "../Scarecrow/offsets.h"
+#include "../offsets/offsets.hpp"
 #include "../ui/cfg.hpp"
-
-// Forward-declare the legacy UI variables so they link seamlessly
-extern bool SpeedHackV2;
-extern float SpeedMultiplier;
 
 namespace speed_system {
 
@@ -75,8 +71,8 @@ namespace speed_system {
         if (!is_driver_active() || libAddress < 0x10000) return;
 
         // Sync with UI variables
-        bool is_enabled = cfg::master_enabled && (SpeedHackV2 || g_config.enabled);
-        float mult = (SpeedMultiplier >= 1.0f) ? SpeedMultiplier : g_config.multiplier;
+        bool is_enabled = cfg::master_enabled && (cfg::motion::speed_hack || g_config.enabled);
+        float mult = (cfg::motion::speed_hack && cfg::motion::speed_mult >= 1.0f) ? cfg::motion::speed_mult : g_config.multiplier;
         if (mult < 1.0f) mult = 1.0f;
         if (mult > 10.0f) mult = 10.0f;
 
@@ -106,8 +102,8 @@ namespace speed_system {
                 // Player Attributes (Player + 0x770 or 0x768)
                 uintptr_t attrs = driver_read<uintptr_t>(localPlayer + Offsets::PlayerAttributes);
                 if (attrs >= 0x10000) {
-                    driver_write_float(attrs + Offsets::RunSpeedUpScale, mult); // 0x2C0: RunSpeedUpScale
-                    driver_write_float(attrs + 0x2BC, mult);                   // 0x2BC: FallingSpeedUpScale
+                    driver_write_float(attrs + Offsets::RunSpeedUpScale, mult);
+                    driver_write_float(attrs + Offsets::FallingSpeedUpScale, mult);
                 }
             }
 
@@ -129,12 +125,39 @@ namespace speed_system {
                 uintptr_t attrs = driver_read<uintptr_t>(localPlayer + Offsets::PlayerAttributes);
                 if (attrs >= 0x10000) {
                     driver_write_float(attrs + Offsets::RunSpeedUpScale, 1.0f);
-                    driver_write_float(attrs + 0x2BC, 1.0f);
+                    driver_write_float(attrs + Offsets::FallingSpeedUpScale, 1.0f);
                 }
             }
 
             g_config.last_state = false;
             g_config.last_mult = 1.0f;
+        }
+
+        // Gameplay mods execution via pure kernel driver
+        if (localPlayer >= 0x10000) {
+            if (cfg::master_enabled && cfg::motion::no_reload) {
+                uintptr_t attrs = driver_read<uintptr_t>(localPlayer + Offsets::PlayerAttributes);
+                if (attrs >= 0x10000) {
+                    bool val = true;
+                    driver->write(attrs + Offsets::ShootNoReload, &val, sizeof(bool));
+                }
+            }
+
+            if (cfg::master_enabled && cfg::motion::no_recoil) {
+                uintptr_t weapon = driver_read<uintptr_t>(localPlayer + Offsets::Player_Weapon);
+                if (weapon >= 0x10000) {
+                    uintptr_t wdata = driver_read<uintptr_t>(weapon + Offsets::Weapon_Data);
+                    if (wdata >= 0x10000) {
+                        float zero = 0.0f;
+                        driver->write(wdata + Offsets::Weapon_Recoil, &zero, sizeof(float));
+                    }
+                }
+            }
+
+            if (cfg::master_enabled && cfg::motion::ghost_hack) {
+                bool val = true;
+                driver->write(localPlayer + Offsets::GhostHack, &val, sizeof(bool));
+            }
         }
     }
 

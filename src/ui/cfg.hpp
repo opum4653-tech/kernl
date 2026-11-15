@@ -71,6 +71,11 @@ namespace motion {
     inline bool  air_flight    = false; // Air Flight elevation modifier
     inline float flight_height = 4.5f;  // Elevation height in meters
     inline bool  phantom_mode  = false; // Phantom Mode entity visibility
+    inline bool  speed_hack    = false; // Kernel-driven speed multiplier
+    inline float speed_mult    = 1.0f;  // 1.0x to 5.0x
+    inline bool  no_recoil     = false; // Pure kernel driver recoil reduction
+    inline bool  no_reload     = false; // Instant shot / zero reload wait
+    inline bool  ghost_hack    = false; // Ghost mode
 }
 
 inline bool any_feature_enabled() {
@@ -78,7 +83,8 @@ inline bool any_feature_enabled() {
     return aim::enable || aim::silent || esp::box || esp::health || esp::armor ||
            esp::name || esp::distance || esp::weapon ||
            esp::tracer || esp::loot || esp::crosshair || esp::firing_ind ||
-           motion::air_flight || motion::phantom_mode;
+           motion::air_flight || motion::phantom_mode || motion::speed_hack ||
+           motion::no_recoil || motion::no_reload || motion::ghost_hack;
 }
 
 }
