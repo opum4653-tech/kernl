@@ -29,22 +29,11 @@ namespace aimbot {
             lockToHead = ((s_rollRng % 100u) < static_cast<uint32_t>(rate));
         }
 
-        // AIM COLLIDER OVERRIDE (Reference-aligned hit registration from STORM_MODS & internal)
-        // Reads HeadCollider (0x740 primary, 0x738 fallback) and writes it to BOTH:
-        // - LockedAimingCollider (0x80)
-        // - LockedAimingCollider_Alt (0x78)
-        // Ensures the game engine's internal raycast registers bullet impacts as Headshots.
-        if (lockToHead && is_valid_ptr(target.addr)) {
-            uint64_t headCol = rpm<uint64_t>(target.addr + Offsets::Player::HeadCollider);     // 0x740
-            if (!is_valid_ptr(headCol)) {
-                headCol = rpm<uint64_t>(target.addr + Offsets::Player::HeadCollider_Alt); // 0x738
-            }
-            if (is_valid_ptr(headCol)) {
-                wpm<uint64_t>(target.addr + Offsets::Player::LockedAimingCollider, headCol);     // 0x80
-                wpm<uint64_t>(target.addr + Offsets::Player::LockedAimingCollider_Alt, headCol); // 0x78
-            }
-        }
-
+        // NOTE: In Free Fire 64-bit (Global), writing to target.addr + 0x78 or 0x80
+        // directly corrupts target.addr + 0x7C (Player::IsDead flag) and component pointers,
+        // causing data.cpp to immediately flag the target as DEAD and wipe it from ESP.
+        // True Silent Aim steering occurs via client-side trajectory calculation (apply_trajectory)
+        // targeting target.headWorld without mutating enemy memory.
         return lockToHead;
     }
 

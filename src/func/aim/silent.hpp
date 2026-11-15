@@ -62,10 +62,8 @@ namespace aimbot {
         }
 
         // Write unit direction vector to LastAimingInfoFromWeapon (0xE58 + 0x40)
+        // Steers client-side bullet trajectory directly towards target without mutating camera rotation or character matrices.
         wpm<Vector3>(aimInfoWeapon + Offsets::Aim::Direction, shotDir);
-
-        // Clear adjusted / interpolation flag (0x71) to ensure instant bullet alignment without camera warping
-        wpm<bool>(aimInfoWeapon + 0x71, false);
     }
 
 } // namespace aimbot

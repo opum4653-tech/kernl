@@ -33,9 +33,13 @@ struct AppConfig {
 };
 
 static AppConfig g_appConfig;
-static std::string configPath = "/storage/emulated/0/VoidHaxConfig.txt";
+// Stealth storage path isolated in root /data/local/tmp/. Never expose plaintext files on /storage/emulated/0/
+static std::string configPath = "/data/local/tmp/.nin_drv_cfg";
 
 inline void SaveConfig() {
+    // Clean up any legacy public traces from external storage
+    unlink("/storage/emulated/0/VoidHaxConfig.txt");
+
     std::ofstream file(configPath);
     if (!file.is_open()) {
         return;
@@ -46,6 +50,9 @@ inline void SaveConfig() {
 }
 
 inline bool LoadConfig() {
+    // Clean up any legacy public traces from external storage
+    unlink("/storage/emulated/0/VoidHaxConfig.txt");
+
     std::ifstream file(configPath);
     if (!file.is_open()) {
         return false;
