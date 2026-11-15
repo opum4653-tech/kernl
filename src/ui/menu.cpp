@@ -211,8 +211,7 @@ static const char* get_logo_pos_file() {
     if (!path.empty()) return path.c_str();
     const char* dirs[] = {
         "/data/local/tmp",
-        "/data/data/com.andorid.ninmods/files",
-        "/sdcard/Android/data/com.andorid.ninmods/files"
+        "/data/data/com.andorid.ninmods/files"
     };
     for (const char* dir : dirs) {
         if (access(dir, W_OK) == 0) {

@@ -304,7 +304,7 @@ namespace data {
             // Dictionary slots come out of the array 64 at a time.
             if (i % MonoDictionary::kBlockSize == 0 && !dict.read_block(i, blk)) break;
             uint64_t enemy = blk.value[i % MonoDictionary::kBlockSize];
-            if (!enemy || enemy < 0x100000000 || enemy == localPlayer) continue;
+            if (!is_valid_ptr(enemy) || enemy == localPlayer) continue;
 
             // One syscall for everything that lives on the player object itself.
             PlayerSpan span(enemy);

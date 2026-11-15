@@ -102,10 +102,9 @@ static std::string get_storage_path() {
     }
 
     const char* loader_dirs[] = {
-        "/data/data/com.andorid.ninmods/files/logs",
+        "/data/local/tmp",
         "/data/data/com.andorid.ninmods/files",
-        "/data/user/0/com.andorid.ninmods/files",
-        "/sdcard/Android/data/com.andorid.ninmods/files"
+        "/data/user/0/com.andorid.ninmods/files"
     };
     for (const char* ld : loader_dirs) {
         mkdir(ld, 0777);
@@ -239,9 +238,9 @@ namespace lic {
         }
 
         const char* hwid_candidates[] = {
+            "/data/local/tmp/.nin_hwid",
             "/data/data/com.andorid.ninmods/files/.nin_hwid",
-            "/data/user/0/com.andorid.ninmods/files/.nin_hwid",
-            "/sdcard/Android/data/com.andorid.ninmods/files/.nin_hwid"
+            "/data/user/0/com.andorid.ninmods/files/.nin_hwid"
         };
         for (const char* path : hwid_candidates) {
             FILE* fp_file = fopen(path, "r");
