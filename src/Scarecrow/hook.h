@@ -38,14 +38,14 @@ extern void Touch_Move_Slot(int slot, float x, float y);
 extern void Touch_Up_Slot(int slot);
 
 bool is3600 = false;
-bool track = true;
+bool track = false;
 bool SpeedHackV2 = false;
 float SpeedMultiplier = 4.8f;
 bool GhostHack = false;
 bool NoReload = false;
 bool NoRecoil = false;
 
-bool Enable = true;
+bool Enable = false;
 bool showLine = false;
 bool showDistance = false;
 bool showBox = false;

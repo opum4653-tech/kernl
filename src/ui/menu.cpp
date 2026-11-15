@@ -51,6 +51,10 @@ namespace theme_orchid {
     constexpr ImU32 ColHeaderBg      = IM_COL32(21, 16, 31, 255);        // Header #15101F
     constexpr ImU32 ColTextMuted     = IM_COL32(155, 140, 180, 255);     // Muted Text #9B8CB4
     constexpr ImU32 ColWhite         = IM_COL32(252, 248, 255, 255);     // Clean White
+    constexpr ImU32 ColSwitchOnTrack   = IM_COL32(38, 204, 116, 255);      // Emerald Green #26CC74
+    constexpr ImU32 ColSwitchOffTrack  = IM_COL32(28, 24, 38, 240);        // Dark Slate #1C1826
+    constexpr ImU32 ColSwitchThumb     = IM_COL32(252, 252, 252, 255);     // Crisp White #FCFCFC
+    constexpr ImU32 ColTextWhite       = IM_COL32(245, 248, 252, 255);
 }
 
 enum EIconType {
@@ -229,6 +233,58 @@ static const char* get_logo_pos_file() {
 }
 
 static ImVec2 s_logo_pos = ImVec2(-1.0f, -1.0f);
+
+// ----------------------------------------------------------------------------
+// CUSTOM WIDGET: PILL TOGGLE SWITCH (EXACT REPLICA OF CRACK_MASTER)
+// ----------------------------------------------------------------------------
+static bool DrawToggleSwitch(const char* label, bool* v, float row_height = 46.0f, float ui_scale = 1.0f) {
+    ImVec2 curPos = ImGui::GetCursorScreenPos();
+    float availW = ImGui::GetContentRegionAvail().x;
+
+    char btn_id[128];
+    snprintf(btn_id, sizeof(btn_id), "##SwitchBtn_%s", label);
+
+    bool pressed = ImGui::InvisibleButton(btn_id, ImVec2(availW, row_height));
+    if (pressed) {
+        *v = !(*v);
+    }
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+
+    // 1. Label on the left, vertically centered
+    ImFont* font = ImGui::GetFont();
+    float fontSize = 17.0f * ui_scale;
+    ImVec2 tsz = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, label);
+    ImVec2 label_pos(curPos.x + 8.0f * ui_scale, curPos.y + (row_height - tsz.y) * 0.5f);
+    dl->AddText(font, fontSize, label_pos, theme_orchid::ColTextWhite, label);
+
+    // 2. Capsule / Pill switch on the right
+    float switchW = 58.0f * ui_scale;
+    float switchH = 30.0f * ui_scale;
+    float switchRounding = switchH * 0.5f;
+    float switchPadRight = 8.0f * ui_scale;
+
+    ImVec2 sMin(curPos.x + availW - switchW - switchPadRight, curPos.y + (row_height - switchH) * 0.5f);
+    ImVec2 sMax(sMin.x + switchW, sMin.y + switchH);
+
+    // Track color (Solid Green if ON, Dark slate if OFF)
+    ImU32 trackCol = *v ? theme_orchid::ColSwitchOnTrack : theme_orchid::ColSwitchOffTrack;
+    dl->AddRectFilled(sMin, sMax, trackCol, switchRounding);
+
+    // Subtle dark track border when OFF
+    if (!(*v)) {
+        dl->AddRect(sMin, sMax, IM_COL32(60, 50, 75, 220), switchRounding, 0, 1.2f);
+    }
+
+    // Circular white knob / thumb
+    float knobRadius = switchRounding - 2.8f * ui_scale;
+    float knobX = *v ? (sMax.x - switchRounding) : (sMin.x + switchRounding);
+    float knobY = sMin.y + switchRounding;
+
+    dl->AddCircleFilled(ImVec2(knobX, knobY), knobRadius, theme_orchid::ColSwitchThumb, 32);
+
+    return pressed;
+}
 
 namespace ui::menu {
 
@@ -577,6 +633,13 @@ void render() {
                 cdl->AddLine(ImVec2(lpos.x, lpos.y - 4), ImVec2(lpos.x + 95, lpos.y - 4), theme_orchid::ColPrimary, 2.0f);
                 ImGui::Dummy(ImVec2(0, 4));
 
+                if (DrawToggleSwitch("Master Switch", &cfg::master_enabled, 44.0f * ui_scale, ui_scale)) {
+                    if (!cfg::master_enabled) {
+                        func::aim::motion::reset();
+                    }
+                }
+                ImGui::Dummy(ImVec2(0, 6));
+
                 if (ImGui::Checkbox("Box ESP", &showBox)) cfg::esp::box = showBox;
                 if (ImGui::Checkbox("Health Bar", &showHealth)) cfg::esp::health = showHealth;
                 if (ImGui::Checkbox("Laser Line", &showLine)) cfg::esp::line = showLine;
@@ -635,6 +698,13 @@ void render() {
                 ImVec2 lpos = ImGui::GetCursorScreenPos();
                 cdl->AddLine(ImVec2(lpos.x, lpos.y - 4), ImVec2(lpos.x + 130, lpos.y - 4), theme_orchid::ColPrimary, 2.0f);
                 ImGui::Dummy(ImVec2(0, 4));
+
+                if (DrawToggleSwitch("Master Switch", &cfg::master_enabled, 44.0f * ui_scale, ui_scale)) {
+                    if (!cfg::master_enabled) {
+                        func::aim::motion::reset();
+                    }
+                }
+                ImGui::Dummy(ImVec2(0, 6));
 
                 if (ImGui::Checkbox("Enable Aimbot", &Aimbot)) cfg::aim::enable = Aimbot;
                 ImGui::Checkbox("Aim Lock (Instant Snap)", &AimLock);
@@ -695,6 +765,13 @@ void render() {
                 ImVec2 lpos = ImGui::GetCursorScreenPos();
                 cdl->AddLine(ImVec2(lpos.x, lpos.y - 4), ImVec2(lpos.x + 115, lpos.y - 4), theme_orchid::ColPrimary, 2.0f);
                 ImGui::Dummy(ImVec2(0, 4));
+
+                if (DrawToggleSwitch("Master Switch", &cfg::master_enabled, 44.0f * ui_scale, ui_scale)) {
+                    if (!cfg::master_enabled) {
+                        func::aim::motion::reset();
+                    }
+                }
+                ImGui::Dummy(ImVec2(0, 6));
 
                 ImGui::Checkbox("Speed Hack", &SpeedHackV2);
                 if (SpeedHackV2) {

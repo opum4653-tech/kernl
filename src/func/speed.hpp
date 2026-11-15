@@ -3,6 +3,7 @@
 #include <cmath>
 #include "driver.h"
 #include "../Scarecrow/offsets.h"
+#include "../ui/cfg.hpp"
 
 // Forward-declare the legacy UI variables so they link seamlessly
 extern bool SpeedHackV2;
@@ -74,7 +75,7 @@ namespace speed_system {
         if (!is_driver_active() || libAddress < 0x10000) return;
 
         // Sync with UI variables
-        bool is_enabled = SpeedHackV2 || g_config.enabled;
+        bool is_enabled = cfg::master_enabled && (SpeedHackV2 || g_config.enabled);
         float mult = (SpeedMultiplier >= 1.0f) ? SpeedMultiplier : g_config.multiplier;
         if (mult < 1.0f) mult = 1.0f;
         if (mult > 10.0f) mult = 10.0f;
