@@ -147,17 +147,19 @@ static bool DrawSidebarIconButton(const char* str_id, EIconType icon_type, bool 
     ImVec2 bMax = ImVec2(p.x + size.x, p.y + size.y);
     ImVec2 center = ImVec2((bMin.x + bMax.x) * 0.5f, (bMin.y + bMax.y) * 0.5f);
 
+    float iconSize = size.y * 0.54f;
+
     if (is_active) {
-        dl->AddRectFilled(bMin, bMax, IM_COL32(225, 0, 152, 48), 10.0f);
-        dl->AddRect(bMin, bMax, IM_COL32(225, 0, 152, 140), 10.0f, 0, 1.2f);
-        dl->AddRectFilled(ImVec2(bMin.x + 3.0f, bMin.y + 8.0f), ImVec2(bMin.x + 6.5f, bMax.y - 8.0f), theme_orchid::ColPrimary, 2.0f);
-        DrawVectorIcon(dl, icon_type, center, 25.0f, theme_orchid::ColWhite);
+        dl->AddRectFilled(bMin, bMax, IM_COL32(225, 0, 152, 48), 12.0f);
+        dl->AddRect(bMin, bMax, IM_COL32(225, 0, 152, 160), 12.0f, 0, 1.5f);
+        dl->AddRectFilled(ImVec2(bMin.x + 3.0f, bMin.y + 8.0f), ImVec2(bMin.x + 7.5f, bMax.y - 8.0f), theme_orchid::ColPrimary, 3.0f);
+        DrawVectorIcon(dl, icon_type, center, iconSize, theme_orchid::ColWhite);
     } else {
         if (hovered) {
-            dl->AddRectFilled(bMin, bMax, IM_COL32(255, 255, 255, 18), 10.0f);
+            dl->AddRectFilled(bMin, bMax, IM_COL32(255, 255, 255, 18), 12.0f);
         }
         ImU32 ic_col = hovered ? theme_orchid::ColPrimaryLight : theme_orchid::ColTextMuted;
-        DrawVectorIcon(dl, icon_type, center, 23.0f, ic_col);
+        DrawVectorIcon(dl, icon_type, center, iconSize * 0.90f, ic_col);
     }
 
     return pressed;
@@ -584,10 +586,10 @@ void render() {
         dl->AddLine(ImVec2(closeCenter.x - xRadius, closeCenter.y - xRadius), ImVec2(closeCenter.x + xRadius, closeCenter.y + xRadius), closeCol, 2.2f);
         dl->AddLine(ImVec2(closeCenter.x - xRadius, closeCenter.y + xRadius), ImVec2(closeCenter.x + xRadius, closeCenter.y - xRadius), closeCol, 2.2f);
 
-        // 2. LEFT SIDEBAR (ICON-ONLY)
+        // 2. LEFT SIDEBAR (ICON-ONLY - PROPORTIONALLY SCALED & SPACIOUS)
         const float bodyY = headerH;
         const float bodyH = winSize.y - headerH;
-        const float sidebarW = 76.0f;
+        const float sidebarW = std::max(88.0f, 96.0f * ui_scale);
 
         ImGui::SetCursorPos(ImVec2(0, bodyY));
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.067f, 0.055f, 0.094f, 1.0f));
@@ -596,29 +598,30 @@ void render() {
         if (ImGui::BeginChild("##SidebarKernel", ImVec2(sidebarW, bodyH), false, ImGuiWindowFlags_NoScrollbar)) {
             dl->AddLine(ImVec2(winPos.x + sidebarW, winPos.y + headerH), ImVec2(winPos.x + sidebarW, winPos.y + winSize.y), IM_COL32(40, 30, 56, 255), 1.0f);
 
-            const ImVec2 btnSize = ImVec2(56.0f, 52.0f);
+            const ImVec2 btnSize = ImVec2(sidebarW - 16.0f, std::max(56.0f, 62.0f * ui_scale));
             const float btnX = (sidebarW - btnSize.x) * 0.5f;
+            const float btnSpacing = 10.0f * ui_scale;
 
             // Tab 0: Visuals (ICON_EYE)
-            ImGui::SetCursorPos(ImVec2(btnX, 12.0f));
+            ImGui::SetCursorPos(ImVec2(btnX, 14.0f * ui_scale));
             if (DrawSidebarIconButton("##TabESP", ICON_EYE, (activeTab == 0), btnSize)) {
                 activeTab = 0;
             }
 
             // Tab 1: Combat / Aim (ICON_CROSSHAIR)
-            ImGui::SetCursorPos(ImVec2(btnX, 12.0f + btnSize.y + 8.0f));
+            ImGui::SetCursorPos(ImVec2(btnX, 14.0f * ui_scale + btnSize.y + btnSpacing));
             if (DrawSidebarIconButton("##TabCombat", ICON_CROSSHAIR, (activeTab == 1), btnSize)) {
                 activeTab = 1;
             }
 
             // Tab 2: Settings / Misc (ICON_SETTINGS)
-            ImGui::SetCursorPos(ImVec2(btnX, 12.0f + (btnSize.y + 8.0f) * 2.0f));
+            ImGui::SetCursorPos(ImVec2(btnX, 14.0f * ui_scale + (btnSize.y + btnSpacing) * 2.0f));
             if (DrawSidebarIconButton("##TabSettings", ICON_SETTINGS, (activeTab == 2), btnSize)) {
                 activeTab = 2;
             }
 
             // Tab 3: Power / Exit
-            ImGui::SetCursorPos(ImVec2(btnX, bodyH - btnSize.y - 12.0f));
+            ImGui::SetCursorPos(ImVec2(btnX, bodyH - btnSize.y - 14.0f * ui_scale));
             if (DrawSidebarIconButton("##TabPower", ICON_POWER, false, btnSize)) {
                 g_should_exit = true;
             }

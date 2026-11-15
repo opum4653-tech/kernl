@@ -71,8 +71,8 @@ namespace aimbot {
         // Headshot evaluation & collider mapping
         bool lockToHead = evaluate_headshot(acq.target, acq.isScoping);
 
-        // 3D Silent bullet trajectory steering
-        apply_trajectory(localPlayer, acq.target, lockToHead, acq.isFiring);
+        // 3D Silent bullet trajectory steering (primed whenever silent aim is enabled or weapon is firing)
+        apply_trajectory(localPlayer, acq.target, lockToHead, (acq.isFiring || acq.triggerActive || cfg::aim::silent));
     }
 
     inline void loop() {

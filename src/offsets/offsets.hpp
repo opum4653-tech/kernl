@@ -99,10 +99,18 @@ namespace Offsets {
         constexpr uintptr_t Matrix               = 0x100;
     }
 
-// Aim Information
+// Aim Information (CGKJLKPMGDJ / HitInfo)
     namespace Aim {
-        constexpr uintptr_t Direction            = 0x40;    // Vector3
-        constexpr uintptr_t StartPosition        = 0x4C;    // Vector3
+        constexpr uintptr_t HitObject            = 0x18;    // GameObject (JHAINOBIFMA 0x18)
+        constexpr uintptr_t HitCollider          = 0x20;    // Collider (JINDNOFABKB 0x20)
+        constexpr uintptr_t HitLocation          = 0x28;    // Vector3 (HPCOJHGFEEG 0x28)
+        constexpr uintptr_t HitNormal            = 0x34;    // Vector3 (DOJDNHCGFGK 0x34)
+        constexpr uintptr_t Direction            = 0x40;    // Vector3 RayDir (HLDECMJFKJK 0x40)
+        constexpr uintptr_t StartPosition        = 0x4C;    // Vector3 (EKPLMDDKOGB 0x4C)
+        constexpr uintptr_t HitGroup             = 0x64;    // Int32 (DKPDBLLJEAA 0x64: 1 = Head, 2 = Body)
+        constexpr uintptr_t IgnoreHappens        = 0x70;    // Boolean (EFMBNPNFGHM 0x70)
+        constexpr uintptr_t ViewBlocked          = 0x71;    // Boolean (CEOKOILBODN 0x71)
+        constexpr uintptr_t SpecialHitType       = 0x80;    // Int16 (CLOLKHNMNEK 0x80)
     }
 
 // Skeleton Bones (ITransformNode offsets inside Player)

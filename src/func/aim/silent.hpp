@@ -5,12 +5,17 @@
 
 namespace aimbot {
 
-    // Shared high-speed writer state matching pewpew & crack_master hook architecture
+    // Shared high-speed writer state matching NXL & crack_master HitInfo architecture
     inline std::atomic<bool> s_writerRunning{false};
     inline std::atomic<bool> s_hasSilentData{false};
     inline std::mutex        s_silentLock;
     inline uint64_t          s_silentAimInfo = 0;
+    inline uint64_t          s_silentAimInfoAlt = 0;
+    inline uint64_t          s_silentTargetAddr = 0;
+    inline uint64_t          s_silentHeadCollider = 0;
     inline Vector3           s_silentDir = Vector3::Zero();
+    inline Vector3           s_silentHitPos = Vector3::Zero();
+    inline int32_t           s_silentHitGroup = 1;
     inline std::thread       s_writerThread;
 
     inline void clear_silent_data() {
@@ -18,12 +23,20 @@ namespace aimbot {
             std::lock_guard<std::mutex> lock(s_silentLock);
             s_hasSilentData.store(false, std::memory_order_relaxed);
             s_silentAimInfo = 0;
+            s_silentAimInfoAlt = 0;
+            s_silentTargetAddr = 0;
+            s_silentHeadCollider = 0;
+            s_silentDir = Vector3::Zero();
+            s_silentHitPos = Vector3::Zero();
+            s_silentHitGroup = 1;
         }
     }
 
     // High-speed writer thread (Producer/Consumer Flooding):
-    // In Free Fire 64-bit, weapon logic in Update() continuously writes camera aim into AimingInfo+0x40.
-    // Flooding during firing guarantees the game's bullet spawn code reads our target direction vector.
+    // In Free Fire 64-bit (CGKJLKPMGDJ), weapon logic in Update() continuously reads
+    // Direction (0x40), HitNormal (0x34), HitLocation (0x28), HitCollider (0x20), and HitGroup (0x64: 1=Head).
+    // Flooding during lock & firing guarantees that when the game fires and calculates bullet damage,
+    // it registers an instant 100% red-number Headshot hit.
     inline void writer_loop() {
         while (s_writerRunning.load(std::memory_order_relaxed)) {
             if (!s_hasSilentData.load(std::memory_order_relaxed) || s_silentAimInfo == 0) {
@@ -34,8 +47,36 @@ namespace aimbot {
             {
                 std::lock_guard<std::mutex> lock(s_silentLock);
                 if (s_hasSilentData.load(std::memory_order_relaxed) && s_silentAimInfo != 0) {
-                    wpm<Vector3>(s_silentAimInfo + Offsets::Aim::Direction, s_silentDir);
-                    wpm<bool>(s_silentAimInfo + 0x71, false);
+                    // 1. Primary AimInfo (0xE58: LastAimingInfoFromWeapon)
+                    wpm<Vector3>(s_silentAimInfo + Offsets::Aim::Direction, s_silentDir);           // 0x40 RayDir (Normalized!)
+                    wpm<Vector3>(s_silentAimInfo + Offsets::Aim::HitNormal, s_silentDir);           // 0x34 HitNormal
+                    wpm<Vector3>(s_silentAimInfo + Offsets::Aim::HitLocation, s_silentHitPos);      // 0x28 HitLocation (Head 3D)
+                    if (s_silentHeadCollider != 0) {
+                        wpm<uint64_t>(s_silentAimInfo + Offsets::Aim::HitCollider, s_silentHeadCollider); // 0x20 Head Collider
+                    }
+                    wpm<int32_t>(s_silentAimInfo + Offsets::Aim::HitGroup, s_silentHitGroup);       // 0x64 HitGroup (1 = Head!)
+                    wpm<bool>(s_silentAimInfo + Offsets::Aim::IgnoreHappens, false);                // 0x70 IgnoreHappens = false
+                    wpm<bool>(s_silentAimInfo + Offsets::Aim::ViewBlocked, false);                  // 0x71 ViewBlocked = false
+                    wpm<int16_t>(s_silentAimInfo + Offsets::Aim::SpecialHitType, 0);                // 0x80 SpecialHitType = 0
+
+                    // 2. Auxiliary AimInfo (0xE50) if present
+                    if (s_silentAimInfoAlt != 0) {
+                        wpm<Vector3>(s_silentAimInfoAlt + Offsets::Aim::Direction, s_silentDir);
+                        wpm<Vector3>(s_silentAimInfoAlt + Offsets::Aim::HitNormal, s_silentDir);
+                        wpm<Vector3>(s_silentAimInfoAlt + Offsets::Aim::HitLocation, s_silentHitPos);
+                        if (s_silentHeadCollider != 0) {
+                            wpm<uint64_t>(s_silentAimInfoAlt + Offsets::Aim::HitCollider, s_silentHeadCollider);
+                        }
+                        wpm<int32_t>(s_silentAimInfoAlt + Offsets::Aim::HitGroup, s_silentHitGroup);
+                        wpm<bool>(s_silentAimInfoAlt + Offsets::Aim::IgnoreHappens, false);
+                        wpm<bool>(s_silentAimInfoAlt + Offsets::Aim::ViewBlocked, false);
+                        wpm<int16_t>(s_silentAimInfoAlt + Offsets::Aim::SpecialHitType, 0);
+                    }
+
+                    // 3. Keep target's LockedAimingCollider locked to head collider
+                    if (s_silentTargetAddr != 0 && s_silentHeadCollider != 0) {
+                        wpm<uint64_t>(s_silentTargetAddr + Offsets::Player::LockedAimingCollider, s_silentHeadCollider); // 0x80
+                    }
                 }
             }
             sched_yield();
@@ -57,21 +98,24 @@ namespace aimbot {
 
     // 3D Silent bullet trajectory calculation and steering
     inline void apply_trajectory(uint64_t localPlayer, const PlayerData& target, bool lockToHead, bool isFiring) {
-        if (!is_valid_ptr(localPlayer)) {
+        if (!is_valid_ptr(localPlayer) || !is_valid_ptr(target.addr)) {
             clear_silent_data();
             return;
         }
 
-        // Trajectory write should only execute when weapon is actively firing (or when trigger mode is Always In FOV)
-        if (!isFiring && cfg::aim::trigger_mode != 1) {
+        // Silent aim stays primed whenever a target is in FOV or weapon is firing.
+        // For trigger_mode 0 (On Firing), allow grace period burst ticks so single-taps don't drop.
+        if (!isFiring && cfg::aim::trigger_mode == 0 && s_lockTimeoutTicks == 0) {
             clear_silent_data();
             return;
         }
 
         // Resolve Weapon AimingInfo (0xE58 primary, 0xE50 auxiliary)
         uint64_t aimInfoWeapon = rpm<uint64_t>(localPlayer + Offsets::Player::AimInfo);
+        uint64_t aimInfoAlt    = rpm<uint64_t>(localPlayer + Offsets::Player::AimInfo_Alt);
         if (!is_valid_ptr(aimInfoWeapon)) {
-            aimInfoWeapon = rpm<uint64_t>(localPlayer + Offsets::Player::AimInfo_Alt);
+            aimInfoWeapon = aimInfoAlt;
+            aimInfoAlt = 0;
         }
         if (!is_valid_ptr(aimInfoWeapon)) {
             clear_silent_data();
@@ -97,36 +141,68 @@ namespace aimbot {
             return;
         }
 
-        // Apply target bone height adjustments
+        // Apply target bone height adjustments and HitGroup classification
+        int32_t hitGroup = 1; // 1 = Head, 2 = Body (LKOOALMKJND enum)
         if (cfg::aim::target_bone == 1) {
             target3D.y -= 0.15f; // Neck / Upper Chest
+            hitGroup = lockToHead ? 1 : 2;
         } else if (cfg::aim::target_bone == 2) {
             target3D.y -= 0.40f; // Body / Pelvis
+            hitGroup = 2;
         } else {
             // Target bone 0 (Head):
             if (!lockToHead) {
                 target3D.y -= 0.28f; // Chest on non-headshot rolls
+                hitGroup = 2;
+            } else {
+                hitGroup = 1; // Strict Headshot!
             }
         }
 
         // Compute delta vector towards target
         Vector3 diff = target3D - bulletOrigin;
-        if (diff.sqrMagnitude() <= 1e-4f) {
+        float distSq = diff.sqrMagnitude();
+        if (distSq <= 1e-4f) {
             clear_silent_data();
             return;
         }
 
-        // Steer bullet trajectory
+        // Exact normalized unit direction vector (crucial for Unity Raycast!)
+        Vector3 normDir = diff.normalized();
+
+        // Resolve target's head collider
+        uint64_t headCol = rpm<uint64_t>(target.addr + Offsets::Player::HeadCollider);     // 0x740
+        if (!is_valid_ptr(headCol)) {
+            headCol = rpm<uint64_t>(target.addr + Offsets::Player::HeadCollider_Alt);     // 0x738
+        }
+
+        // Steer bullet trajectory via shared writer thread
         {
             std::lock_guard<std::mutex> lock(s_silentLock);
-            s_silentAimInfo = aimInfoWeapon;
-            s_silentDir = diff;
+            s_silentAimInfo      = aimInfoWeapon;
+            s_silentAimInfoAlt   = is_valid_ptr(aimInfoAlt) ? aimInfoAlt : 0;
+            s_silentTargetAddr   = target.addr;
+            s_silentHeadCollider = headCol;
+            s_silentDir          = normDir;
+            s_silentHitPos       = target3D;
+            s_silentHitGroup     = hitGroup;
             s_hasSilentData.store(true, std::memory_order_relaxed);
         }
 
         // Immediate write to ensure zero lag on initial bullet
-        wpm<Vector3>(aimInfoWeapon + Offsets::Aim::Direction, diff);
-        wpm<bool>(aimInfoWeapon + 0x71, false);
+        wpm<Vector3>(aimInfoWeapon + Offsets::Aim::Direction, normDir);
+        wpm<Vector3>(aimInfoWeapon + Offsets::Aim::HitNormal, normDir);
+        wpm<Vector3>(aimInfoWeapon + Offsets::Aim::HitLocation, target3D);
+        if (is_valid_ptr(headCol)) {
+            wpm<uint64_t>(aimInfoWeapon + Offsets::Aim::HitCollider, headCol);
+        }
+        wpm<int32_t>(aimInfoWeapon + Offsets::Aim::HitGroup, hitGroup);
+        wpm<bool>(aimInfoWeapon + Offsets::Aim::IgnoreHappens, false);
+        wpm<bool>(aimInfoWeapon + Offsets::Aim::ViewBlocked, false);
+        wpm<int16_t>(aimInfoWeapon + Offsets::Aim::SpecialHitType, 0);
+
+        // Reset game adjustment flag so Unity engine doesn't overwrite our trajectory
+        wpm<bool>(localPlayer + 0xE60, false);
     }
 
 } // namespace aimbot
