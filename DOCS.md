@@ -169,7 +169,23 @@ All mod packages and drivers MUST be downloaded exclusively from the backend ser
 
 ---
 
-## 8. Codebase Style & Commenting Invariants
+## 9. Menu & UI Behavioral Invariants
+
+> [!IMPORTANT]
+> **FLOATING LOGO FIRST — ZERO UNINTENDED MENU POPUP**
+> 1. **Default State on Binary Launch (`g_ShowMenu = false`):**
+>    - When `ninmods-kernel` starts, the main menu window MUST NOT be visible or pop up automatically.
+>    - Only the small, unobtrusive floating circular 'N' logo pill appears on the screen margin.
+> 2. **Explicit User Activation Only:**
+>    - The main settings/features menu window opens **strictly** when the user taps on the floating circular 'N' logo.
+>    - When the close button (`X`) is pressed inside the menu, the menu collapses back to the floating logo pill.
+> 3. **Zero Disk Storage (Pure RAM State):**
+>    - Floating logo position, menu coordinates, and active toggle states must remain 100% in RAM memory. No `.pill_pos`, `.nin_drv_cfg`, or `.nin_license.dat` files may ever be created or read from disk.
+>    - Never set `g_ShowMenu = true` by default in source code.
+
+---
+
+## 10. Codebase Style & Commenting Invariants
 
 1. **Strict Prohibition of Decorative Box-Drawing Comment Banners:**
    - Decorative unicode box-drawing banners (e.g. `// ══════════════...`, `// ──────────────...`, or fancy ASCII separators) are strictly prohibited.

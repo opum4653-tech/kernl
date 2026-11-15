@@ -28,7 +28,8 @@ extern int native_window_screen_x;
 extern int native_window_screen_y;
 extern int 选择值;
 
-bool g_ShowMenu = true;
+// RULE: Starts with floating logo closed by default. Menu opens ONLY when user taps the floating logo.
+bool g_ShowMenu = false;
 
 static int activeTab = 0;
 static float ui_opacity = 1.0f;
