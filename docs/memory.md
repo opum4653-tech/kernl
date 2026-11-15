@@ -133,3 +133,42 @@ Comprehensive modernization of Kernel Process Memory (`kpm_driver.h`) integrated
    - **Abrupt Termination (`exit(0)`):** `pewpew` called `exit(0)` when KPM was unavailable. Our driver features an intelligent fallback ladder to `process_vm_readv` (PVM Syscall mode), preventing crashes.
    - **Expanded Node Scanner:** Added `"facking"` and `"YBBBYN"` to `rt_dev.h` device table.
    - **Dynamic UI Telemetry:** `menu.cpp` Tab 2 dynamically reflects the active engine (`TB KPM`, `NEO KPM`, or `PVM SYSCALL`).
+
+
+---
+
+## 8. HitInfo Engine, Normalized Trajectory Steering & Responsive Sidebar
+
+Comprehensive resolution of Headshot / Silent Aim mechanics using internal `NXL` project reverse engineering:
+
+1. **Unity Free Fire Damage Calculation Architecture (`CGKJLKPMGDJ`):**
+   - In Free Fire 64-bit, `localPlayer + 0xE58` (`PKIOAMDCOPB`) and `0xE50` (`FDMIEDDNCEC`) point to instances of `CGKJLKPMGDJ` (HitInfo / AimingInfo).
+   - Analysis of `NXL` hook (`hook_OnCalcDamage`) revealed that headshot registration strictly relies on 8 synchronized fields:
+     - `0x18`: `JHAINOBIFMA` (GameObject)
+     - `0x20`: `JINDNOFABKB` (Collider - Enemy Head Collider)
+     - `0x28`: `HPCOJHGFEEG` (HitLocation - Exact Enemy Head 3D World Position)
+     - `0x34`: `DOJDNHCGFGK` (HitNormal - Normalized Bullet Direction Vector)
+     - `0x40`: `HLDECMJFKJK` (RayDir - Normalized Direction Vector)
+     - `0x64`: `DKPDBLLJEAA` (HitGroup enum `LKOOALMKJND`: **1 = Head**, 2 = Body)
+     - `0x70`: `EFMBNPNFGHM` (IgnoreHappens: `false`)
+     - `0x71`: `CEOKOILBODN` (ViewBlocked: `false`)
+     - `0x80`: `CLOLKHNMNEK` (SpecialHitType: `(int16)0`)
+     - `target.addr + 0x80`: `LockedAimingCollider` locked to `headCol`
+     - `localPlayer + 0xE60`: `LastAimingInfoFromWeaponAdjusted` set to `false`.
+
+2. **Root Cause of Headshot & Silent Aim Failure:**
+   - Previous code only wrote an unnormalized difference vector (`diff = target3D - bulletOrigin`, magnitude 20~100) to `0x40`. Unity Raycast requires a normalized unit vector; non-unit vectors caused raycast rejection.
+   - `0x64` (`HitGroup`) was NEVER set to `1`. Free Fire therefore treated hits as non-headshot body hits.
+   - `0x28` (`HitLocation`) and `0x20` (`HitCollider`) were never written to `AimInfo`.
+   - `isFiring` trigger condition was dropping locks between tap-fire intervals.
+
+3. **High-Speed Writer & HitInfo Flooding Engine:**
+   - High-speed writer thread floods the complete 8-field `CGKJLKPMGDJ` hit block continuously while a target is acquired in FOV or firing.
+   - Computes `diff.normalized()` to deliver exact unit direction vectors.
+   - Sets `HitGroup = 1` for guaranteed red-number headshot registration.
+
+4. **UI Sidebar & Icon Button Modernization (`menu.cpp`):**
+   - Sidebar width enlarged from fixed `76.0f` to responsive `std::max(88.0f, 96.0f * ui_scale)`.
+   - Icon button size increased from `56x52` to `(sidebarW - 16.0f) x std::max(56.0f, 62.0f * ui_scale)`.
+   - Vector icon size dynamically scaled from static `23px` to `size.y * 0.54f` (~`34px`+), with proportional stroke thickness (`3.0f` active pill indicator, `12.0f` corner rounding).
+   - Generates spacious, touch-friendly, balanced ergonomics matching modern tablets and high-DPI displays.
