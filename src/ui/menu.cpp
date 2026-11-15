@@ -3,6 +3,10 @@
 #include "Android_draw/draw.h"
 #include "Android_touch/TouchHelperA.h"
 #include "driver.h"
+#include "cfg.hpp"
+#include "../func/esp.hpp"
+#include "../func/aim/aim.hpp"
+#include "../func/speed.hpp"
 #include <string>
 #include <cmath>
 #include <algorithm>
@@ -248,6 +252,11 @@ void load_logo_pos() {
 }
 
 void render() {
+    // Render pure kernel driver overlays (ESP & Aim assist FOV)
+    func::esp::draw();
+    func::aim::update();
+    func::aim::render_fov(ImGui::GetBackgroundDrawList());
+
     if (g_should_exit.load()) {
         main_thread_flag = false;
         g_ShowMenu = false;
@@ -568,13 +577,13 @@ void render() {
                 cdl->AddLine(ImVec2(lpos.x, lpos.y - 4), ImVec2(lpos.x + 95, lpos.y - 4), theme_orchid::ColPrimary, 2.0f);
                 ImGui::Dummy(ImVec2(0, 4));
 
-                ImGui::Checkbox("Box ESP", &showBox);
-                ImGui::Checkbox("Health Bar", &showHealth);
-                ImGui::Checkbox("Laser Line", &showLine);
+                if (ImGui::Checkbox("Box ESP", &showBox)) cfg::esp::box = showBox;
+                if (ImGui::Checkbox("Health Bar", &showHealth)) cfg::esp::health = showHealth;
+                if (ImGui::Checkbox("Laser Line", &showLine)) cfg::esp::line = showLine;
                 ImGui::Checkbox("Skeleton ESP", &showSkeleton);
-                ImGui::Checkbox("Player Name", &showName);
-                ImGui::Checkbox("Distance", &showDistance);
-                ImGui::Checkbox("Player Count", &showCount);
+                if (ImGui::Checkbox("Player Name", &showName)) cfg::esp::name = showName;
+                if (ImGui::Checkbox("Distance", &showDistance)) cfg::esp::distance = showDistance;
+                if (ImGui::Checkbox("Player Count", &showCount)) cfg::esp::bot_tag = showCount;
                 ImGui::Checkbox("360 Alert", &is3600);
 
                 handleTouchScroll();
@@ -627,15 +636,15 @@ void render() {
                 cdl->AddLine(ImVec2(lpos.x, lpos.y - 4), ImVec2(lpos.x + 130, lpos.y - 4), theme_orchid::ColPrimary, 2.0f);
                 ImGui::Dummy(ImVec2(0, 4));
 
-                ImGui::Checkbox("Enable Aimbot", &Aimbot);
+                if (ImGui::Checkbox("Enable Aimbot", &Aimbot)) cfg::aim::enable = Aimbot;
                 ImGui::Checkbox("Aim Lock (Instant Snap)", &AimLock);
-                ImGui::Checkbox("Silent Aim", &AimSilent);
-                ImGui::Checkbox("Visible Check", &AimVisible);
+                if (ImGui::Checkbox("Silent Aim", &AimSilent)) cfg::aim::silent = AimSilent;
+                if (ImGui::Checkbox("Visible Check", &AimVisible)) cfg::aim::visible_check = AimVisible;
                 ImGui::Checkbox("Aim Magnet", &g_AimMagnetUi);
 
                 ImGui::Dummy(ImVec2(0, 4));
                 ImGui::Checkbox("Ignore Knocked", &Ignorknock);
-                ImGui::Checkbox("Ignore AI Bots", &IgnoreBot);
+                if (ImGui::Checkbox("Ignore AI Bots", &IgnoreBot)) cfg::aim::ignore_bots = IgnoreBot;
 
                 handleTouchScroll();
             }
@@ -653,17 +662,24 @@ void render() {
                 const char* bones[] = { "Head", "Chest", "Hip" };
                 ImGui::Text("Target Aim Bone");
                 ImGui::SetNextItemWidth(-1);
-                ImGui::Combo("##TargetBone", &selectedBoneIndex, bones, IM_ARRAYSIZE(bones));
+                if (ImGui::Combo("##TargetBone", &selectedBoneIndex, bones, IM_ARRAYSIZE(bones))) {
+                    cfg::aim::target_bone = selectedBoneIndex;
+                }
 
                 ImGui::Dummy(ImVec2(0, 4));
                 ImGui::Text("Aim FOV Range (%.0f deg)", AimFov);
                 ImGui::SetNextItemWidth(-1);
-                ImGui::SliderFloat("##AimFovSlider", &AimFov, 0.0f, 360.0f, "%.0f deg");
+                if (ImGui::SliderFloat("##AimFovSlider", &AimFov, 0.0f, 360.0f, "%.0f deg")) {
+                    cfg::aim::aim_fov = AimFov;
+                    cfg::aim::show_fov = true;
+                }
 
                 ImGui::Dummy(ImVec2(0, 4));
                 ImGui::Text("Silent Aim Hit Rate (%d%%)", SilentAimPercentage);
                 ImGui::SetNextItemWidth(-1);
-                ImGui::SliderInt("##SilentRateSlider", &SilentAimPercentage, 0, 100, "%d%%");
+                if (ImGui::SliderInt("##SilentRateSlider", &SilentAimPercentage, 0, 100, "%d%%")) {
+                    cfg::aim::headshot_rate = (float)SilentAimPercentage;
+                }
 
                 handleTouchScroll();
             }

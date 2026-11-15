@@ -5,6 +5,10 @@
 #include "other/memory.hpp"
 #include "other/display_manager.hpp"
 #include "driver.h"
+#include "game/data.hpp"
+#include "func/esp.hpp"
+#include "func/aim/aim.hpp"
+#include "func/speed.hpp"
 #include "FONTS/MAIN_FONT.h"
 #include "FONTS/ICONS.h"
 #include "Scarecrow/hook.h"
@@ -167,6 +171,7 @@ static int start_overlay() {
                 game_pid = getProcessID(packageName);
                 if (game_pid > 0) {
                     Memory::g_pid = (pid_t)game_pid;
+                    proc::pid = game_pid;
                     if (driver) driver->initialize((pid_t)game_pid);
                     lib_base = 0;
                     lib_base2 = 0;
@@ -176,15 +181,22 @@ static int start_overlay() {
                 snprintf(pPath, sizeof(pPath), "/proc/%d", game_pid);
                 if (access(pPath, F_OK) != 0) {
                     game_pid = 0;
+                    proc::pid = 0;
                     lib_base = 0;
+                    proc::lib = 0;
                     lib_base2 = 0;
+                    data::thread_stop();
+                    aimbot::thread_stop();
                 }
             }
 
             if (game_pid > 0 && lib_base == 0) {
                 lib_base = get_module_base(targetaLibName, PERM_EXEC);
                 if (lib_base > 0) {
+                    proc::lib = lib_base;
                     lib_base2 = get_module_base(targetaLibName2, PERM_EXEC);
+                    data::thread_start();
+                    aimbot::thread_start();
                 }
             }
         }
@@ -194,9 +206,6 @@ static int start_overlay() {
             ui::menu::render();
 
             if (game_pid > 0 && lib_base > 0) {
-                DrawESP(abs_ScreenX, abs_ScreenY, lib_base);
-                AimbotMenu(abs_ScreenX, abs_ScreenY, lib_base);
-                TouchAimbotTick(g_ShowMenu);
                 speed_system::tick(lib_base);
             }
         }

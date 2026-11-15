@@ -27,21 +27,79 @@ namespace data {
     static std::unordered_map<uint64_t, int>  g_visCounter;
     static std::unordered_map<uint64_t, bool> g_visStable;
 
-    // HP
-    static int readHP(uint64_t p) {
-        auto pool  = rpm<uint64_t>(p + Offsets::Player_HP);
-        if (!pool) return 0;
+    // Every field read directly off the player object sits between 0x70 and
+    // 0x860 (Player::HP .. Player::IsFiring). Pulling that span in a single
+    // process_vm_readv replaces roughly a dozen syscalls per player per tick
+    // with one, which is the point: the read pattern stops looking like a
+    // field-by-field scrape of the same object.
+    //
+    // The object is at least 0x24B0 bytes (Player::DeathInfo), so the span never
+    // runs past its allocation and every page inside it is committed. A failed
+    // read leaves ok == false and every accessor returns zero, which the callers
+    // already reject — it fails closed rather than half-reading.
+    static constexpr size_t kSpanLo = 0x70;    // Offsets::Player::HP
+    static constexpr size_t kSpanHi = 0x860;   // just past Offsets::Player::IsFiring (0x848)
+
+    struct PlayerSpan {
+        uint8_t buf[kSpanHi - kSpanLo];
+        bool    ok;
+
+        explicit PlayerSpan(uint64_t player)
+            : ok(mem_read(player + kSpanLo, buf, sizeof(buf))) {}
+
+        template <typename T>
+        T at(size_t off) const {
+            T v{};
+            if (!ok || off < kSpanLo) return v;
+            const size_t rel = off - kSpanLo;
+            if (rel + sizeof(T) > sizeof(buf)) return v;
+            memcpy(&v, buf + rel, sizeof(T));
+            return v;
+        }
+    };
+
+    // HEALTH & ARMOR — Live extraction from Il2Cpp PRIDataPool
+    // pool is m_PRIDataPool (0x70) on player.
+    // pool + 0x10 is m_Datas (ReplicationData[] array).
+    // Array count is at +0x18. Elements start at +0x20.
+    // Index 0 (+0x20): CurHP (ReplicationData*)
+    // Index 1 (+0x28): MaxHP (ReplicationData*)
+    // Index 4 (+0x40): CurAP (ReplicationData*, Armor Points)
+    // Value is stored at +0x18 (Offsets::HP_Value) inside each ReplicationData.
+    static void readHealthAndArmor(uint64_t pool, int& curHP, int& maxHP, int& curArmor) {
+        curHP = 0;
+        maxHP = 0;
+        curArmor = 0;
+        if (!pool) return;
         auto datas = rpm<uint64_t>(pool + Offsets::HP_List);
-        if (!datas) return 0;
-        auto elem  = rpm<uint64_t>(datas + Offsets::HP_Entry);
-        if (!elem) return 0;
-        return rpm<int>(elem + Offsets::HP_Value);
+        if (!datas) return;
+
+        // 1. Live Current Health (Proven Index 0 at Offsets::HP_Entry = 0x20)
+        auto elem0 = rpm<uint64_t>(datas + Offsets::HP_Entry);
+        if (elem0) {
+            curHP = rpm<int>(elem0 + Offsets::HP_Value);
+        }
+
+        // 2. Live Maximum Health (Index 1 at 0x28 if registered)
+        auto elem1 = rpm<uint64_t>(datas + 0x28);
+        if (elem1 && elem1 > 0x10000) {
+            int m = rpm<int>(elem1 + Offsets::HP_Value);
+            if (m > 0 && m <= 1000) maxHP = m;
+        }
+        if (maxHP < curHP) maxHP = curHP;
+        if (maxHP <= 0) maxHP = (curHP > 0 ? curHP : 200);
+
+        // 3. Live Armor Points (Index 4 at 0x40 if registered)
+        auto elem4 = rpm<uint64_t>(datas + 0x40);
+        if (elem4 && elem4 > 0x10000) {
+            curArmor = rpm<int>(elem4 + Offsets::HP_Value);
+        }
     }
 
     // NAME
-    static int readName(uint64_t p, char* buf, size_t buflen) {
+    static int readName(const PlayerSpan& span, char* buf, size_t buflen) {
         buf[0] = 0;
-        auto sp = rpm<uint64_t>(p + Offsets::Player_Name);
+        auto sp = span.at<uint64_t>(Offsets::Player_Name);
         if (!sp || sp < 0x10000) return 0;
         int len = rpm<int>(sp + 0x10);
         if (len <= 0 || len > 64) return 0;
@@ -59,17 +117,16 @@ namespace data {
     }
 
     // WEAPON TYPE
-    static int readWeapon(uint64_t p) {
-        auto w = rpm<uint64_t>(p + Offsets::Player_Weapon);
+    static int readWeapon(const PlayerSpan& span) {
+        auto w = span.at<uint64_t>(Offsets::Player_Weapon);
         if (!w) return -1;
         auto wd = rpm<uint64_t>(w + Offsets::Weapon_Data);
         if (!wd) return -1;
         return rpm<int>(wd + 0x64);
     }
 
-    // BONE → SCREEN
-    static Vector3 boneScreen(uint64_t player, uintptr_t offset) {
-        uint64_t node = rpm<uint64_t>(player + offset);
+    // BONE → SCREEN — the node pointer is already out of the span
+    static Vector3 boneScreen(uint64_t node) {
         if (!node) return Vector3::Zero();
         Vector3 w = GetNodePosition(node);
         if (w == Vector3::Zero()) return Vector3::Zero();
@@ -144,30 +201,41 @@ namespace data {
         auto BaseGame = rpm<uint64_t>(StaticFields + 0x8);
         if (!BaseGame) return;
 
-        bool matchActive = rpm<bool>(BaseGame + Offsets::MatchIsRunning);
+        auto m_Match = rpm<uint64_t>(BaseGame + Offsets::BaseGame_Match);
+        auto localPlayer = m_Match ? rpm<uint64_t>(m_Match + Offsets::Match_LocalPlayer) : 0;
+        bool matchActive = rpm<bool>(BaseGame + Offsets::MatchIsRunning) || (localPlayer != 0);
         inMatch.store(matchActive);
 
         if (!matchActive) {
             localPlayerAddr.store(0);
             {
                 std::lock_guard<std::mutex> lk(players_mutex);
-                players.clear();
+                if (!players.empty()) players.clear();
             }
             {
                 std::lock_guard<std::mutex> lk(loots_mutex);
-                loots.clear();
+                if (!loots.empty()) loots.clear();
+            }
+            if (!g_visStable.empty()) g_visStable.clear();
+            if (!g_visCounter.empty()) g_visCounter.clear();
+            return;
+        }
+
+        // Feature-muted mode: user turned off all ESP & Aim switches in menu.
+        // Return immediately without reading camera, bones, or enemy lists.
+        if (!cfg::any_feature_enabled()) {
+            {
+                std::lock_guard<std::mutex> lk(players_mutex);
+                if (!players.empty()) players.clear();
             }
             return;
         }
 
-        auto m_Match = rpm<uint64_t>(BaseGame + Offsets::BaseGame_Match);
         if (!m_Match) {
             std::lock_guard<std::mutex> lk(players_mutex);
             players.clear();
             return;
         }
-
-        auto localPlayer = rpm<uint64_t>(m_Match + Offsets::Match_LocalPlayer);
 
         // Simpan local player
         localPlayerAddr.store(localPlayer ? localPlayer : 0);
@@ -175,6 +243,8 @@ namespace data {
         if (!localPlayer) {
             std::lock_guard<std::mutex> lk(players_mutex);
             players.clear();
+            g_visStable.clear();
+            g_visCounter.clear();
             return;
         }
 
@@ -229,17 +299,25 @@ namespace data {
         }
 
         int nv = dict.getNumValues();
+        MonoDictionary::EntryBlock blk{};
         for (int i = 0; i < nv; i++) {
-            uint64_t enemy = dict.entry(i);
+            // Dictionary slots come out of the array 64 at a time.
+            if (i % MonoDictionary::kBlockSize == 0 && !dict.read_block(i, blk)) break;
+            uint64_t enemy = blk.value[i % MonoDictionary::kBlockSize];
             if (!enemy || enemy < 0x100000000 || enemy == localPlayer) continue;
 
-            if (rpm<bool>(enemy + Offsets::Player_IsDead)) continue;
-            bool isBot = rpm<bool>(enemy + Offsets::Player_IsBot);
+            // One syscall for everything that lives on the player object itself.
+            PlayerSpan span(enemy);
+            if (!span.ok) continue;
 
-            int hp = readHP(enemy);
-            if (hp <= 0) continue;
+            if (span.at<bool>(Offsets::Player_IsDead)) continue;
+            bool isBot = span.at<bool>(Offsets::Player_IsBot);
 
-            auto avatarMgr = rpm<uint64_t>(enemy + Offsets::Player_Avatar);
+            int curHP = 0, maxHP = 0, curArmor = 0;
+            readHealthAndArmor(span.at<uint64_t>(Offsets::Player_HP), curHP, maxHP, curArmor);
+            if (curHP <= 0) continue;
+
+            auto avatarMgr = span.at<uint64_t>(Offsets::Player_Avatar);
             if (!avatarMgr) continue;
             auto uma = rpm<uint64_t>(avatarMgr + Offsets::Avatar_Uma);
             if (!uma) continue;
@@ -277,7 +355,7 @@ namespace data {
             }
 
             // Head world
-            uint64_t hNode = rpm<uint64_t>(enemy + Offsets::Bone_Head);
+            uint64_t hNode = span.at<uint64_t>(Offsets::Bone_Head);
             if (!hNode) continue;
             Vector3 headWorld = GetNodePosition(hNode);
             if (headWorld == Vector3::Zero() || headWorld.sqrMagnitude() < 1.0f) continue;
@@ -290,13 +368,13 @@ namespace data {
             Vector3 headScreen = WorldToScreenPoint(viewMatrix, headWorld);
             if (headScreen.z < 0.001f) continue;
 
-            Vector3 toeScreen = boneScreen(enemy, Offsets::Bone_LeftToe);
+            Vector3 toeScreen = boneScreen(span.at<uint64_t>(Offsets::Bone_LeftToe));
             if (toeScreen.z < 0.001f) continue;
 
             // Build
             PlayerData pd;
-            readName(enemy, pd.name, sizeof(pd.name));
-            pd.weaponType = readWeapon(enemy);
+            readName(span, pd.name, sizeof(pd.name));
+            pd.weaponType = readWeapon(span);
             if (!pd.name[0] && isBot) snprintf(pd.name, sizeof(pd.name), "BOT");
 
             pd.addr       = enemy;
@@ -306,13 +384,13 @@ namespace data {
             pd.isVisible  = visible;
             pd.isBot      = isBot;
             pd.distance   = dist;
-            pd.curHP      = hp;
-            pd.maxHP      = 200;
-            pd.curArmor   = rpm<int>(enemy + Offsets::Player_Armor);
-            pd.isFiring   = rpm<bool>(enemy + Offsets::Player_IsFiring);
-            pd.isGrounded = rpm<bool>(enemy + Offsets::Player_IsGrounded);
+            pd.curHP      = curHP;
+            pd.maxHP      = maxHP;
+            pd.curArmor   = curArmor;
+            pd.isFiring   = span.at<bool>(Offsets::Player_IsFiring);
+            pd.isGrounded = span.at<bool>(Offsets::Player_IsGrounded);
 
-            Vector3 vel = rpm<Vector3>(enemy + Offsets::Player_Velocity);
+            Vector3 vel = span.at<Vector3>(Offsets::Player_Velocity);
             pd.speed = sqrtf(vel.x*vel.x + vel.y*vel.y + vel.z*vel.z);
 
             tmp.push_back(pd);
@@ -333,7 +411,16 @@ namespace data {
     static void loop() {
         while (g_run.load(std::memory_order_relaxed)) {
             update();
-            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            int iv = cfg::aim::read_interval_ms;
+            if (iv < 8) iv = 8;
+            if (iv > 100) iv = 100;
+
+            // If not in match, throttle politely to 100ms (10 checks/sec)
+            if (!inMatch.load(std::memory_order_relaxed)) {
+                iv = 100;
+            }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(iv));
         }
     }
 
