@@ -5,6 +5,19 @@
 #include <sys/uio.h>
 #include <errno.h>
 
+#ifdef SYS_openat
+#undef SYS_openat
+#endif
+#ifdef SYS_close
+#undef SYS_close
+#endif
+#ifdef SYS_read
+#undef SYS_read
+#endif
+#ifdef SYS_getdents64
+#undef SYS_getdents64
+#endif
+
 // ============================================================
 // Driver Mode 5: KPM (Dual-Engine: TB KPM + Neo KPM + PVM Fallback)
 // Matching and advancing beyond pewpew & crack_master architectures

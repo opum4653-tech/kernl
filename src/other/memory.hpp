@@ -14,6 +14,19 @@ namespace proc {
 }
 
 namespace sys {
+    #ifdef SYS_openat
+    #undef SYS_openat
+    #endif
+    #ifdef SYS_close
+    #undef SYS_close
+    #endif
+    #ifdef SYS_read
+    #undef SYS_read
+    #endif
+    #ifdef SYS_getdents64
+    #undef SYS_getdents64
+    #endif
+
     #if defined(__aarch64__)
     static constexpr long SYS_openat     = 56;
     static constexpr long SYS_close      = 57;
