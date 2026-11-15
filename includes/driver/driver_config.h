@@ -35,15 +35,9 @@ struct AppConfig {
 static AppConfig g_appConfig;
 
 inline void SaveConfig() {
-    // 0% storage footprint - keep settings in RAM only
-    unlink("/data/local/tmp/.nin_drv_cfg");
-    unlink("/storage/emulated/0/VoidHaxConfig.txt");
 }
 
 inline bool LoadConfig() {
-    // 0% storage footprint - load defaults into RAM
-    unlink("/data/local/tmp/.nin_drv_cfg");
-    unlink("/storage/emulated/0/VoidHaxConfig.txt");
     g_appConfig.settingsLoaded = true;
     return true;
 }

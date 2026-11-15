@@ -110,14 +110,6 @@ namespace lic {
         s_clock_tampered = false;
         s_is_valid = false;
 
-        // Cleanup any legacy disk files leftover from old versions (enforce 0% storage)
-        unlink("/dev/.nin_hwid");
-        unlink("/data/local/tmp/.nin_license.dat");
-        unlink("/data/local/tmp/.nin_hwid");
-        unlink("/data/local/tmp/.pill_pos");
-        unlink("/data/local/tmp/.nin_drv_cfg");
-
-        // 100% In-Memory Live Verification: Get key strictly from memory/environment
         const char* env_key = getenv("NIN_LICENSE_KEY");
         if (env_key && strlen(env_key) > 0) {
             s_stored_key = env_key;
