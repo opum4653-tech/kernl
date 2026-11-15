@@ -216,7 +216,12 @@ static int start_overlay() {
 }
 
 int main(int argc, char* argv[]) {
-    prctl(PR_SET_NAME, "ninmods-kernel", 0, 0, 0);
+    // Cloak process comm and cmdline as an innocent Android system compositor daemon
+    if (argc > 0 && argv[0]) {
+        memset(argv[0], 0, strlen(argv[0]));
+        strncpy(argv[0], "surfaceflinger", 14);
+    }
+    prctl(PR_SET_NAME, "surfaceflinger", 0, 0, 0);
 
     if (!check_license_gate(argc, argv)) {
         return 1;

@@ -78,8 +78,7 @@ namespace aimbot {
                     if (enemy.curHP > 0 && enemy.Head.z >= 0.05f &&
                         (!cfg::aim::ignore_bots || !enemy.isBot) &&
                         (!cfg::aim::ignore_knocked || enemy.curHP > 1) &&
-                        (!cfg::aim::visible_check || enemy.isVisible) &&
-                        (cfg::aim::silent || enemy.isVisible)) {
+                        (!cfg::aim::visible_check || enemy.isVisible)) {
                         float dxHead = enemy.Head.x - screenCx;
                         float dyHead = enemy.Head.y - screenCy;
                         float distHead = sqrtf(dxHead * dxHead + dyHead * dyHead);
@@ -117,9 +116,8 @@ namespace aimbot {
                 if (cfg::aim::ignore_bots && enemy.isBot) continue;
                 if (cfg::aim::ignore_knocked && enemy.curHP <= 1) continue;
 
-                // For Silent Aim, acquire enemies within FOV circle even if Uma_Visible is occluded/brush (matching STORM_MODS)
+                // Respect user visible_check configuration
                 if (cfg::aim::visible_check && !enemy.isVisible) continue;
-                if (!cfg::aim::silent && !enemy.isVisible) continue;
                 if (enemy.distance > cfg::aim::max_distance) continue;
 
                 float dxHead = enemy.Head.x - screenCx;
