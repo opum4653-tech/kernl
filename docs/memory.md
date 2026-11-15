@@ -61,3 +61,28 @@ This file is the permanent historical memory and technical log for the `ninmods-
 | `src/game/data.cpp` | High-speed entity parsing, `PlayerSpan` DMA caching, local player tracking |
 | `src/game/math.hpp` | Unity WorldToScreen matrix projection, node position resolution |
 | `src/offsets/offsets.hpp` | Centralized memory offsets for OB55 (1.132.1) |
+
+---
+
+## 4. PewPew Integration & Feature Additions
+
+Key features from reference `pewpew` codebase ported and integrated into `ninmods-kernel`:
+
+1. **Multi-Level Pointer Chain Resolver (`src/other/addr.hpp`):**
+   - Implemented `find_addr(base, offsets, count)` utility resolving dynamic Unity runtime pointers.
+
+2. **Wide FOV / iPad View (`src/func/speed.hpp`):**
+   - Memory offset `0x36C9BD0` from `libil2cpp.so`.
+   - Dynamic slider range `1.0x` to `2.5x`. Clean reverse-path restoration to `1.0f` on disable.
+
+3. **Auto-Pickup Range Mod (`src/func/speed.hpp`):**
+   - Pointer chain: `libil2cpp + 0xF1D5F70 -> 0x30 -> 0x4B8 -> 0x1EB4`.
+   - Expands loot collection radius up to 35 meters. Restores standard 2.0m radius on disable.
+
+4. **Hitbox / Player Size Scaler (`src/func/speed.hpp`):**
+   - Pointer chain: `libil2cpp + 0xF1D5F70 -> 0x30 -> 0x4B8 -> 0x510 -> [0x1FC, 0x200, 0x204]`.
+   - Scales enemy X, Y, Z hitboxes from `1.0x` to `3.0x` for effortless bullet registration.
+
+5. **High Jump Elevation Mod (`src/func/speed.hpp`):**
+   - Pointer chain: `libil2cpp + 0xF1D5F70 -> 0x30 -> 0x4B8 -> 0x518 -> 0x21C`.
+   - Modifies vertical jump impulse from `1.0x` to `5.0x`. Fully restored on toggle off.

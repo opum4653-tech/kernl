@@ -3,6 +3,7 @@
 #include <cmath>
 #include "driver.h"
 #include "../offsets/offsets.hpp"
+#include "../other/addr.hpp"
 #include "../ui/cfg.hpp"
 
 namespace speed_system {
@@ -16,6 +17,21 @@ namespace speed_system {
     };
 
     inline SpeedConfig g_config;
+
+    struct ModState {
+        bool  ipad_last = false;
+        float ipad_last_val = 1.0f;
+
+        bool  pickup_last = false;
+        float pickup_last_val = 2.0f;
+
+        bool  hitbox_last = false;
+        float hitbox_last_val = 1.0f;
+
+        bool  jump_last = false;
+        float jump_last_val = 1.0f;
+    };
+    inline ModState g_mod_state;
 
     // Checks if the kernel driver is active and ready
     // MANDATORY CONSTRAINT: Speed operations ONLY run through the kernel driver.
@@ -167,6 +183,79 @@ namespace speed_system {
             if (cfg::master_enabled && cfg::motion::ghost_hack) {
                 bool val = true;
                 driver->write(localPlayer + Offsets::GhostHack, &val, sizeof(bool));
+            }
+        }
+
+        // 1. iPad View / Wide FOV (0x36C9BD0)
+        if (libAddress >= 0x10000) {
+            static constexpr uint64_t IPAD_OFFSET = 0x36C9BD0;
+            if (cfg::master_enabled && cfg::motion::ipad_view) {
+                float targetIpad = cfg::motion::ipad_val;
+                driver_write_float(libAddress + IPAD_OFFSET, targetIpad);
+                g_mod_state.ipad_last = true;
+                g_mod_state.ipad_last_val = targetIpad;
+            } else if (g_mod_state.ipad_last) {
+                driver_write_float(libAddress + IPAD_OFFSET, 1.0f);
+                g_mod_state.ipad_last = false;
+                g_mod_state.ipad_last_val = 1.0f;
+            }
+        }
+
+        // 2. Auto-Pickup Range (0xF1D5F70 -> 0x30, 0x4B8, 0x1EB4)
+        static constexpr uint64_t PR_BASE = 0xF1D5F70;
+        static constexpr uint64_t PR_OFFSETS[] = { 0x30, 0x4B8, 0x1EB4 };
+        if (cfg::master_enabled && cfg::motion::pickup_range) {
+            uint64_t prAddr = func::find_addr(PR_BASE, PR_OFFSETS, 3);
+            if (prAddr >= 0x10000) {
+                driver_write_float(prAddr, cfg::motion::pickup_val);
+                g_mod_state.pickup_last = true;
+            }
+        } else if (g_mod_state.pickup_last) {
+            uint64_t prAddr = func::find_addr(PR_BASE, PR_OFFSETS, 3);
+            if (prAddr >= 0x10000) {
+                driver_write_float(prAddr, 2.0f);
+                g_mod_state.pickup_last = false;
+            }
+        }
+
+        // 3. Hitbox / Player Size Scaler (0xF1D5F70 -> 0x30, 0x4B8, 0x510, 0x1FC/0x200/0x204)
+        static constexpr uint64_t PS_BASE = 0xF1D5F70;
+        static constexpr uint64_t PSX_OFF[] = { 0x30, 0x4B8, 0x510, 0x1FC };
+        static constexpr uint64_t PSY_OFF[] = { 0x30, 0x4B8, 0x510, 0x200 };
+        static constexpr uint64_t PSZ_OFF[] = { 0x30, 0x4B8, 0x510, 0x204 };
+        if (cfg::master_enabled && cfg::motion::hitbox_scale) {
+            float scale = cfg::motion::hitbox_size;
+            uint64_t ax = func::find_addr(PS_BASE, PSX_OFF, 4);
+            uint64_t ay = func::find_addr(PS_BASE, PSY_OFF, 4);
+            uint64_t az = func::find_addr(PS_BASE, PSZ_OFF, 4);
+            if (ax >= 0x10000) driver_write_float(ax, scale);
+            if (ay >= 0x10000) driver_write_float(ay, scale);
+            if (az >= 0x10000) driver_write_float(az, scale);
+            g_mod_state.hitbox_last = true;
+        } else if (g_mod_state.hitbox_last) {
+            uint64_t ax = func::find_addr(PS_BASE, PSX_OFF, 4);
+            uint64_t ay = func::find_addr(PS_BASE, PSY_OFF, 4);
+            uint64_t az = func::find_addr(PS_BASE, PSZ_OFF, 4);
+            if (ax >= 0x10000) driver_write_float(ax, 1.0f);
+            if (ay >= 0x10000) driver_write_float(ay, 1.0f);
+            if (az >= 0x10000) driver_write_float(az, 1.0f);
+            g_mod_state.hitbox_last = false;
+        }
+
+        // 4. High Jump (0xF1D5F70 -> 0x30, 0x4B8, 0x518, 0x21C)
+        static constexpr uint64_t HJ_BASE = 0xF1D5F70;
+        static constexpr uint64_t HJ_OFF[] = { 0x30, 0x4B8, 0x518, 0x21C };
+        if (cfg::master_enabled && cfg::motion::high_jump) {
+            uint64_t hjAddr = func::find_addr(HJ_BASE, HJ_OFF, 4);
+            if (hjAddr >= 0x10000) {
+                driver_write_float(hjAddr, cfg::motion::high_jump_val);
+                g_mod_state.jump_last = true;
+            }
+        } else if (g_mod_state.jump_last) {
+            uint64_t hjAddr = func::find_addr(HJ_BASE, HJ_OFF, 4);
+            if (hjAddr >= 0x10000) {
+                driver_write_float(hjAddr, 1.0f);
+                g_mod_state.jump_last = false;
             }
         }
     }

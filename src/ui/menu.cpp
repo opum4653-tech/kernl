@@ -839,6 +839,30 @@ void render() {
                     ImGui::SliderFloat("##SpeedMult", &cfg::motion::speed_mult, 1.0f, 5.0f, "%.1fx");
                 }
 
+                ImGui::Checkbox("Wide FOV (iPad View)", &cfg::motion::ipad_view);
+                if (cfg::motion::ipad_view) {
+                    ImGui::SetNextItemWidth(-1);
+                    ImGui::SliderFloat("##IpadScale", &cfg::motion::ipad_val, 1.0f, 2.5f, "%.1fx");
+                }
+
+                ImGui::Checkbox("Auto-Pickup Range", &cfg::motion::pickup_range);
+                if (cfg::motion::pickup_range) {
+                    ImGui::SetNextItemWidth(-1);
+                    ImGui::SliderFloat("##PickupRange", &cfg::motion::pickup_val, 5.0f, 35.0f, "%.0f m");
+                }
+
+                ImGui::Checkbox("Hitbox Scaler", &cfg::motion::hitbox_scale);
+                if (cfg::motion::hitbox_scale) {
+                    ImGui::SetNextItemWidth(-1);
+                    ImGui::SliderFloat("##HitboxScale", &cfg::motion::hitbox_size, 1.0f, 3.0f, "%.1fx");
+                }
+
+                ImGui::Checkbox("High Jump", &cfg::motion::high_jump);
+                if (cfg::motion::high_jump) {
+                    ImGui::SetNextItemWidth(-1);
+                    ImGui::SliderFloat("##HighJump", &cfg::motion::high_jump_val, 1.0f, 5.0f, "%.1fx");
+                }
+
                 ImGui::Checkbox("No Recoil", &cfg::motion::no_recoil);
                 ImGui::Checkbox("No Reload", &cfg::motion::no_reload);
                 ImGui::Checkbox("Ghost Hack", &cfg::motion::ghost_hack);

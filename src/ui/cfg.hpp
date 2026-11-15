@@ -76,6 +76,14 @@ namespace motion {
     inline bool  no_recoil     = false; // Pure kernel driver recoil reduction
     inline bool  no_reload     = false; // Instant shot / zero reload wait
     inline bool  ghost_hack    = false; // Ghost mode
+    inline bool  ipad_view     = false; // Wide FOV / iPad View (0x36C9BD0)
+    inline float ipad_val      = 1.4f;  // 1.0x to 2.5x camera FOV scale
+    inline bool  pickup_range  = false; // Extended Auto-Loot range (0x1EB4)
+    inline float pickup_val    = 15.0f; // 2.0 to 30.0 meters
+    inline bool  hitbox_scale  = false; // Hitbox & Player Size Scaler (0x1FC, 0x200, 0x204)
+    inline float hitbox_size   = 1.5f;  // 1.0x to 3.0x
+    inline bool  high_jump     = false; // High Jump elevation (0x21C)
+    inline float high_jump_val = 2.5f;  // 1.0x to 5.0x
 }
 
 inline bool any_feature_enabled() {
@@ -84,7 +92,8 @@ inline bool any_feature_enabled() {
            esp::name || esp::distance || esp::weapon ||
            esp::tracer || esp::loot || esp::crosshair || esp::firing_ind ||
            motion::air_flight || motion::phantom_mode || motion::speed_hack ||
-           motion::no_recoil || motion::no_reload || motion::ghost_hack;
+           motion::no_recoil || motion::no_reload || motion::ghost_hack ||
+           motion::ipad_view || motion::pickup_range || motion::hitbox_scale || motion::high_jump;
 }
 
 }
