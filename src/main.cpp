@@ -197,6 +197,7 @@ static int start_overlay() {
                 DrawESP(abs_ScreenX, abs_ScreenY, lib_base);
                 AimbotMenu(abs_ScreenX, abs_ScreenY, lib_base);
                 TouchAimbotTick(g_ShowMenu);
+                speed_system::tick(lib_base);
             }
         }
         drawEnd();

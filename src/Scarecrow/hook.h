@@ -3,6 +3,7 @@
 
 #include "bool.h"
 #include "offsets.h"
+#include "../func/speed.hpp"
 #include <algorithm>
 #include <atomic>
 #include <cctype>
@@ -146,12 +147,7 @@ void UpdateNoReload(uintptr_t localPlayer) {
 }
 
 inline void UpdatePlayerAttributes(uintptr_t localPlayer) {
-    if (!SpeedHackV2) return;
-    if (!IsValidPointer(localPlayer)) return;
-    uintptr_t attrs = Read<uintptr_t>(localPlayer + Offsets::PlayerAttributes);
-    if (!IsValidPointer(attrs)) return;
-    Write<float>(attrs + 0x2C0, SpeedMultiplier);
-    Write<float>(attrs + 0x2BC, SpeedMultiplier);
+    // Unblocked: speed updates are handled globally by speed_system::tick()
 }
 
 void UpdateNoRecoil(uintptr_t localPlayer) {
@@ -1023,12 +1019,7 @@ void InitTouchAimbot() {
 }
 
 void ApplySpeedHack(uintptr_t BaseGame) {
-  if (!IsValidPointer(BaseGame)) return;
-  if (!SpeedHackV2) return;
-  auto TimeService = Read<uintptr_t>(BaseGame + Offsets::Engine_TimeService);
-  if (!IsValidPointer(TimeService)) return;
-  float mappedSpeed = 0.033f + ((SpeedMultiplier - 1.0f) / 4.0f) * 0.026f;
-  Write<float>(TimeService + Offsets::Engine_TimeServiceSpeed, mappedSpeed);
+    // Unblocked: speed updates are handled globally by speed_system::tick()
 }
 
 void AimbotMenu(float sw, float sh, uintptr_t libAddress) {
