@@ -286,6 +286,44 @@ static bool DrawToggleSwitch(const char* label, bool* v, float row_height = 46.0
     return pressed;
 }
 
+// ----------------------------------------------------------------------------
+// CUSTOM WIDGET: SEGMENTED BUTTON ROW (ZERO DROPDOWN / COMBO REPLACEMENT)
+// ----------------------------------------------------------------------------
+static bool DrawSegmentedButtons(const char* str_id, int* selected, const char* const labels[], int count, float height = 30.0f) {
+    float availW = ImGui::GetContentRegionAvail().x;
+    float gap = 4.0f;
+    float btnW = (availW - gap * (count - 1)) / (float)count;
+    bool changed = false;
+
+    for (int i = 0; i < count; i++) {
+        if (i > 0) ImGui::SameLine(0, gap);
+
+        char btnLabel[64];
+        snprintf(btnLabel, sizeof(btnLabel), "%s##%s_%d", labels[i], str_id, i);
+
+        bool is_active = (*selected == i);
+        if (is_active) {
+            ImGui::PushStyleColor(ImGuiCol_Button, theme_orchid::ColPrimary);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, theme_orchid::ColPrimaryLight);
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, theme_orchid::ColPrimary);
+            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.12f, 0.09f, 0.17f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.18f, 0.14f, 0.24f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.24f, 0.18f, 0.32f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, theme_orchid::ColTextMuted);
+        }
+
+        if (ImGui::Button(btnLabel, ImVec2(btnW, height))) {
+            *selected = i;
+            changed = true;
+        }
+
+        ImGui::PopStyleColor(4);
+    }
+    return changed;
+}
+
 namespace ui::menu {
 
 void save_logo_pos() {
@@ -640,48 +678,66 @@ void render() {
                 }
                 ImGui::Dummy(ImVec2(0, 6));
 
-                if (ImGui::Checkbox("Box ESP", &showBox)) cfg::esp::box = showBox;
-                if (ImGui::Checkbox("Health Bar", &showHealth)) cfg::esp::health = showHealth;
-                if (ImGui::Checkbox("Laser Line", &showLine)) cfg::esp::line = showLine;
+                if (ImGui::Checkbox("ESP Box (Chaturbhuj)", &cfg::esp::box)) showBox = cfg::esp::box;
+                if (ImGui::Checkbox("ESP Health Bar (Right)", &cfg::esp::health)) showHealth = cfg::esp::health;
+                ImGui::Checkbox("ESP Armor Bar", &cfg::esp::armor);
+                if (ImGui::Checkbox("ESP Laser Line", &cfg::esp::tracer)) showLine = cfg::esp::tracer;
+                if (ImGui::Checkbox("ESP Player Name", &cfg::esp::name)) showName = cfg::esp::name;
+                if (ImGui::Checkbox("ESP Distance", &cfg::esp::distance)) showDistance = cfg::esp::distance;
+                if (ImGui::Checkbox("ESP Bot Tag (AI)", &cfg::esp::bot_tag)) showCount = cfg::esp::bot_tag;
+                ImGui::Checkbox("ESP Weapon Name", &cfg::esp::weapon);
+                ImGui::Checkbox("Firing Indicator", &cfg::esp::firing_ind);
                 ImGui::Checkbox("Skeleton ESP", &showSkeleton);
-                if (ImGui::Checkbox("Player Name", &showName)) cfg::esp::name = showName;
-                if (ImGui::Checkbox("Distance", &showDistance)) cfg::esp::distance = showDistance;
-                if (ImGui::Checkbox("Player Count", &showCount)) cfg::esp::bot_tag = showCount;
                 ImGui::Checkbox("360 Alert", &is3600);
 
                 handleTouchScroll();
             }
             ImGui::EndChild();
 
-            // Right Column: Colors & Customization
+            // Right Column: Settings & Filters (Zero Dropdowns)
             ImGui::SetCursorPos(ImVec2(contentX + colW + colGap, contentY));
             if (ImGui::BeginChild("##ColRightESP", ImVec2(colW, contentH), true)) {
-                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "COLORS & STYLES");
+                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "SETTINGS & FILTERS");
                 ImDrawList* cdl = ImGui::GetWindowDrawList();
                 ImVec2 rpos = ImGui::GetCursorScreenPos();
                 cdl->AddLine(ImVec2(rpos.x, rpos.y - 4), ImVec2(rpos.x + 120, rpos.y - 4), theme_orchid::ColPrimary, 2.0f);
                 ImGui::Dummy(ImVec2(0, 4));
 
-                const char* colorModes[] = { "Custom", "Health", "Distance", "Rainbow", "Cyan",
-                                             "Green", "Purple", "Orange", "Red", "White" };
+                if (ImGui::Checkbox("Ignore Bot Players", &cfg::esp::ignore_bots)) IgnoreBot = cfg::esp::ignore_bots;
+                ImGui::Checkbox("Crosshair Center", &cfg::esp::crosshair);
+                ImGui::Checkbox("Loot ESP", &cfg::esp::loot);
 
-                ImGui::Text("Box Color Mode");
+                ImGui::Dummy(ImVec2(0, 4));
+                static const char* const boxStyles[] = { "Corner", "Full", "Glow" };
+                ImGui::TextDisabled("Box Style Mode");
+                DrawSegmentedButtons("BoxStyle", &cfg::esp::box_type, boxStyles, 3, 30.0f * ui_scale);
+
+                ImGui::Dummy(ImVec2(0, 4));
                 ImGui::SetNextItemWidth(-1);
-                ImGui::Combo("##BoxColorMode", &boxColorMode, colorModes, IM_ARRAYSIZE(colorModes));
+                ImGui::SliderFloat("##MaxRange", &cfg::esp::max_range, 50.0f, 500.0f, "%.0f m");
+                ImGui::TextDisabled("Max Render Distance");
 
-                if (boxColorMode == 0) {
-                    ImGui::Text("Custom Box Color");
-                    ImGui::ColorEdit4("##BoxCustomCol", &boxCustomColor.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_AlphaPreviewHalf);
-                }
+                ImGui::Dummy(ImVec2(0, 4));
+                ImGui::SetNextItemWidth(-1);
+                ImGui::SliderFloat("##LaserThickness", &cfg::esp::tracer_thickness, 0.5f, 4.0f, "%.1f px");
+                ImGui::TextDisabled("Laser Line Width");
+
+                ImGui::Dummy(ImVec2(0, 4));
+                ImGui::SetNextItemWidth(-1);
+                ImGui::SliderFloat("##BoxThickness", &cfg::esp::box_thickness, 1.0f, 5.0f, "%.1f px");
+                ImGui::TextDisabled("Box Border Width");
 
                 ImGui::Dummy(ImVec2(0, 6));
-                ImGui::Text("Line Color Mode");
-                ImGui::SetNextItemWidth(-1);
-                ImGui::Combo("##LineColorMode", &lineColorMode, colorModes, IM_ARRAYSIZE(colorModes));
-
-                if (lineColorMode == 0) {
-                    ImGui::Text("Custom Line Color");
-                    ImGui::ColorEdit4("##LineCustomCol", &lineCustomColor.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_AlphaPreviewHalf);
+                ImGui::TextDisabled("ESP Accent Color");
+                for (int i = 0; i < 6; i++) {
+                    ImGui::PushID(900 + i);
+                    if (ImGui::ColorButton("##espcol", g_ThemeSwatches[i], 0, ImVec2(28 * ui_scale, 28 * ui_scale))) {
+                        cfg::esp::box_col = g_ThemeSwatches[i];
+                        boxCustomColor = g_ThemeSwatches[i];
+                        lineCustomColor = g_ThemeSwatches[i];
+                    }
+                    if (i < 5) ImGui::SameLine();
+                    ImGui::PopID();
                 }
 
                 handleTouchScroll();
@@ -693,7 +749,7 @@ void render() {
             // Left Column: Toggles
             ImGui::SetCursorPos(ImVec2(contentX, contentY));
             if (ImGui::BeginChild("##ColLeftAim", ImVec2(colW, contentH), true)) {
-                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "AIMBOT CONTROLS");
+                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "AIMBOT SETTINGS");
                 ImDrawList* cdl = ImGui::GetWindowDrawList();
                 ImVec2 lpos = ImGui::GetCursorScreenPos();
                 cdl->AddLine(ImVec2(lpos.x, lpos.y - 4), ImVec2(lpos.x + 130, lpos.y - 4), theme_orchid::ColPrimary, 2.0f);
@@ -706,15 +762,39 @@ void render() {
                 }
                 ImGui::Dummy(ImVec2(0, 6));
 
-                if (ImGui::Checkbox("Enable Aimbot", &Aimbot)) cfg::aim::enable = Aimbot;
+                if (ImGui::Checkbox("Enable Aim Assist", &cfg::aim::enable)) Aimbot = cfg::aim::enable;
+                if (ImGui::Checkbox("Aim Silent", &cfg::aim::silent)) AimSilent = cfg::aim::silent;
+                ImGui::Checkbox("Scope Aim (Instant Head)", &cfg::aim::scope_aim);
+                ImGui::Checkbox("Sniper Headshot Lock", &cfg::aim::sniper_aim);
                 ImGui::Checkbox("Aim Lock (Instant Snap)", &AimLock);
-                if (ImGui::Checkbox("Silent Aim", &AimSilent)) cfg::aim::silent = AimSilent;
-                if (ImGui::Checkbox("Visible Check", &AimVisible)) cfg::aim::visible_check = AimVisible;
                 ImGui::Checkbox("Aim Magnet", &g_AimMagnetUi);
 
                 ImGui::Dummy(ImVec2(0, 4));
-                ImGui::Checkbox("Ignore Knocked", &Ignorknock);
-                if (ImGui::Checkbox("Ignore AI Bots", &IgnoreBot)) cfg::aim::ignore_bots = IgnoreBot;
+                static const char* const boneLabels[] = { "Head", "Chest", "Hip" };
+                ImGui::TextDisabled("Target Aim Bone");
+                if (DrawSegmentedButtons("AimBone", &cfg::aim::target_bone, boneLabels, 3, 30.0f * ui_scale)) {
+                    selectedBoneIndex = cfg::aim::target_bone;
+                }
+
+                ImGui::Dummy(ImVec2(0, 4));
+                static const char* const triggerLabels[] = { "When Firing", "Always In FOV" };
+                ImGui::TextDisabled("Aim Trigger Condition");
+                DrawSegmentedButtons("AimTrigger", &cfg::aim::trigger_mode, triggerLabels, 2, 30.0f * ui_scale);
+
+                ImGui::Dummy(ImVec2(0, 4));
+                static const char* const priorityLabels[] = { "Crosshair", "Lowest HP", "Distance" };
+                ImGui::TextDisabled("Target Priority");
+                DrawSegmentedButtons("AimPriority", &cfg::aim::priority_mode, priorityLabels, 3, 30.0f * ui_scale);
+
+                ImGui::Dummy(ImVec2(0, 6));
+                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "SAFETY FILTERS");
+                lpos = ImGui::GetCursorScreenPos();
+                cdl->AddLine(ImVec2(lpos.x, lpos.y - 4), ImVec2(lpos.x + 100, lpos.y - 4), theme_orchid::ColPrimary, 2.0f);
+                ImGui::Dummy(ImVec2(0, 4));
+
+                if (ImGui::Checkbox("Ignore Knocked", &cfg::aim::ignore_knocked)) Ignorknock = cfg::aim::ignore_knocked;
+                if (ImGui::Checkbox("Ignore AI Bots", &cfg::aim::ignore_bots)) IgnoreBot = cfg::aim::ignore_bots;
+                if (ImGui::Checkbox("Visible Check", &cfg::aim::visible_check)) AimVisible = cfg::aim::visible_check;
 
                 handleTouchScroll();
             }
@@ -723,32 +803,54 @@ void render() {
             // Right Column: Sliders & Modes
             ImGui::SetCursorPos(ImVec2(contentX + colW + colGap, contentY));
             if (ImGui::BeginChild("##ColRightAim", ImVec2(colW, contentH), true)) {
-                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "AIM CONFIGURATION");
+                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "FOV & SMOOTHNESS");
                 ImDrawList* cdl = ImGui::GetWindowDrawList();
                 ImVec2 rpos = ImGui::GetCursorScreenPos();
-                cdl->AddLine(ImVec2(rpos.x, rpos.y - 4), ImVec2(rpos.x + 140, rpos.y - 4), theme_orchid::ColPrimary, 2.0f);
+                cdl->AddLine(ImVec2(rpos.x, rpos.y - 4), ImVec2(rpos.x + 125, rpos.y - 4), theme_orchid::ColPrimary, 2.0f);
                 ImGui::Dummy(ImVec2(0, 4));
 
-                const char* bones[] = { "Head", "Chest", "Hip" };
-                ImGui::Text("Target Aim Bone");
+                if (ImGui::Checkbox("Draw FOV Circle", &cfg::aim::show_fov)) showAimFov = cfg::aim::show_fov;
+
+                ImGui::Dummy(ImVec2(0, 4));
                 ImGui::SetNextItemWidth(-1);
-                if (ImGui::Combo("##TargetBone", &selectedBoneIndex, bones, IM_ARRAYSIZE(bones))) {
-                    cfg::aim::target_bone = selectedBoneIndex;
+                if (ImGui::SliderFloat("##AimFovSlider", &cfg::aim::aim_fov, 10.0f, 360.0f, "%.0f deg")) {
+                    AimFov = cfg::aim::aim_fov;
                 }
+                ImGui::TextDisabled("Aim FOV Range (%.0f deg)", cfg::aim::aim_fov);
 
                 ImGui::Dummy(ImVec2(0, 4));
-                ImGui::Text("Aim FOV Range (%.0f deg)", AimFov);
                 ImGui::SetNextItemWidth(-1);
-                if (ImGui::SliderFloat("##AimFovSlider", &AimFov, 0.0f, 360.0f, "%.0f deg")) {
-                    cfg::aim::aim_fov = AimFov;
-                    cfg::aim::show_fov = true;
+                if (ImGui::SliderFloat("##SilentRateSlider", &cfg::aim::headshot_rate, 0.0f, 100.0f, "%.0f%%")) {
+                    SilentAimPercentage = (int)cfg::aim::headshot_rate;
                 }
+                ImGui::TextDisabled("Silent Aim Hit Rate (%.0f%%)", cfg::aim::headshot_rate);
 
                 ImGui::Dummy(ImVec2(0, 4));
-                ImGui::Text("Silent Aim Hit Rate (%d%%)", SilentAimPercentage);
                 ImGui::SetNextItemWidth(-1);
-                if (ImGui::SliderInt("##SilentRateSlider", &SilentAimPercentage, 0, 100, "%d%%")) {
-                    cfg::aim::headshot_rate = (float)SilentAimPercentage;
+                ImGui::SliderFloat("##AimSmooth", &cfg::aim::smooth, 1.0f, 25.0f, "%.1f (Smooth)");
+                ImGui::TextDisabled("Smooth Factor (Higher = Safe & Human)");
+
+                ImGui::Dummy(ImVec2(0, 4));
+                ImGui::SetNextItemWidth(-1);
+                ImGui::SliderFloat("##AimMaxDist", &cfg::aim::max_distance, 20.0f, 300.0f, "%.0f m");
+                ImGui::TextDisabled("Max Aiming Range");
+
+                ImGui::Dummy(ImVec2(0, 8));
+                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "LIVE TARGET HUD");
+                rpos = ImGui::GetCursorScreenPos();
+                cdl->AddLine(ImVec2(rpos.x, rpos.y - 4), ImVec2(rpos.x + 105, rpos.y - 4), theme_orchid::ColPrimary, 2.0f);
+                ImGui::Dummy(ImVec2(0, 4));
+
+                if (func::aim::g_currentTarget.valid) {
+                    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.4f, 1.0f), "Target: %s", func::aim::g_currentTarget.name);
+                    ImGui::Text("Distance: %.1f m", func::aim::g_currentTarget.distance);
+                    ImGui::Text("Health: %d HP", func::aim::g_currentTarget.hp);
+                    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.6f, 1.0f), "Status: LOCKED [IN FOV]");
+                } else {
+                    ImGui::TextDisabled("Target: None (Scanning)");
+                    ImGui::TextDisabled("Distance: -- m");
+                    ImGui::TextDisabled("Health: --");
+                    ImGui::TextDisabled("Status: STANDBY");
                 }
 
                 handleTouchScroll();
@@ -821,11 +923,18 @@ void render() {
                 ImGui::SameLine(100);
                 ImGui::TextColored(ImVec4(0, 0.85f, 0.9f, 1), "%s", dName);
 
-                ImGui::Dummy(ImVec2(0, 8));
-                ImGui::Text("Theme Accent");
+                ImGui::TextDisabled("FPS:");
+                ImGui::SameLine(100);
+                ImGui::Text("%.1f", io.Framerate);
+
+                ImGui::Dummy(ImVec2(0, 4));
+                ImGui::SliderFloat("##Opacity", &ui_opacity, 0.2f, 1.0f, "Opacity: %.2f");
+
+                ImGui::Dummy(ImVec2(0, 6));
+                ImGui::TextDisabled("Theme Accent");
                 for (int i = 0; i < 6; i++) {
                     ImGui::PushID(800 + i);
-                    if (ImGui::ColorButton("##th", g_ThemeSwatches[i], 0, ImVec2(28, 28))) {
+                    if (ImGui::ColorButton("##th", g_ThemeSwatches[i], 0, ImVec2(28 * ui_scale, 28 * ui_scale))) {
                         g_ThemeColorArr[0] = g_ThemeSwatches[i].x;
                         g_ThemeColorArr[1] = g_ThemeSwatches[i].y;
                         g_ThemeColorArr[2] = g_ThemeSwatches[i].z;
@@ -839,7 +948,7 @@ void render() {
                 ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(200, 40, 60, 200));
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(240, 60, 80, 240));
                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(180, 20, 40, 255));
-                if (ImGui::Button("EXIT OVERLAY", ImVec2(-1, 36.0f))) {
+                if (ImGui::Button("EXIT OVERLAY", ImVec2(-1, 36.0f * ui_scale))) {
                     g_should_exit = true;
                 }
                 ImGui::PopStyleColor(3);

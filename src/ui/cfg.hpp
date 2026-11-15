@@ -55,6 +55,8 @@ namespace aim {
     inline int   trigger_mode     = 0; // 0 = When Firing, 1 = Always In FOV
     inline int   priority_mode    = 0; // 0 = Crosshair Distance, 1 = Low HP, 2 = 3D Distance
     inline bool  ignore_bots      = false;
+    inline bool  ignore_knocked   = false;
+    inline bool  visible_check    = false;
     inline float max_distance     = 200.0f;
 
     inline float get_fov_radius() {
