@@ -9,6 +9,7 @@
 #include "func/esp.hpp"
 #include "func/aim/aim.hpp"
 #include "func/speed.hpp"
+#include "other/signature.hpp"
 #include "FONTS/MAIN_FONT.h"
 #include "FONTS/ICONS.h"
 #include "Scarecrow/hook.h"
@@ -154,7 +155,6 @@ static int start_overlay() {
     LoadCustomIconFonts(io);
 
     Touch_Init(displayInfo.width, displayInfo.height, displayInfo.orientation, false);
-    InitTouchAimbot();
     ui::menu::load_logo_pos();
 
     printf("[+] Overlay engine started successfully.\n");
@@ -172,7 +172,11 @@ static int start_overlay() {
                 if (game_pid > 0) {
                     Memory::g_pid = (pid_t)game_pid;
                     proc::pid = game_pid;
-                    if (driver) driver->initialize((pid_t)game_pid);
+                    if (driver) {
+                        driver->initialize((pid_t)game_pid);
+                        driver->init_key((char*)"ninmods_kernel");
+                        driver->hide_process();
+                    }
                     lib_base = 0;
                     lib_base2 = 0;
                 }

@@ -23,10 +23,6 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/jni/minitouch
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/src/ui
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/png
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/png/images
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/styles
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/widgets
     ${CMAKE_CURRENT_SOURCE_DIR}/src/func
     ${CMAKE_CURRENT_SOURCE_DIR}/src/game
     ${CMAKE_CURRENT_SOURCE_DIR}/src/other
