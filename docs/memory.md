@@ -86,3 +86,33 @@ Key features from reference `pewpew` codebase ported and integrated into `ninmod
 5. **High Jump Elevation Mod (`src/func/speed.hpp`):**
    - Pointer chain: `libil2cpp + 0xF1D5F70 -> 0x30 -> 0x4B8 -> 0x518 -> 0x21C`.
    - Modifies vertical jump impulse from `1.0x` to `5.0x`. Fully restored on toggle off.
+
+---
+
+## 5. UI Layout Breaking Bugs & Touch Scroll Fixes
+
+Comprehensive audit and resolution of UI breaking issues in `src/ui/menu.cpp`:
+
+1. **Touch Scrolling Failure on Controls (`handleTouchScroll`):**
+   - **Root Cause:** Calling `ImGui::IsWindowHovered()` without flags returned `false` whenever finger touched a checkbox, slider, or button (due to active item blocking). Dragging over controls failed to scroll and instead caused accidental toggle clicks.
+   - **Fix:** Added `ImGuiHoveredFlags_ChildWindows | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem` to touch hit testing, and invoked `ImGui::ClearActiveID()` upon vertical gesture recognition to cancel item clicks and scroll smoothly.
+
+2. **Window Height Artificial Clamping:**
+   - **Root Cause:** Window height was clamped to `min(500.0f, realH * 0.92f)`, wasting over 580px of vertical screen space on 1080p landscape gaming screens and cramming options into an overflowing 430px container.
+   - **Fix:** Increased height limit to `min(580.0f * ui_scale, realH * 0.88f)` and width to `min(920.0f * ui_scale, realW * 0.90f)`, providing comfortable breathing room.
+
+3. **Invisible Scrollbar Issue:**
+   - **Root Cause:** Scrollbar colors were set with alpha `0`, leaving users completely blind to whether content was overflowing or scrolled below the fold.
+   - **Fix:** Replaced with subtle Electric Orchid scrollbars (`ScrollbarSize = 5.0f * ui_scale`) that appear cleanly during active scrolling.
+
+4. **Segmented Button Text Truncation (`DrawSegmentedButtons`):**
+   - **Root Cause:** Missing `FramePadding` override forced 16px of horizontal padding per button, causing 3-button rows ("Lowest HP", "Crosshair") and long labels ("Always In FOV") to truncate with `...` on high-DPI screens.
+   - **Fix:** Enforced compact `FramePadding(3.0f, 2.0f)` and `FrameRounding(6.0f)`. Cleaned labels to `"On Firing"`, `"In FOV"`, and `"Low HP"`.
+
+5. **Tab 2 Column Asymmetry & Overflow:**
+   - **Root Cause:** 9 checkboxes and 5 sliders were all stuffed into the left column (580px+ height), while the right column was half empty.
+   - **Fix:** Balanced into `MOVEMENT & VISION` (Left Column) and `COMBAT & SYSTEM` (Right Column).
+
+6. **System Info Text Collision (`SameLine(100)`):**
+   - **Root Cause:** Hardcoded `SameLine(100)` in pixels caused `"LIB BASE:"` (~92px wide in 20px font) to overlap onto the hex address on scaled displays.
+   - **Fix:** Replaced with dynamic DPI-aware column alignment (`SameLine(110.0f * ui_scale)`).

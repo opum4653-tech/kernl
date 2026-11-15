@@ -174,7 +174,8 @@ static void handleTouchScroll() {
 
     if (io.MouseDown[0]) {
         if (s_gesture == GESTURE_IDLE) {
-            if (s_active_child == 0 && ImGui::IsWindowHovered()) {
+            // Allow touch detection even when finger lands directly on a checkbox, slider, or button
+            if (s_active_child == 0 && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem)) {
                 s_touch_start = io.MousePos;
                 s_active_child = child_id;
             }
@@ -187,14 +188,15 @@ static void handleTouchScroll() {
             float abs_dy = std::abs(dy);
 
             if (s_gesture == GESTURE_IDLE) {
-                if (abs_dx >= 5.0f && abs_dx > abs_dy * 1.1f) {
+                if (abs_dx >= 6.0f && abs_dx > abs_dy * 1.2f) {
                     s_gesture = GESTURE_HORIZONTAL;
-                } else if (abs_dy >= 5.0f && abs_dy > abs_dx * 1.1f) {
+                } else if (abs_dy >= 6.0f && abs_dy > abs_dx * 1.2f) {
                     s_gesture = GESTURE_VERTICAL;
                 }
             }
 
             if (s_gesture == GESTURE_VERTICAL) {
+                // Cancel active button/checkbox click state so vertical drag scrolls instead of toggling
                 ImGui::ClearActiveID();
                 float delta_y = io.MouseDelta.y;
                 if (std::abs(delta_y) > 0.01f) {
@@ -271,6 +273,10 @@ static bool DrawSegmentedButtons(const char* str_id, int* selected, const char* 
     float btnW = (availW - gap * (count - 1)) / (float)count;
     bool changed = false;
 
+    // Compact button padding so labels never truncate or clip
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(3.0f, 2.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
+
     for (int i = 0; i < count; i++) {
         if (i > 0) ImGui::SameLine(0, gap);
 
@@ -297,6 +303,7 @@ static bool DrawSegmentedButtons(const char* str_id, int* selected, const char* 
 
         ImGui::PopStyleColor(4);
     }
+    ImGui::PopStyleVar(2);
     return changed;
 }
 
@@ -453,8 +460,8 @@ void render() {
     // --------------------------------------------------------------------
     // STATE 2: MAIN UNIFIED ELECTRIC ORCHID GLASS MENU (When menu is open)
     // --------------------------------------------------------------------
-    const float winW = std::max(500.0f * ui_scale, std::min(860.0f * ui_scale, realW * 0.92f));
-    const float winH = std::max(360.0f * ui_scale, std::min(500.0f * ui_scale, realH * 0.92f));
+    const float winW = std::max(560.0f * ui_scale, std::min(920.0f * ui_scale, realW * 0.90f));
+    const float winH = std::max(420.0f * ui_scale, std::min(580.0f * ui_scale, realH * 0.88f));
 
     static ImVec2 s_menu_pos = ImVec2(-1.0f, -1.0f);
     if (s_menu_pos.x < 0.0f || menu_needs_reposition) {
@@ -485,15 +492,18 @@ void render() {
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.988f, 0.973f, 1.000f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_TextDisabled, ImVec4(0.608f, 0.549f, 0.706f, 1.0f));
 
-    ImGui::PushStyleColor(ImGuiCol_ScrollbarBg, ImVec4(0, 0, 0, 0));
-    ImGui::PushStyleColor(ImGuiCol_ScrollbarGrab, ImVec4(0, 0, 0, 0));
-    ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabHovered, ImVec4(0, 0, 0, 0));
-    ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabActive, ImVec4(0, 0, 0, 0));
+    // Sleek Electric Orchid scrollbar indicator so user always knows scroll position
+    ImGui::PushStyleColor(ImGuiCol_ScrollbarBg, ImVec4(0.08f, 0.06f, 0.12f, 0.35f));
+    ImGui::PushStyleColor(ImGuiCol_ScrollbarGrab, ImVec4(0.882f, 0.000f, 0.596f, 0.55f));
+    ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabHovered, ImVec4(0.882f, 0.000f, 0.596f, 0.85f));
+    ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabActive, ImVec4(1.000f, 0.250f, 0.750f, 1.0f));
 
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ui_opacity);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 12.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.5f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 5.0f * ui_scale);
+    ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarRounding, 4.0f);
 
     ImGuiWindowFlags winFlags = ImGuiWindowFlags_NoTitleBar |
                                 ImGuiWindowFlags_NoResize |
@@ -739,12 +749,12 @@ void render() {
                 DrawSegmentedButtons("AimBone", &cfg::aim::target_bone, boneLabels, 3, 30.0f * ui_scale);
 
                 ImGui::Dummy(ImVec2(0, 4));
-                static const char* const triggerLabels[] = { "When Firing", "Always In FOV" };
+                static const char* const triggerLabels[] = { "On Firing", "In FOV" };
                 ImGui::TextDisabled("Aim Trigger Condition");
                 DrawSegmentedButtons("AimTrigger", &cfg::aim::trigger_mode, triggerLabels, 2, 30.0f * ui_scale);
 
                 ImGui::Dummy(ImVec2(0, 4));
-                static const char* const priorityLabels[] = { "Crosshair", "Lowest HP", "Distance" };
+                static const char* const priorityLabels[] = { "Crosshair", "Low HP", "Distance" };
                 ImGui::TextDisabled("Target Priority");
                 DrawSegmentedButtons("AimPriority", &cfg::aim::priority_mode, priorityLabels, 3, 30.0f * ui_scale);
 
@@ -817,13 +827,13 @@ void render() {
         }
         // TAB 2: MISC & SYSTEM SETTINGS
         else if (activeTab == 2) {
-            // Left Column: Game Mods
+            // Left Column: Movement & Vision Mods
             ImGui::SetCursorPos(ImVec2(contentX, contentY));
             if (ImGui::BeginChild("##ColLeftMisc", ImVec2(colW, contentH), true)) {
-                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "GAMEPLAY MODS");
+                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "MOVEMENT & VISION");
                 ImDrawList* cdl = ImGui::GetWindowDrawList();
                 ImVec2 lpos = ImGui::GetCursorScreenPos();
-                cdl->AddLine(ImVec2(lpos.x, lpos.y - 4), ImVec2(lpos.x + 115, lpos.y - 4), theme_orchid::ColPrimary, 2.0f);
+                cdl->AddLine(ImVec2(lpos.x, lpos.y - 4), ImVec2(lpos.x + 130, lpos.y - 4), theme_orchid::ColPrimary, 2.0f);
                 ImGui::Dummy(ImVec2(0, 4));
 
                 if (DrawToggleSwitch("Master Switch", &cfg::master_enabled, 44.0f * ui_scale, ui_scale)) {
@@ -833,28 +843,16 @@ void render() {
                 }
                 ImGui::Dummy(ImVec2(0, 6));
 
-                ImGui::Checkbox("Speed Hack", &cfg::motion::speed_hack);
-                if (cfg::motion::speed_hack) {
-                    ImGui::SetNextItemWidth(-1);
-                    ImGui::SliderFloat("##SpeedMult", &cfg::motion::speed_mult, 1.0f, 5.0f, "%.1fx");
-                }
-
                 ImGui::Checkbox("Wide FOV (iPad View)", &cfg::motion::ipad_view);
                 if (cfg::motion::ipad_view) {
                     ImGui::SetNextItemWidth(-1);
                     ImGui::SliderFloat("##IpadScale", &cfg::motion::ipad_val, 1.0f, 2.5f, "%.1fx");
                 }
 
-                ImGui::Checkbox("Auto-Pickup Range", &cfg::motion::pickup_range);
-                if (cfg::motion::pickup_range) {
+                ImGui::Checkbox("Speed Hack", &cfg::motion::speed_hack);
+                if (cfg::motion::speed_hack) {
                     ImGui::SetNextItemWidth(-1);
-                    ImGui::SliderFloat("##PickupRange", &cfg::motion::pickup_val, 5.0f, 35.0f, "%.0f m");
-                }
-
-                ImGui::Checkbox("Hitbox Scaler", &cfg::motion::hitbox_scale);
-                if (cfg::motion::hitbox_scale) {
-                    ImGui::SetNextItemWidth(-1);
-                    ImGui::SliderFloat("##HitboxScale", &cfg::motion::hitbox_size, 1.0f, 3.0f, "%.1fx");
+                    ImGui::SliderFloat("##SpeedMult", &cfg::motion::speed_mult, 1.0f, 5.0f, "%.1fx");
                 }
 
                 ImGui::Checkbox("High Jump", &cfg::motion::high_jump);
@@ -863,22 +861,38 @@ void render() {
                     ImGui::SliderFloat("##HighJump", &cfg::motion::high_jump_val, 1.0f, 5.0f, "%.1fx");
                 }
 
-                ImGui::Checkbox("No Recoil", &cfg::motion::no_recoil);
-                ImGui::Checkbox("No Reload", &cfg::motion::no_reload);
+                ImGui::Checkbox("Auto-Pickup Range", &cfg::motion::pickup_range);
+                if (cfg::motion::pickup_range) {
+                    ImGui::SetNextItemWidth(-1);
+                    ImGui::SliderFloat("##PickupRange", &cfg::motion::pickup_val, 5.0f, 35.0f, "%.0f m");
+                }
+
                 ImGui::Checkbox("Ghost Hack", &cfg::motion::ghost_hack);
 
                 handleTouchScroll();
             }
             ImGui::EndChild();
 
-            // Right Column: System & Driver Status
+            // Right Column: Combat Mods & System Status
             ImGui::SetCursorPos(ImVec2(contentX + colW + colGap, contentY));
             if (ImGui::BeginChild("##ColRightMisc", ImVec2(colW, contentH), true)) {
-                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "SYSTEM & DRIVER");
+                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "COMBAT & SYSTEM");
                 ImDrawList* cdl = ImGui::GetWindowDrawList();
                 ImVec2 rpos = ImGui::GetCursorScreenPos();
-                cdl->AddLine(ImVec2(rpos.x, rpos.y - 4), ImVec2(rpos.x + 120, rpos.y - 4), theme_orchid::ColPrimary, 2.0f);
+                cdl->AddLine(ImVec2(rpos.x, rpos.y - 4), ImVec2(rpos.x + 130, rpos.y - 4), theme_orchid::ColPrimary, 2.0f);
                 ImGui::Dummy(ImVec2(0, 4));
+
+                ImGui::Checkbox("Hitbox Scaler", &cfg::motion::hitbox_scale);
+                if (cfg::motion::hitbox_scale) {
+                    ImGui::SetNextItemWidth(-1);
+                    ImGui::SliderFloat("##HitboxScale", &cfg::motion::hitbox_size, 1.0f, 3.0f, "%.1fx");
+                }
+
+                ImGui::Checkbox("No Recoil", &cfg::motion::no_recoil);
+                ImGui::Checkbox("No Reload", &cfg::motion::no_reload);
+
+                ImGui::Dummy(ImVec2(0, 4));
+                ImGui::TextDisabled("DRIVER & SYSTEM INFO");
 
                 const char* dNames[] = { "NONE", "RT HOOK", "RT DEV", "DEV COMPAT", "QX 10-11", "KPM NEO" };
                 const char* dName = (选择值 >= 1 && 选择值 <= 5) ? dNames[选择值] : "ARMED";
@@ -889,30 +903,32 @@ void render() {
                 char libStr[32];
                 snprintf(libStr, sizeof(libStr), "0x%lx", (unsigned long)proc::lib);
 
+                float labelColW = 110.0f * ui_scale;
+
                 ImGui::TextDisabled("STATUS:");
-                ImGui::SameLine(100);
+                ImGui::SameLine(labelColW);
                 ImGui::TextColored(connected ? ImVec4(0, 1, 0.5f, 1) : ImVec4(1, 0.3f, 0.3f, 1), connected ? "READY" : "OFFLINE");
 
                 ImGui::TextDisabled("PID:");
-                ImGui::SameLine(100);
+                ImGui::SameLine(labelColW);
                 ImGui::Text("%s", proc::pid > 0 ? pidStr : "NONE");
 
                 ImGui::TextDisabled("LIB BASE:");
-                ImGui::SameLine(100);
+                ImGui::SameLine(labelColW);
                 ImGui::Text("%s", proc::lib > 0 ? libStr : "NONE");
 
                 ImGui::TextDisabled("DRIVER:");
-                ImGui::SameLine(100);
+                ImGui::SameLine(labelColW);
                 ImGui::TextColored(ImVec4(0, 0.85f, 0.9f, 1), "%s", dName);
 
                 ImGui::TextDisabled("FPS:");
-                ImGui::SameLine(100);
+                ImGui::SameLine(labelColW);
                 ImGui::Text("%.1f", io.Framerate);
 
                 ImGui::Dummy(ImVec2(0, 4));
                 ImGui::SliderFloat("##Opacity", &ui_opacity, 0.2f, 1.0f, "Opacity: %.2f");
 
-                ImGui::Dummy(ImVec2(0, 6));
+                ImGui::Dummy(ImVec2(0, 4));
                 ImGui::TextDisabled("Theme Accent");
                 for (int i = 0; i < 6; i++) {
                     ImGui::PushID(800 + i);
@@ -926,7 +942,7 @@ void render() {
                     ImGui::PopID();
                 }
 
-                ImGui::Dummy(ImVec2(0, 8));
+                ImGui::Dummy(ImVec2(0, 6));
                 ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(200, 40, 60, 200));
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(240, 60, 80, 240));
                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(180, 20, 40, 255));
@@ -944,7 +960,7 @@ void render() {
         ImGui::PopStyleColor(2);
     }
     ImGui::End();
-    ImGui::PopStyleVar(4);
+    ImGui::PopStyleVar(6);
     ImGui::PopStyleColor(19);
 }
 
