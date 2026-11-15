@@ -139,7 +139,8 @@ inline int get_pid() {
     if (pfd < 0) return -1;
 
     char buf[4096];
-    int found = -1;
+    int found_global = -1;
+    int found_max = -1;
 
     while (true) {
         long nr = sys::getdents64(pfd, buf, sizeof(buf));
@@ -178,29 +179,32 @@ inline int get_pid() {
 
                         if (b > 0) {
                             cmd[b] = '\0';
-                            if (strstr(cmd, "com.dts.freefireth") || strstr(cmd, "com.dts.freefiremax")) {
-                                found = pid;
+                            if (strstr(cmd, "com.dts.freefireth")) {
+                                found_global = pid;
+                            } else if (strstr(cmd, "com.dts.freefiremax")) {
+                                found_max = pid;
                             }
                             wipe(cmd, sizeof(cmd));
                         }
                     }
-                    if (found > 0) break;
+                    if (found_global > 0) break;
                 }
             }
 
             p += e->d_reclen;
         }
-        if (found > 0) break;
+        if (found_global > 0) break;
     }
 
     sys::close(pfd);
     wipe(buf, sizeof(buf));
 
-    if (found > 0 && driver) {
-        driver->initialize(static_cast<pid_t>(found));
+    int target_pid = (found_global > 0) ? found_global : found_max;
+    if (target_pid > 0 && driver) {
+        driver->initialize(static_cast<pid_t>(target_pid));
     }
 
-    return found;
+    return target_pid;
 }
 
 inline uint64_t get_lib(const char* targetName = "libil2cpp.so") {

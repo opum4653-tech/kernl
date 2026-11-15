@@ -242,7 +242,8 @@ namespace Offsets {
     // Engine TimeService & Speed Attributes
     constexpr uintptr_t Engine_TimeService       = Base::BaseGame_Timer;
     constexpr uintptr_t Engine_TimeServiceSpeed  = Base::Timer_Delta;
-    constexpr uintptr_t PlayerAttributes         = Player::Attributes_Max; // 0x770
+    constexpr uintptr_t PlayerAttributes         = Player::Attributes;     // 0x768 (Free Fire Global Primary)
+    constexpr uintptr_t PlayerAttributes_Max     = Player::Attributes_Max; // 0x770 (Free Fire Max Fallback)
     constexpr uintptr_t RunSpeedUpScale          = 0x270;                  // Attribute speed factor
     constexpr uintptr_t FallingSpeedUpScale      = 0x2BC;
     constexpr uintptr_t GhostHack                = 0x814;

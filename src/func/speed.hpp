@@ -64,6 +64,16 @@ namespace speed_system {
         return driver_read<uintptr_t>(match + Offsets::Match_LocalPlayer);
     }
 
+    // Resolves PlayerAttributes safely (0x768 Free Fire Global Primary, 0x770 Max Fallback)
+    inline uintptr_t resolve_player_attributes(uintptr_t localPlayer) {
+        if (!is_driver_active() || localPlayer < 0x10000) return 0;
+        uintptr_t attrs = driver_read<uintptr_t>(localPlayer + Offsets::PlayerAttributes); // 0x768 Global
+        if (attrs < 0x10000) {
+            attrs = driver_read<uintptr_t>(localPlayer + Offsets::PlayerAttributes_Max);     // 0x770 Max
+        }
+        return attrs;
+    }
+
     // Master unblocked tick function called every frame
     inline void tick(uintptr_t libAddress) {
         // STRICT KERNEL DRIVER ONLY:
@@ -99,8 +109,8 @@ namespace speed_system {
                 // Entity Move Speed (Player + 0x560)
                 driver_write_float(localPlayer + Offsets::Player_Speed, mult);
 
-                // Player Attributes (Player + 0x770 or 0x768)
-                uintptr_t attrs = driver_read<uintptr_t>(localPlayer + Offsets::PlayerAttributes);
+                // Player Attributes (Player + 0x768 Global / 0x770 Max)
+                uintptr_t attrs = resolve_player_attributes(localPlayer);
                 if (attrs >= 0x10000) {
                     driver_write_float(attrs + Offsets::RunSpeedUpScale, mult);
                     driver_write_float(attrs + Offsets::FallingSpeedUpScale, mult);
@@ -122,7 +132,7 @@ namespace speed_system {
             if (localPlayer >= 0x10000) {
                 driver_write_float(localPlayer + Offsets::Player_Speed, 1.0f);
 
-                uintptr_t attrs = driver_read<uintptr_t>(localPlayer + Offsets::PlayerAttributes);
+                uintptr_t attrs = resolve_player_attributes(localPlayer);
                 if (attrs >= 0x10000) {
                     driver_write_float(attrs + Offsets::RunSpeedUpScale, 1.0f);
                     driver_write_float(attrs + Offsets::FallingSpeedUpScale, 1.0f);
@@ -136,7 +146,7 @@ namespace speed_system {
         // Gameplay mods execution via pure kernel driver
         if (localPlayer >= 0x10000) {
             if (cfg::master_enabled && cfg::motion::no_reload) {
-                uintptr_t attrs = driver_read<uintptr_t>(localPlayer + Offsets::PlayerAttributes);
+                uintptr_t attrs = resolve_player_attributes(localPlayer);
                 if (attrs >= 0x10000) {
                     bool val = true;
                     driver->write(attrs + Offsets::ShootNoReload, &val, sizeof(bool));
