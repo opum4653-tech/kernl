@@ -9,9 +9,13 @@
 //   Entry.value = +0x10 (ReplicationEntity*)
 class MonoDictionary {
 public:
-    uint64_t address;
+    static constexpr size_t kBlockSize = 64;
 
-    // stealth: 1 syscall lê os dois campos que importam.
+    struct EntryBlock {
+        uint64_t value[kBlockSize];
+    };
+
+    uint64_t address;
     uint64_t entries_head;
     int      count;
     bool     valid;
@@ -31,6 +35,19 @@ public:
 
     inline uint64_t getValues()   const { return entries_head; }
     inline int      getNumValues() const { return count; }
+
+    inline bool read_block(int start_idx, EntryBlock& out_blk) const {
+        if (!valid || start_idx < 0 || start_idx >= count) return false;
+        for (size_t b = 0; b < kBlockSize; ++b) {
+            int idx = start_idx + static_cast<int>(b);
+            if (idx >= count) {
+                out_blk.value[b] = 0;
+                continue;
+            }
+            out_blk.value[b] = entry(idx);
+        }
+        return true;
+    }
 
     // ReplicationEntity* de uma entry — validate hashCode & key to eliminate ghost/dead entries
     inline uint64_t entry(int i) const {
