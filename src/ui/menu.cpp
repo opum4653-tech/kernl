@@ -175,12 +175,14 @@ static bool DrawToggleSwitch(const char* label, bool* v, float row_height = 46.0
 // ----------------------------------------------------------------------------
 static bool DrawSegmentedButtons(const char* str_id, int* selected, const char* const labels[], int count, float height = 30.0f, float ui_scale = 1.0f) {
     float availW = ImGui::GetContentRegionAvail().x;
-    float gap = 4.0f * ui_scale;
+    float gap = 3.0f * ui_scale;
     float btnW = (availW - gap * (count - 1)) / (float)count;
     if (btnW < 40.0f * ui_scale) btnW = 40.0f * ui_scale;
     bool changed = false;
 
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f * ui_scale, 2.0f * ui_scale));
+    // Responsive padding based on available button width
+    float padX = (btnW < 65.0f * ui_scale) ? 2.0f : 4.0f * ui_scale;
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(padX, 2.0f * ui_scale));
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f * ui_scale);
 
     for (int i = 0; i < count; i++) {
@@ -417,34 +419,37 @@ void render() {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
 
         if (ImGui::BeginChild("##SidebarKernel", ImVec2(sidebarW, bodyH), false, ImGuiWindowFlags_NoScrollbar)) {
-            dl->AddLine(ImVec2(winPos.x + sidebarW, winPos.y + headerH),
-                        ImVec2(winPos.x + sidebarW, winPos.y + winSize.y),
+            dl->AddLine(ImVec2(winPos.x + sidebarW - 0.5f, winPos.y + headerH),
+                        ImVec2(winPos.x + sidebarW - 0.5f, winPos.y + winSize.y),
                         IM_COL32(40, 30, 56, 255), 1.0f);
 
-            const ImVec2 btnSize = ImVec2(sidebarW - 16.0f * ui_scale, std::max(56.0f, 62.0f * ui_scale));
+            float availSidebarH = bodyH - 24.0f * ui_scale;
+            float btnH = std::clamp(availSidebarH / 4.6f, 36.0f, 60.0f);
+            float btnSpacing = std::clamp((availSidebarH - btnH * 4.0f) / 3.0f, 4.0f * ui_scale, 12.0f * ui_scale);
+            const ImVec2 btnSize = ImVec2(sidebarW - 14.0f * ui_scale, btnH);
             const float btnX = (sidebarW - btnSize.x) * 0.5f;
-            const float btnSpacing = 10.0f * ui_scale;
 
             // Tab 0: Visuals (ICON_EYE)
-            ImGui::SetCursorPos(ImVec2(btnX, 14.0f * ui_scale));
+            ImGui::SetCursorPos(ImVec2(btnX, 12.0f * ui_scale));
             if (DrawSidebarIconButton("##TabESP", ICON_EYE, (activeTab == 0), btnSize, ui_scale)) {
                 activeTab = 0;
             }
 
             // Tab 1: Combat / Aim (ICON_CROSSHAIR)
-            ImGui::SetCursorPos(ImVec2(btnX, 14.0f * ui_scale + btnSize.y + btnSpacing));
+            ImGui::SetCursorPos(ImVec2(btnX, 12.0f * ui_scale + btnH + btnSpacing));
             if (DrawSidebarIconButton("##TabCombat", ICON_CROSSHAIR, (activeTab == 1), btnSize, ui_scale)) {
                 activeTab = 1;
             }
 
             // Tab 2: Settings / Misc (ICON_SETTINGS)
-            ImGui::SetCursorPos(ImVec2(btnX, 14.0f * ui_scale + (btnSize.y + btnSpacing) * 2.0f));
+            ImGui::SetCursorPos(ImVec2(btnX, 12.0f * ui_scale + (btnH + btnSpacing) * 2.0f));
             if (DrawSidebarIconButton("##TabSettings", ICON_SETTINGS, (activeTab == 2), btnSize, ui_scale)) {
                 activeTab = 2;
             }
 
-            // Tab 3: Power / Exit
-            ImGui::SetCursorPos(ImVec2(btnX, bodyH - btnSize.y - 14.0f * ui_scale));
+            // Tab 3: Power / Exit (Calculated with safe clearance from Tab 2)
+            float powerY = std::max(12.0f * ui_scale + (btnH + btnSpacing) * 3.0f, bodyH - btnH - 12.0f * ui_scale);
+            ImGui::SetCursorPos(ImVec2(btnX, powerY));
             if (DrawSidebarIconButton("##TabPower", ICON_POWER, false, btnSize, ui_scale)) {
                 g_should_exit = true;
             }
@@ -469,6 +474,8 @@ void render() {
         ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.196f, 0.141f, 0.282f, 1.0f));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12.0f * ui_scale, 10.0f * ui_scale));
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f * ui_scale, 8.0f * ui_scale));
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6.0f * ui_scale, 4.0f * ui_scale));
+        ImGui::PushStyleVar(ImGuiStyleVar_GrabMinSize, 14.0f * ui_scale);
 
         // TAB 0: ESP VISUALS
         if (activeTab == 0) {
@@ -616,17 +623,17 @@ void render() {
                 ImGui::Dummy(ImVec2(0, 4 * ui_scale));
                 ImGui::SetNextItemWidth(-1);
                 ImGui::SliderFloat("##AimFovSlider", &cfg::aim::aim_fov, 10.0f, 360.0f, "%.0f deg");
-                ImGui::TextDisabled("Aim FOV Range (%.0f deg)", cfg::aim::aim_fov);
+                ImGui::TextDisabled("Aim FOV Range");
 
                 ImGui::Dummy(ImVec2(0, 4 * ui_scale));
                 ImGui::SetNextItemWidth(-1);
                 ImGui::SliderFloat("##SilentRateSlider", &cfg::aim::headshot_rate, 0.0f, 100.0f, "%.0f%%");
-                ImGui::TextDisabled("Silent Aim Hit Rate (%.0f%%)", cfg::aim::headshot_rate);
+                ImGui::TextDisabled("Silent Aim Hit Rate");
 
                 ImGui::Dummy(ImVec2(0, 4 * ui_scale));
                 ImGui::SetNextItemWidth(-1);
-                ImGui::SliderFloat("##AimSmooth", &cfg::aim::smooth, 1.0f, 25.0f, "%.1f (Smooth)");
-                ImGui::TextDisabled("Smooth Factor (Higher = Safe & Human)");
+                ImGui::SliderFloat("##AimSmooth", &cfg::aim::smooth, 1.0f, 25.0f, "%.1f");
+                ImGui::TextDisabled("Smooth Factor (Higher = Humanized)");
 
                 ImGui::Dummy(ImVec2(0, 4 * ui_scale));
                 ImGui::SetNextItemWidth(-1);
@@ -640,7 +647,8 @@ void render() {
                 ImGui::Dummy(ImVec2(0, 4 * ui_scale));
 
                 if (func::aim::g_currentTarget.valid) {
-                    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.4f, 1.0f), "Target: %s", func::aim::g_currentTarget.name);
+                    const char* targetName = func::aim::g_currentTarget.name[0] ? func::aim::g_currentTarget.name : "Enemy";
+                    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.4f, 1.0f), "Target: %s", targetName);
                     ImGui::Text("Distance: %.1f m", func::aim::g_currentTarget.distance);
                     ImGui::Text("Health: %d HP", func::aim::g_currentTarget.hp);
                     ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.6f, 1.0f), "Status: LOCKED [IN FOV]");
@@ -706,6 +714,25 @@ void render() {
                 ImGui::Checkbox("Ghost Hack", &cfg::motion::ghost_hack);
                 ImGui::Checkbox("Phantom Mode", &cfg::motion::phantom_mode);
 
+                ImGui::Dummy(ImVec2(0, 6 * ui_scale));
+                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "MOVEMENT DIAGNOSTICS");
+                lpos = ImGui::GetCursorScreenPos();
+                cdl->AddLine(ImVec2(lpos.x, lpos.y - 4), ImVec2(lpos.x + 130 * ui_scale, lpos.y - 4), theme_orchid::ColPrimary, 2.0f);
+                ImGui::Dummy(ImVec2(0, 4 * ui_scale));
+
+                float statColW = std::clamp(80.0f * ui_scale, 75.0f, 96.0f);
+                ImGui::TextDisabled("POSTURE:");
+                ImGui::SameLine(statColW);
+                ImGui::Text("%s", cfg::motion::air_flight ? "AIRBORNE" : "GROUND");
+
+                ImGui::TextDisabled("SPEED:");
+                ImGui::SameLine(statColW);
+                ImGui::Text("%.1fx", cfg::motion::speed_hack ? cfg::motion::speed_mult : 1.0f);
+
+                ImGui::TextDisabled("ENTITY:");
+                ImGui::SameLine(statColW);
+                ImGui::Text("%s", cfg::motion::phantom_mode ? "PHANTOM" : "NORMAL");
+
                 handleTouchScroll();
             }
             ImGui::EndChild();
@@ -739,7 +766,7 @@ void render() {
                 char libStr[32];
                 snprintf(libStr, sizeof(libStr), "0x%lX", (unsigned long)proc::lib);
 
-                float labelColW = 90.0f * ui_scale;
+                float labelColW = std::clamp(80.0f * ui_scale, 75.0f, 96.0f);
 
                 ImGui::TextDisabled("PID:");
                 ImGui::SameLine(labelColW);
@@ -788,7 +815,7 @@ void render() {
             ImGui::EndChild();
         }
 
-        ImGui::PopStyleVar(2);
+        ImGui::PopStyleVar(4);
         ImGui::PopStyleColor(2);
     }
     ImGui::End();

@@ -34,8 +34,8 @@ ImFont* g_IconFont = nullptr;
 ImFont* g_BoldFont = nullptr;
 
 static void LoadCustomIconFonts(ImGuiIO& io) {
-    io.Fonts->AddFontFromMemoryTTF((void*)inter_medium, sizeof(inter_medium), 20.f, NULL, io.Fonts->GetGlyphRangesCyrillic());
-    g_BoldFont = io.Fonts->AddFontFromMemoryTTF((void*)inter_bold, sizeof(inter_bold), 23.f, NULL, io.Fonts->GetGlyphRangesCyrillic());
+    io.Fonts->AddFontFromMemoryTTF((void*)inter_medium, sizeof(inter_medium), 22.0f, NULL, io.Fonts->GetGlyphRangesCyrillic());
+    g_BoldFont = io.Fonts->AddFontFromMemoryTTF((void*)inter_bold, sizeof(inter_bold), 25.0f, NULL, io.Fonts->GetGlyphRangesCyrillic());
     g_IconFont = io.Fonts->AddFontFromMemoryTTF((void*)F107_data, F107_size, 25.0f, NULL, io.Fonts->GetGlyphRangesDefault());
     io.Fonts->Build();
 }
