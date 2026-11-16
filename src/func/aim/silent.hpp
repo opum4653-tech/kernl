@@ -79,7 +79,7 @@ namespace aimbot {
                     }
                 }
             }
-            sched_yield();
+            std::this_thread::sleep_for(std::chrono::microseconds(500));
         }
     }
 
@@ -144,15 +144,15 @@ namespace aimbot {
         // Apply target bone height adjustments and HitGroup classification
         int32_t hitGroup = 1; // 1 = Head, 2 = Body (LKOOALMKJND enum)
         if (cfg::aim::target_bone == 1) {
-            target3D.y -= 0.15f; // Neck / Upper Chest
+            target3D.y += Offsets::Aim::HeightOffset_Neck; // Neck / Upper Chest (-0.15f)
             hitGroup = lockToHead ? 1 : 2;
         } else if (cfg::aim::target_bone == 2) {
-            target3D.y -= 0.40f; // Body / Pelvis
+            target3D.y += Offsets::Aim::HeightOffset_Body; // Body / Pelvis (-0.40f)
             hitGroup = 2;
         } else {
             // Target bone 0 (Head):
             if (!lockToHead) {
-                target3D.y -= 0.28f; // Chest on non-headshot rolls
+                target3D.y += Offsets::Aim::HeightOffset_Chest; // Chest on non-headshot rolls (-0.28f)
                 hitGroup = 2;
             } else {
                 hitGroup = 1; // Strict Headshot!
@@ -202,7 +202,7 @@ namespace aimbot {
         wpm<int16_t>(aimInfoWeapon + Offsets::Aim::SpecialHitType, 0);
 
         // Reset game adjustment flag so Unity engine doesn't overwrite our trajectory
-        wpm<bool>(localPlayer + 0xE60, false);
+        wpm<bool>(localPlayer + Offsets::Player::AimAdjustmentFlag, false);
     }
 
 } // namespace aimbot

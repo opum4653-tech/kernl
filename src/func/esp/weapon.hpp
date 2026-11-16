@@ -124,7 +124,8 @@ namespace func::esp {
         const float padX = 6.f;
         const float padY = 3.f;
 
-        ImVec2 ts = ImGui::CalcTextSize(wn);
+        ImFont* font = ImGui::GetFont();
+        ImVec2 ts = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, wn);
         float pw = ts.x + padX * 2.f;
         float ph = fs + padY * 2.f;
         float px = foot.x - pw * 0.5f;
@@ -136,7 +137,7 @@ namespace func::esp {
         dl->AddRectFilled({px + 1, py + 1}, {px + pw + 1, py + ph + 1}, C_SHADOW, 5.f);
         dl->AddRectFilled({px, py}, {px + pw, py + ph}, bg, 5.f);
         dl->AddRect({px, py}, {px + pw, py + ph}, C_BORDER, 5.f, 0, 1.f);
-        dl->AddText(ImGui::GetFont(), fs, {px + padX, py + padY}, wCol, wn);
+        dl->AddText(font, fs, {px + padX, py + padY}, wCol, wn);
     }
 
 } // namespace func::esp

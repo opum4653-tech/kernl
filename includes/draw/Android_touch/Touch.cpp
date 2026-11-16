@@ -32,6 +32,10 @@ static float screenHeight = 0, screenWidth = 0;
 struct touchObj {
     bool isDown = false;
     bool isTmpDown = false;
+    // Sticky swallow: set while a gesture that began inside a UI rect is still
+    // held. Without it, dragging the floating logo past its own hitbox handed
+    // the finger to uinput mid-drag and the game camera spun.
+    bool swallow = false;
     int x = 0;
     int y = 0;
     int id = 0;
@@ -85,25 +89,70 @@ static void genRandomString(char *string, int length) {
 
 static std::mutex s_uploadMutex;
 
+// Multiple UI rects can be live at once (floating logo + menu + future panels).
+// The render loop clears the pending list once per frame, each UI component
+// appends its region, then Touch_CommitUiRects() publishes the set. Publishing
+// by swap means the touch thread never sees a momentarily empty list, and a
+// closed menu can no longer leave a stale rect swallowing taps on the logo.
 static std::mutex s_uiRectMutex;
-static bool s_uiActive = false;
-static float s_uiX = 0.0f, s_uiY = 0.0f, s_uiW = 0.0f, s_uiH = 0.0f;
+static constexpr int kMaxUiRects = 8;
 
+struct UiRect {
+    float x, y, w, h;
+};
+
+static UiRect s_uiRects[kMaxUiRects];   // published, read by touch thread
+static int s_uiRectCount = 0;
+static UiRect s_uiPending[kMaxUiRects]; // staged by render thread
+static int s_uiPendingCount = 0;
+
+void Touch_ClearUiRects() {
+    s_uiPendingCount = 0;
+}
+
+void Touch_AddUiRect(float x, float y, float w, float h) {
+    if (s_uiPendingCount >= kMaxUiRects) return;
+    s_uiPending[s_uiPendingCount].x = x;
+    s_uiPending[s_uiPendingCount].y = y;
+    s_uiPending[s_uiPendingCount].w = w;
+    s_uiPending[s_uiPendingCount].h = h;
+    ++s_uiPendingCount;
+}
+
+void Touch_CommitUiRects() {
+    std::lock_guard<std::mutex> lock(s_uiRectMutex);
+    for (int i = 0; i < s_uiPendingCount; ++i) {
+        s_uiRects[i] = s_uiPending[i];
+    }
+    s_uiRectCount = s_uiPendingCount;
+}
+
+// Legacy single-rect entry point. Replaces the set with one region.
 void Touch_SetUiRect(float x, float y, float w, float h, bool active) {
     std::lock_guard<std::mutex> lock(s_uiRectMutex);
-    s_uiActive = active;
-    s_uiX = x;
-    s_uiY = y;
-    s_uiW = w;
-    s_uiH = h;
+    if (!active) {
+        s_uiRectCount = 0;
+        return;
+    }
+    s_uiRects[0].x = x;
+    s_uiRects[0].y = y;
+    s_uiRects[0].w = w;
+    s_uiRects[0].h = h;
+    s_uiRectCount = 1;
 }
 
 bool Touch_IsPointInUi(float x, float y) {
     std::lock_guard<std::mutex> lock(s_uiRectMutex);
-    if (!s_uiActive) return false;
-    return (x >= s_uiX && x <= (s_uiX + s_uiW) &&
-            y >= s_uiY && y <= (s_uiY + s_uiH));
+    for (int i = 0; i < s_uiRectCount; ++i) {
+        const UiRect& r = s_uiRects[i];
+        if (x >= r.x && x <= (r.x + r.w) &&
+            y >= r.y && y <= (r.y + r.h)) {
+            return true;
+        }
+    }
+    return false;
 }
+
 
 static void Upload() {
     if (Touch_readOnly || nowfd <= 0) {
@@ -222,6 +271,7 @@ static void *TypeA(void *arg) {
                     if (ie.value == -1) {
                         Finger[i][latest].isDown = false;
                         Finger[i][latest].isTmpDown = false;
+                        Finger[i][latest].swallow = false;
                         ImGuiIO &io = ImGui::GetIO();
                         io.MouseDown[0] = false;
                     } else {
@@ -288,12 +338,18 @@ static void *TypeA(void *arg) {
                     io.MousePos = ImVec2(x, y);
                     io.MouseDown[0] = true;
 
-                    // Intercept touch inside UI (Swallow from game / uinput)
-                    if (Touch_IsPointInUi(x, y)) {
+                    // Intercept touch inside UI (Swallow from game / uinput).
+                    // The latch survives leaving the rect so a drag that started
+                    // on a UI panel never leaks back into the game mid-gesture.
+                    if (!Finger[i][latest].swallow && Touch_IsPointInUi(x, y)) {
+                        Finger[i][latest].swallow = true;
+                    }
+                    if (Finger[i][latest].swallow) {
                         Finger[i][latest].isDown = false;
                         Finger[i][latest].isTmpDown = false;
                     }
                 } else {
+                    Finger[i][latest].swallow = false;
                     io.MouseDown[0] = false;
                 }
 

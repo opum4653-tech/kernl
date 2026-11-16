@@ -207,6 +207,11 @@ public:
     }
 };
 
-inline c_driver *driver = new c_driver();
+inline c_driver* get_driver() {
+    static c_driver s_driver;
+    return &s_driver;
+}
+
+#define driver (get_driver())
 
 #endif // UNIFIED_DRIVER_H

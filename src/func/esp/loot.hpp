@@ -33,7 +33,9 @@ namespace func::esp {
         char buf[64];
         snprintf(buf, sizeof(buf), "%s  %.0fm", cat, li.distance);
 
-        ImVec2 ts = ImGui::CalcTextSize(buf);
+        const float fs = ESP_FONT_SIZE - 2.f;
+        ImFont* font = ImGui::GetFont();
+        ImVec2 ts = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, buf);
         float pad = 4.f;
         float px = li.screenPos.x - ts.x * 0.5f - pad;
         float py = li.screenPos.y;
@@ -48,7 +50,7 @@ namespace func::esp {
                     {px + ts.x + pad * 2, py + ts.y + pad * 2},
                     col, 4.f, 0, 1.5f);
 
-        dl->AddText(ImGui::GetFont(), ESP_FONT_SIZE - 2.f,
+        dl->AddText(font, fs,
                     {px + pad, py + pad}, col, buf);
         dl->AddCircleFilled({li.screenPos.x, li.screenPos.y}, 3.f, col);
     }

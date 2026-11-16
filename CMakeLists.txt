@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22.1)
-project(gemini-cli LANGUAGES C CXX)
+project(ninmods-kernel LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -39,9 +39,9 @@ list(FILTER SRC_FILES EXCLUDE REGEX "imgui_demo\\.cpp")
 list(FILTER SRC_FILES EXCLUDE REGEX "imgui_impl_vulkan\\.cpp")
 list(FILTER SRC_FILES EXCLUDE REGEX "stb_image\\.cpp")
 
-add_executable(gemini-cli ${SRC_FILES})
+add_executable(ninmods-kernel ${SRC_FILES})
 
-target_link_libraries(gemini-cli
+target_link_libraries(ninmods-kernel
     PRIVATE
     log
     android
@@ -51,7 +51,7 @@ target_link_libraries(gemini-cli
     dl
 )
 
-target_link_options(gemini-cli PRIVATE
+target_link_options(ninmods-kernel PRIVATE
     -Wl,--gc-sections
     -Wl,--strip-all
     -pie

@@ -58,7 +58,9 @@ namespace func::esp {
     }
 
     // GEOMETRIC & STRING FORMATTING
-    inline bool ok(const Vector3& v) { return v.x > 0 && v.y > 0 && v.z > 0.5f; }
+    inline bool ok(const Vector3& v) {
+        return v.z > 0.5f && v.x > -150.0f && v.x < (g_sw + 150.0f) && v.y > -150.0f && v.y < (g_sh + 150.0f);
+    }
 
     inline void fmtDist(float d, char* out, size_t n) {
         if (d >= 1000.f) snprintf(out, n, "%.1fkm", d / 1000.f);

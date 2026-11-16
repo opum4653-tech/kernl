@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <ctime>
+#include <mutex>
 #include <unistd.h>
 
 extern float g_sw;
@@ -30,7 +31,26 @@ namespace aimbot {
         Vector3 headWorld = Vector3::Zero();
     };
 
+    // Target telemetry is written by the aim worker thread and read by the
+    // render thread (menu readout + FOV lock ring). Guard it or the render
+    // side reads a half-written name[] / vector and prints garbage.
+    inline std::mutex s_targetInfoMutex;
     inline TargetInfo g_currentTarget;
+
+    inline TargetInfo snapshot_target() {
+        std::lock_guard<std::mutex> lk(s_targetInfoMutex);
+        return g_currentTarget;
+    }
+
+    inline void publish_target_invalid() {
+        std::lock_guard<std::mutex> lk(s_targetInfoMutex);
+        g_currentTarget.valid = false;
+    }
+
+    inline void publish_target(const TargetInfo& info) {
+        std::lock_guard<std::mutex> lk(s_targetInfoMutex);
+        g_currentTarget = info;
+    }
 
     // Safe 3D vector normalization with division-by-zero & NaN protection
     inline Vector3 SafeNormalize(const Vector3& v) {

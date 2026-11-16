@@ -231,8 +231,8 @@ void load_logo_pos() {
 // ----------------------------------------------------------------------------
 void render() {
     // 1. Render pure kernel driver overlays (ESP & Aim assist FOV)
+    // Note: func::aim::update() runs dedicatedly in background aim thread (aim.hpp)
     func::esp::draw();
-    func::aim::update();
     func::aim::render_fov(ImGui::GetBackgroundDrawList());
 
     if (g_should_exit.load()) {
@@ -291,8 +291,10 @@ void render() {
         menu_needs_reposition = false;
     }
 
-    s_menu_pos.x = std::max(0.0f, std::min(s_menu_pos.x, realW - winW));
-    s_menu_pos.y = std::max(0.0f, std::min(s_menu_pos.y, realH - winH));
+    // Clamp into the viewport. Upper bounds are floored at 0 so a window larger
+    // than the screen pins to the top-left corner instead of going negative.
+    s_menu_pos.x = std::clamp(s_menu_pos.x, 0.0f, std::max(0.0f, realW - winW));
+    s_menu_pos.y = std::clamp(s_menu_pos.y, 0.0f, std::max(0.0f, realH - winH));
 
     ImGui::SetNextWindowSize(ImVec2(winW, winH), ImGuiCond_Always);
     ImGui::SetNextWindowPos(s_menu_pos, ImGuiCond_Always);
@@ -345,8 +347,9 @@ void render() {
         ImVec2 winPos = ImGui::GetWindowPos();
         ImVec2 winSize = ImGui::GetWindowSize();
 
-        // Report full menu window rect to Touch subsystem
-        Touch_SetUiRect(winPos.x, winPos.y, winSize.x, winSize.y, true);
+        // Report full menu window rect to Touch subsystem (appends — the logo
+        // rect from this same frame is kept).
+        Touch_AddUiRect(winPos.x, winPos.y, winSize.x, winSize.y);
 
         // --------------------------------------------------------------------
         // 1. TOP HEADER (SCALED BY ui_scale)
@@ -450,8 +453,11 @@ void render() {
                 activeTab = 2;
             }
 
-            // Tab 3: Power / Exit (Calculated with safe clearance from Tab 2)
-            float powerY = std::max(12.0f * ui_scale + (btnH + btnSpacing) * 3.0f, bodyH - btnH - 12.0f * ui_scale);
+            // Tab 3: Power / Exit. Clamped between the two rules so it can never
+            // ride up over Tab 2 on a short window.
+            float powerMinY = 12.0f * ui_scale + (btnH + btnSpacing) * 3.0f;
+            float powerMaxY = std::max(powerMinY, bodyH - btnH - 12.0f * ui_scale);
+            float powerY = std::clamp(bodyH - btnH - 12.0f * ui_scale, powerMinY, powerMaxY);
             ImGui::SetCursorPos(ImVec2(btnX, powerY));
             if (DrawSidebarIconButton("##TabPower", ICON_POWER, false, btnSize, ui_scale)) {
                 g_should_exit = true;
@@ -649,11 +655,12 @@ void render() {
                 cdl->AddLine(ImVec2(rpos.x, rpos.y - 4), ImVec2(rpos.x + 105 * ui_scale, rpos.y - 4), theme_orchid::ColPrimary, 2.0f);
                 ImGui::Dummy(ImVec2(0, 4 * ui_scale));
 
-                if (func::aim::g_currentTarget.valid) {
-                    const char* targetName = func::aim::g_currentTarget.name[0] ? func::aim::g_currentTarget.name : "Enemy";
+                func::aim::TargetInfo ti = func::aim::snapshot_target();
+                if (ti.valid) {
+                    const char* targetName = ti.name[0] ? ti.name : "Enemy";
                     ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.4f, 1.0f), "Target: %s", targetName);
-                    ImGui::Text("Distance: %.1f m", func::aim::g_currentTarget.distance);
-                    ImGui::Text("Health: %d HP", func::aim::g_currentTarget.hp);
+                    ImGui::Text("Distance: %.1f m", ti.distance);
+                    ImGui::Text("Health: %d HP", ti.hp);
                     ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.6f, 1.0f), "Status: LOCKED [IN FOV]");
                 } else {
                     ImGui::TextDisabled("Target: None (Scanning)");

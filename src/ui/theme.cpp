@@ -1,6 +1,12 @@
 #include "theme.hpp"
 #include <cmath>
 
+namespace {
+    constexpr float kPi = 3.14159265358979323846f;
+    constexpr int   kGearArms = 6;
+}
+
+// Float that the theme sync writes and the render thread reads.
 float g_ThemeColorArr[4] = { 0.882f, 0.000f, 0.596f, 1.0f };
 
 void DrawVectorIcon(ImDrawList* dl, EIconType type, ImVec2 center, float size, ImU32 col) {
@@ -28,8 +34,8 @@ void DrawVectorIcon(ImDrawList* dl, EIconType type, ImVec2 center, float size, I
         case ICON_SETTINGS: {
             dl->AddCircle(center, size * 0.32f, col, 20, 2.2f);
             dl->AddCircleFilled(center, size * 0.12f, col);
-            for (int i = 0; i < 6; i++) {
-                float angle = i * (3.14159265f / 3.0f);
+            for (int i = 0; i < kGearArms; i++) {
+                float angle = (float)i * (kPi / (float)(kGearArms / 2));
                 float cosA = std::cos(angle);
                 float sinA = std::sin(angle);
                 ImVec2 p1(cx + cosA * (size * 0.30f), cy + sinA * (size * 0.30f));

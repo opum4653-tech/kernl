@@ -211,3 +211,69 @@ In commit `bf27ca9` / `2530d91`, `src/ui/menu.cpp` was modularized into 3 dedica
 - **Touch Scroll Gesture:** `ImGuiHoveredFlags_AllowWhenBlockedByActiveItem` prevents widgets from swallowing swipe gestures.
 - **Format Safety:** Guarded target name with `targetName = g_currentTarget.name[0] ? g_currentTarget.name : "Enemy"`.
 - **Clean Telemetry & Layout Balance:** Tab 2 left column filled with `Air Flight`, `Phantom Mode`, and `MOVEMENT DIAGNOSTICS`. Duplicate slider labels removed.
+
+
+---
+
+## 10. Comprehensive Codebase Hardening & Audit Resolutions (P0–P5)
+
+Following an exhaustive audit across the entire `ninmods-kernel` codebase, all prioritized engineering discrepancies have been systematically resolved:
+
+### 10.1 P0: Correctness, Concurrency & Reverse Paths
+- **Concurrency Isolation (`menu.cpp:233-236`):**
+  - Removed duplicate `func::aim::update()` invocation from the render thread. The dedicated background aim worker thread (`aim.hpp:loop()`, interval 2–10ms) is now the sole owner of `update()`, completely eliminating race conditions on `s_lockedTargetAddr`, `s_lockTimeoutTicks`, and `s_smoothDir`.
+- **Joinable Thread Lifecycle (`aim.hpp`):**
+  - Replaced unmanaged detached thread (`std::thread(loop).detach()`) with a static joinable thread managed via `get_aim_thread()`. Calling `thread_stop()` safely halts the loop, joins the thread, resets motion states, and cleans up overrides before returning.
+- **Headshot Reverse Path & Target Override Safety (`headshot.hpp`):**
+  - Implemented `restore_headshot_override()`. When `lockToHead` is activated, the original `LockedAimingCollider` (0x80) pointer on the target enemy is captured into `s_orig_headshot_col`. When the target is unlocked, when `lockToHead` rolls false, or when `thread_stop()` runs, the original collider is restored back to the enemy object.
+- **Speed System State Restoration (`speed.hpp`):**
+  - Captured dynamic baseline values for `Engine_TimeServiceSpeed`, `Player_Speed`, `RunSpeedUpScale`, `FallingSpeedUpScale`, `iPad_FOV`, `Pickup_Range`, `Hitbox_Scale`, and `High_Jump` upon initial enablement. Disabling the respective mod now restores the exact captured baselines rather than hardcoded assumptions (`0.033333f`, `1.0f`, `2.0f`).
+- **Health Ratio Normalization (`data.cpp:84-90`):**
+  - Added fallback default of 200 HP if maximum health read (`elem1`) fails or returns 0, preventing `maxHP = curHP` false clamp which caused 100% full health bars.
+- **Player Acquisition Range Unification (`data.cpp:366`):**
+  - Unified the entity tracking distance filter: `dist > std::max(cfg::esp::max_range, cfg::aim::max_distance)`, ensuring aimbot target acquisition is never clipped when aimbot range exceeds ESP range.
+
+### 10.2 P1: Visuals, Formatting & Logic
+- **ESP Custom Font Sizing Consistency (`info.hpp`, `weapon.hpp`, `loot.hpp`):**
+  - Replaced global `ImGui::CalcTextSize()` calls with `font->CalcTextSizeA(fs, FLT_MAX, 0.0f, text)`. This guarantees accurate bounding boxes, labels, and spacing matching the drawn font size (`fs = 10px-13px`) rather than the native 32px atlas size.
+- **Off-Screen Tolerance in ESP Geometry (`esp/common.hpp:61`):**
+  - Updated `ok(const Vector3& v)` to support off-screen margin checks (`v.z > 0.5f && v.x > -150.0f && v.x < g_sw + 150.0f && v.y > -150.0f && v.y < g_sh + 150.0f`), preventing boxes from flickering out when players are near screen boundaries.
+- **Silent Aim Trigger Condition Accuracy (`aim.hpp:75`, `silent.hpp:108`):**
+  - Separated `cfg::aim::silent` enable switch from active firing detection, ensuring firing-based trigger modes (`cfg::aim::trigger_mode == 0`) correctly check weapon state.
+- **Non-Latin Nickname Fallback (`data.cpp:378`):**
+  - When non-ASCII or stripped characters yield an empty player name, the system falls back to `"Player <index>"` rather than leaving an empty label.
+
+### 10.3 P2: Security & OpSec
+- **Process Cloaking (`main.cpp:223`):**
+  - Replaced static `prctl(PR_SET_NAME, "ninmods-kernel")` with `"kworker/u16:1"`, preventing trivial signature matches during userland process and `/proc/<pid>/comm` scans.
+- **Zero-Trace Storage Enforcement:**
+  - Guaranteed floating logo position is persisted strictly to `/dev/.nin_logo_pos.txt` (tmpfs in RAM) only on drag release, leaving zero persistent disk footprint in `/data/local/tmp`.
+- **License Gate Security & Input Sanitization (`license.cpp`):**
+  - Enabled SSL peer and host verification (`CURLOPT_SSL_VERIFYPEER = 1L`, `CURLOPT_SSL_VERIFYHOST = 2L`).
+  - Added strict alphanumeric and hyphen sanitization (`is_safe_alphanumeric`) for license key and HWID before executing CLI popen fallback, neutralizing shell injection vulnerabilities.
+
+### 10.4 P3: Performance & Sycall Optimization
+- **Silent Aim Thread Throttling (`silent.hpp:82`):**
+  - Added a 500-microsecond sleep (`std::this_thread::sleep_for(std::chrono::microseconds(500))`) inside `writer_loop`, preventing 100% CPU thread lock while maintaining 2,000 writes/sec response rate.
+- **Batch Dictionary Traversal (`other/utils.hpp`):**
+  - Optimized `MonoDictionary::read_block` to read all 64 entries in a single `mem_read` (`process_vm_readv`) syscall, reducing context switches from 192 syscalls per block to just 1.
+
+### 10.5 P4: Centralized Offsets Architecture (`offsets.hpp`)
+- Centralized all previously hardcoded magic offsets across the engine into `Offsets`:
+  - `Offsets::Player::HP_MaxEntry` (`0x28`)
+  - `Offsets::Player::HP_ArmorEntry` (`0x40`)
+  - `Offsets::Mono::String_Length` (`0x10`) & `String_Chars` (`0x14`)
+  - `Offsets::Weapon::Weapon_ID` (`0x64`)
+  - `Offsets::Unity::StaticFields_Instance` (`0x8`), `Component_Transform` (`0x18`), `Transform_Internal` (`0x20`)
+  - `Offsets::Camera::Follow_Alt` (`0x30`) & `IntPtr_Alt` (`0x10`)
+  - `Offsets::Player::FollowCamera_Sub` (`0x690`) & `AimAdjustmentFlag` (`0xE60`)
+  - `Offsets::Patches::iPad_FOV` (`0x36C9BD0`) & `GameConfig_Base` (`0xF1D5F70`)
+  - `Offsets::Aim::HeightOffset_Neck` (`-0.15f`), `HeightOffset_Body` (`-0.40f`), `HeightOffset_Chest` (`-0.28f`)
+- Removed obsolete duplicate aliases `Offsets::Root`, `Offsets::Head`, and `Offsets::Hip`.
+
+### 10.6 P5: Build Hardening & Lazy Initialization
+- **Lazy Driver Initialization (`includes/driver.h`):**
+  - Eliminated dangerous global dynamic constructor (`inline c_driver* driver = new c_driver();`). Replaced with thread-safe Meyer's singleton (`get_driver()`), preventing crashes during static initialization prior to `main()`.
+- **Build Script Hardening (`compile.sh`, `CMakeLists.txt`):**
+  - Made `compile.sh` POSIX compliant with `-j$(nproc)` and conditional `package_sh.sh` execution.
+  - Aligned CMake project and target names to `ninmods-kernel`.

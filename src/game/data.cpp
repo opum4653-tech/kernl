@@ -80,17 +80,17 @@ namespace data {
             curHP = rpm<int>(elem0 + Offsets::HP_Value);
         }
 
-        // 2. Live Maximum Health (Index 1 at 0x28 if registered)
-        auto elem1 = rpm<uint64_t>(datas + 0x28);
+        // 2. Live Maximum Health (Index 1 at Offsets::Player::HP_MaxEntry)
+        auto elem1 = rpm<uint64_t>(datas + Offsets::Player::HP_MaxEntry);
         if (elem1 && elem1 > 0x10000) {
             int m = rpm<int>(elem1 + Offsets::HP_Value);
             if (m > 0 && m <= 1000) maxHP = m;
         }
+        if (maxHP <= 0) maxHP = 200; // Free Fire standard base HP fallback
         if (maxHP < curHP) maxHP = curHP;
-        if (maxHP <= 0) maxHP = (curHP > 0 ? curHP : 200);
 
-        // 3. Live Armor Points (Index 4 at 0x40 if registered)
-        auto elem4 = rpm<uint64_t>(datas + 0x40);
+        // 3. Live Armor Points (Index 4 at Offsets::Player::HP_ArmorEntry)
+        auto elem4 = rpm<uint64_t>(datas + Offsets::Player::HP_ArmorEntry);
         if (elem4 && elem4 > 0x10000) {
             curArmor = rpm<int>(elem4 + Offsets::HP_Value);
         }
@@ -101,11 +101,11 @@ namespace data {
         buf[0] = 0;
         auto sp = span.at<uint64_t>(Offsets::Player_Name);
         if (!sp || sp < 0x10000) return 0;
-        int len = rpm<int>(sp + 0x10);
+        int len = rpm<int>(sp + Offsets::Mono::String_Length);
         if (len <= 0 || len > 64) return 0;
         uint16_t utf16[65];
         if (len > 64) len = 64;
-        if (!mem_read(sp + 0x14, utf16, len * 2)) return 0;
+        if (!mem_read(sp + Offsets::Mono::String_Chars, utf16, len * 2)) return 0;
         int n = 0;
         for (int i = 0; i < len && n < (int)buflen - 1; i++) {
             uint16_t c = utf16[i];
@@ -122,7 +122,7 @@ namespace data {
         if (!w) return -1;
         auto wd = rpm<uint64_t>(w + Offsets::Weapon_Data);
         if (!wd) return -1;
-        return rpm<int>(wd + 0x64);
+        return rpm<int>(wd + Offsets::Weapon::Weapon_ID);
     }
 
     // BONE → SCREEN — the node pointer is already out of the span
@@ -146,14 +146,14 @@ namespace data {
         uint64_t dictPtr = rpm<uint64_t>(metaMgr + Offsets::MetaManager_DropObjects);
         if (!dictPtr) return;
 
-        uint64_t entries = rpm<uint64_t>(dictPtr + 0x18);
-        int count = rpm<int>(dictPtr + 0x20);
+        uint64_t entries = rpm<uint64_t>(dictPtr + Offsets::Dict::Entries);
+        int count = rpm<int>(dictPtr + Offsets::Dict::Count);
         if (!entries || count <= 0 || count > 500) return;
 
-        uint64_t base = entries + 0x20;
+        uint64_t base = entries + Offsets::Dict::ArrayHeader;
         for (int i = 0; i < count; i++) {
-            uint64_t e = base + i * 0x18;
-            uint64_t dropObj = rpm<uint64_t>(e + 0x10);
+            uint64_t e = base + i * Offsets::Dict::EntryStride;
+            uint64_t dropObj = rpm<uint64_t>(e + Offsets::Dict::EntryValue);
             if (!dropObj || dropObj < 0x100000) continue;
 
             bool landed = rpm<bool>(dropObj + Offsets::DropObject_Landed);
@@ -198,7 +198,7 @@ namespace data {
         auto StaticFields = rpm<uint64_t>(GfClass + Offsets::GameFacade_P2);
         if (!StaticFields) return;
 
-        auto BaseGame = rpm<uint64_t>(StaticFields + 0x8);
+        auto BaseGame = rpm<uint64_t>(StaticFields + Offsets::StaticFields_Instance);
         if (!BaseGame) return;
 
         auto m_Match = rpm<uint64_t>(BaseGame + Offsets::BaseGame_Match);
@@ -257,9 +257,9 @@ namespace data {
 
         if (!IntPtr) {
             // Fallback offset alternatif
-            Follow = rpm<uint64_t>(localPlayer + 0x690);
-            if (Follow) Cam = rpm<uint64_t>(Follow + 0x30);
-            if (Cam)    IntPtr = rpm<uint64_t>(Cam + 0x10);
+            Follow = rpm<uint64_t>(localPlayer + Offsets::Player::FollowCamera_Sub);
+            if (Follow) Cam = rpm<uint64_t>(Follow + Offsets::Camera::Follow_Alt);
+            if (Cam)    IntPtr = rpm<uint64_t>(Cam + Offsets::Camera::IntPtr_Alt);
         }
 
         if (!IntPtr) {
@@ -363,7 +363,9 @@ namespace data {
             if (headWorld.y < -150.0f || headWorld.y > 600.0f) continue;
 
             float dist = calculate_distance(localPos, headWorld);
-            if (dist < 0.8f || dist > cfg::esp::max_range) continue;
+            float maxTrackingDist = std::max(cfg::esp::max_range, cfg::aim::max_distance);
+            if (maxTrackingDist < 50.0f) maxTrackingDist = 200.0f;
+            if (dist < 0.8f || dist > maxTrackingDist) continue;
 
             Vector3 headScreen = WorldToScreenPoint(viewMatrix, headWorld);
             if (headScreen.z < 0.001f) continue;
@@ -375,7 +377,13 @@ namespace data {
             PlayerData pd;
             readName(span, pd.name, sizeof(pd.name));
             pd.weaponType = readWeapon(span);
-            if (!pd.name[0] && isBot) snprintf(pd.name, sizeof(pd.name), "BOT");
+            if (!pd.name[0]) {
+                if (isBot) {
+                    snprintf(pd.name, sizeof(pd.name), "BOT");
+                } else {
+                    snprintf(pd.name, sizeof(pd.name), "Player %d", static_cast<int>(i + 1));
+                }
+            }
 
             pd.addr       = enemy;
             pd.Head       = headScreen;

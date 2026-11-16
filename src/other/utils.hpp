@@ -15,6 +15,13 @@ public:
         uint64_t value[kBlockSize];
     };
 
+    struct RawEntry {
+        int32_t  hashCode;
+        int32_t  next;
+        uint64_t key;
+        uint64_t value;
+    };
+
     uint64_t address;
     uint64_t entries_head;
     int      count;
@@ -36,15 +43,27 @@ public:
     inline uint64_t getValues()   const { return entries_head; }
     inline int      getNumValues() const { return count; }
 
+    // Batch read an entire block of 64 entries with a single process_vm_readv syscall
     inline bool read_block(int start_idx, EntryBlock& out_blk) const {
         if (!valid || start_idx < 0 || start_idx >= count) return false;
+        size_t to_read = (start_idx + static_cast<int>(kBlockSize) <= count) ?
+                         kBlockSize : static_cast<size_t>(count - start_idx);
+
+        RawEntry raw[kBlockSize];
+        if (!mem_read(entries_head + start_idx * sizeof(RawEntry), raw, to_read * sizeof(RawEntry))) {
+            return false;
+        }
+
         for (size_t b = 0; b < kBlockSize; ++b) {
-            int idx = start_idx + static_cast<int>(b);
-            if (idx >= count) {
+            if (b < to_read) {
+                if (raw[b].hashCode >= 0 && raw[b].key != 0) {
+                    out_blk.value[b] = raw[b].value;
+                } else {
+                    out_blk.value[b] = 0;
+                }
+            } else {
                 out_blk.value[b] = 0;
-                continue;
             }
-            out_blk.value[b] = entry(idx);
         }
         return true;
     }

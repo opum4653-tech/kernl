@@ -67,6 +67,23 @@ namespace Offsets {
         constexpr uintptr_t Attributes_Max       = 0x770;   // PlayerAttributes Max
         constexpr uintptr_t PhantomState         = 0x814;   // Boolean: Ghost / Phantom mode flag on Player
         constexpr uintptr_t FlightFlag           = 0x2098;  // Boolean: Elevation flight state flag on Player
+        constexpr uintptr_t HP_MaxEntry          = 0x28;    // Index 1 in HP datas pool
+        constexpr uintptr_t HP_ArmorEntry        = 0x40;    // Index 4 in HP datas pool
+        constexpr uintptr_t FollowCamera_Sub     = 0x690;   // FollowCamera auxiliary pointer
+        constexpr uintptr_t AimAdjustmentFlag    = 0xE60;   // Aim trajectory adjustment reset flag
+    }
+
+// Mono Internals (String & Type)
+    namespace Mono {
+        constexpr uintptr_t String_Length        = 0x10;
+        constexpr uintptr_t String_Chars         = 0x14;
+    }
+
+// Unity Core Internals
+    namespace Unity {
+        constexpr uintptr_t StaticFields_Instance = 0x8;
+        constexpr uintptr_t Component_Transform   = 0x18;
+        constexpr uintptr_t Transform_Internal    = 0x20;
     }
 
 // Transform Hierarchy Traversal (Unity Matrix Resolution)
@@ -80,6 +97,7 @@ namespace Offsets {
 // Weapon Data Fields
     namespace Weapon {
         constexpr uintptr_t Data                 = 0x80;
+        constexpr uintptr_t Weapon_ID            = 0x64;    // Weapon ID in WeaponData
     }
 
 // Avatar Visibility
@@ -97,6 +115,8 @@ namespace Offsets {
         constexpr uintptr_t Follow               = 0x28;
         constexpr uintptr_t IntPtr               = 0x10;
         constexpr uintptr_t Matrix               = 0x100;
+        constexpr uintptr_t Follow_Alt           = 0x30;
+        constexpr uintptr_t IntPtr_Alt           = 0x10;
     }
 
 // Aim Information (CGKJLKPMGDJ / HitInfo)
@@ -111,6 +131,15 @@ namespace Offsets {
         constexpr uintptr_t IgnoreHappens        = 0x70;    // Boolean (EFMBNPNFGHM 0x70)
         constexpr uintptr_t ViewBlocked          = 0x71;    // Boolean (CEOKOILBODN 0x71)
         constexpr uintptr_t SpecialHitType       = 0x80;    // Int16 (CLOLKHNMNEK 0x80)
+        constexpr float     HeightOffset_Neck    = -0.15f;
+        constexpr float     HeightOffset_Body    = -0.40f;
+        constexpr float     HeightOffset_Chest   = -0.28f;
+    }
+
+// Game Memory Patches
+    namespace Patches {
+        constexpr uintptr_t iPad_FOV             = 0x36C9BD0;
+        constexpr uintptr_t GameConfig_Base      = 0xF1D5F70;
     }
 
 // Skeleton Bones (ITransformNode offsets inside Player)
@@ -245,9 +274,9 @@ namespace Offsets {
     constexpr uintptr_t DropObject_Scale         = Loot::DropObject_Scale;
     constexpr uintptr_t DropObject_Landed        = Loot::DropObject_Landed;
 
-    constexpr uintptr_t Head                     = Bone_Head;
-    constexpr uintptr_t Hip                      = Bone_Hip;
-    constexpr uintptr_t Root                     = Bone_LeftToe;
+    constexpr uintptr_t StaticFields_Instance    = Unity::StaticFields_Instance;
+    constexpr uintptr_t iPad_FOV                 = Patches::iPad_FOV;
+    constexpr uintptr_t GameConfig_Base          = Patches::GameConfig_Base;
 
     // Engine TimeService & Speed Attributes
     constexpr uintptr_t Engine_TimeService       = Base::BaseGame_Timer;

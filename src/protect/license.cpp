@@ -167,8 +167,28 @@ namespace lic {
         return total;
     }
 
+    static bool is_safe_alphanumeric(const std::string& str) {
+        if (str.empty() || str.length() > 128) return false;
+        for (char c : str) {
+            if (!std::isalnum(static_cast<unsigned char>(c)) && c != '-' && c != '_' && c != '.') {
+                return false;
+            }
+        }
+        return true;
+    }
+
     static bool verify_license_online(const std::string& key) {
+        if (!is_safe_alphanumeric(key)) {
+            printf("[-] License verification rejected: Invalid characters detected in license key.\n");
+            fflush(stdout);
+            return false;
+        }
+
         std::string hwid = get_device_hwid();
+        if (!is_safe_alphanumeric(hwid)) {
+            hwid = "NIN_DEVICE_HWID";
+        }
+
         std::string server_url = "https://ninmods.smmtor.com";
         const char* env_url = getenv("NIN_SERVER_URL");
         if (env_url && strlen(env_url) > 0) {
@@ -193,8 +213,8 @@ namespace lic {
             curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
             curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_string_cb);
             curl_easy_setopt(curl, CURLOPT_WRITEDATA, &curl_resp);
-            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
-            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
             curl_easy_setopt(curl, CURLOPT_TIMEOUT, 12L);
             curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 8L);
 

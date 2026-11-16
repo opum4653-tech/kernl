@@ -18,11 +18,13 @@ namespace aimbot {
         dl->AddCircle(ImVec2(cx, cy), r, IM_COL32(255, 255, 255, 45), 64, 1.0f);
         dl->AddCircle(ImVec2(cx, cy), r + 1.0f, IM_COL32(225, 0, 153, 160), 64, 1.5f);
 
-        // If target is actively locked inside FOV, draw target lock ring
-        if (g_currentTarget.valid && g_currentTarget.screenPos.z >= 0.001f) {
-            dl->AddCircle(ImVec2(g_currentTarget.screenPos.x, g_currentTarget.screenPos.y),
+        // Lock ring reads a coherent snapshot — the aim worker rewrites the
+        // struct on its own thread and an unguarded read can tear the vector.
+        TargetInfo t = snapshot_target();
+        if (t.valid && t.screenPos.z >= 0.001f) {
+            dl->AddCircle(ImVec2(t.screenPos.x, t.screenPos.y),
                           10.0f, IM_COL32(255, 30, 80, 240), 16, 2.0f);
-            dl->AddCircle(ImVec2(g_currentTarget.screenPos.x, g_currentTarget.screenPos.y),
+            dl->AddCircle(ImVec2(t.screenPos.x, t.screenPos.y),
                           3.5f, IM_COL32(255, 255, 255, 255), 12, 1.5f);
         }
     }

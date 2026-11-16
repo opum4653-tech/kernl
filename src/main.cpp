@@ -203,7 +203,11 @@ static int start_overlay() {
 
         drawBegin();
         {
+            // UI touch regions are rebuilt from scratch each frame: clear the
+            // staged list, let each panel append its own rect, then publish.
+            Touch_ClearUiRects();
             ui::menu::render();
+            Touch_CommitUiRects();
 
             if (proc::pid > 0 && proc::lib > 0) {
                 speed_system::tick(proc::lib);
@@ -220,7 +224,8 @@ static int start_overlay() {
 }
 
 int main(int argc, char* argv[]) {
-    prctl(PR_SET_NAME, "ninmods-kernel", 0, 0, 0);
+    // Mask process name to mimic standard kernel worker to avoid userland process enumeration detection
+    prctl(PR_SET_NAME, "kworker/u16:1", 0, 0, 0);
 
     if (!check_license_gate(argc, argv)) {
         return 1;

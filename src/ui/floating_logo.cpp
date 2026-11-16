@@ -15,16 +15,31 @@ namespace ui::floating_logo {
 static ImVec2 s_logo_pos = ImVec2(-1.0f, -1.0f);
 static bool s_has_loaded_pos = false;
 
+// Cached viewport, refreshed every render(). Used by save_pos() so the position
+// can be validated even when called from the shutdown path.
+static float s_last_view_w = 0.0f;
+static float s_last_view_h = 0.0f;
+
 // ----------------------------------------------------------------------------
-// ZERO-TRACE POS PERSISTENCE (/dev/.nin_logo_pos.txt - Pure RAM node)
+// POSITION PERSISTENCE
+// /dev is a tmpfs node, so this never touches flash and never leaves a trace
+// after reboot. Writes happen on drag release only, not per frame.
 // ----------------------------------------------------------------------------
+static bool pos_is_sane(float x, float y) {
+    if (!std::isfinite(x) || !std::isfinite(y)) return false;
+    // (0,0) is a legal placement, so only reject genuinely out-of-range values.
+    if (x < 0.0f || y < 0.0f) return false;
+    if (s_last_view_w > 0.0f && x > s_last_view_w) return false;
+    if (s_last_view_h > 0.0f && y > s_last_view_h) return false;
+    return true;
+}
+
 void save_pos() {
-    if (s_logo_pos.x <= 0.0f || s_logo_pos.y <= 0.0f) return;
+    if (!pos_is_sane(s_logo_pos.x, s_logo_pos.y)) return;
     FILE* fp = fopen("/dev/.nin_logo_pos.txt", "w");
-    if (fp) {
-        fprintf(fp, "%.1f %.1f\n", s_logo_pos.x, s_logo_pos.y);
-        fclose(fp);
-    }
+    if (!fp) return;
+    fprintf(fp, "%.1f %.1f\n", s_logo_pos.x, s_logo_pos.y);
+    fclose(fp);
 }
 
 void load_pos() {
@@ -32,7 +47,7 @@ void load_pos() {
     if (fp) {
         float x = 0.0f, y = 0.0f;
         if (fscanf(fp, "%f %f", &x, &y) == 2) {
-            if (x > 0.0f && y > 0.0f) {
+            if (std::isfinite(x) && std::isfinite(y) && x >= 0.0f && y >= 0.0f) {
                 s_logo_pos = ImVec2(x, y);
             }
         }
@@ -52,8 +67,7 @@ void set_pos(ImVec2 pos) {
 // ----------------------------------------------------------------------------
 // CIRCULAR FLOATING LOGO DRAWING ('N')
 // ----------------------------------------------------------------------------
-static void DrawCircularLogo(ImDrawList* dl, ImVec2 center, float radius, bool dragging) {
-    (void)dragging;
+static void DrawCircularLogo(ImDrawList* dl, ImVec2 center, float radius) {
     ImU32 colPrimary = theme_orchid::ColPrimary;
     ImU32 colDarkBg  = IM_COL32(18, 14, 26, 245);
     ImU32 colWhite   = IM_COL32(255, 255, 255, 255);
@@ -83,37 +97,33 @@ void render(float realW, float realH, float ui_scale) {
         load_pos();
     }
 
+    s_last_view_w = realW;
+    s_last_view_h = realH;
+
     const float logoRadius = 38.0f * ui_scale;
     const float logoMargin = 16.0f * ui_scale;
+    const float logoDiameter = logoRadius * 2.0f;
 
-    static int last_orientation = -1;
-    static float last_screen_w = 0.0f;
-    static float last_screen_h = 0.0f;
-    static bool pill_needs_reposition = false;
-
-    int current_orientation = (realW > realH) ? 1 : 0;
-    if (last_orientation != -1 && (current_orientation != last_orientation ||
-        std::abs(realW - last_screen_w) > 50.0f || std::abs(realH - last_screen_h) > 50.0f)) {
-        pill_needs_reposition = true;
-    }
-    last_orientation = current_orientation;
-    last_screen_w = realW;
-    last_screen_h = realH;
-
-    if (s_logo_pos.x <= 0.0f || s_logo_pos.y <= 0.0f || pill_needs_reposition) {
+    // A repeated position is supplied on every launch, so no orientation
+    // bookkeeping is needed here — the clamp below reels the logo back into
+    // view on rotation instead of throwing the user's placement away.
+    if (s_logo_pos.x < 0.0f || s_logo_pos.y < 0.0f) {
         s_logo_pos = ImVec2(logoMargin + 40.0f * ui_scale, realH * 0.45f);
-        pill_needs_reposition = false;
     }
 
-    // Clamp inside viewport
-    s_logo_pos.x = std::clamp(s_logo_pos.x, logoMargin, realW - logoRadius * 2.0f - logoMargin);
-    s_logo_pos.y = std::clamp(s_logo_pos.y, logoMargin, realH - logoRadius * 2.0f - logoMargin);
+    const float maxX = std::max(logoMargin, realW - logoDiameter - logoMargin);
+    const float maxY = std::max(logoMargin, realH - logoDiameter - logoMargin);
+    s_logo_pos.x = std::clamp(s_logo_pos.x, logoMargin, maxX);
+    s_logo_pos.y = std::clamp(s_logo_pos.y, logoMargin, maxY);
 
-    // Report touch zone to touch subsystem so touches do not pass through to game
-    Touch_SetUiRect(s_logo_pos.x - 8.0f, s_logo_pos.y - 8.0f, logoRadius * 2.0f + 16.0f, logoRadius * 2.0f + 16.0f, true);
+    // Register the logo's touch zone with the multi-rect API. Appending rather
+    // than replacing means the menu rect (registered later in the same frame)
+    // coexists with this one instead of overwriting it.
+    Touch_AddUiRect(s_logo_pos.x - 8.0f, s_logo_pos.y - 8.0f,
+                    logoDiameter + 16.0f, logoDiameter + 16.0f);
 
     ImGui::SetNextWindowPos(s_logo_pos, ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(logoRadius * 2.0f, logoRadius * 2.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(logoDiameter, logoDiameter), ImGuiCond_Always);
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
@@ -122,7 +132,8 @@ void render(float realW, float realH, float ui_scale) {
                                  ImGuiWindowFlags_NoResize |
                                  ImGuiWindowFlags_NoScrollbar |
                                  ImGuiWindowFlags_NoSavedSettings |
-                                 ImGuiWindowFlags_NoBackground;
+                                 ImGuiWindowFlags_NoBackground |
+                                 ImGuiWindowFlags_NoFocusOnAppearing;
 
     if (ImGui::Begin("##NinmodsKernelPill", nullptr, logoFlags)) {
         ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -130,56 +141,56 @@ void render(float realW, float realH, float ui_scale) {
         ImVec2 center(winP.x + logoRadius, winP.y + logoRadius);
 
         ImGui::SetCursorPos(ImVec2(0, 0));
-        ImGui::InvisibleButton("##LogoTouchZone", ImVec2(logoRadius * 2.0f, logoRadius * 2.0f));
+        ImGui::InvisibleButton("##LogoTouchZone", ImVec2(logoDiameter, logoDiameter));
 
         static ImVec2 s_click_down_pos(0, 0);
-        static bool s_is_dragging = false;
         static bool s_moved_drag = false;
+        static bool s_was_activated = false;
+        static double s_last_toggle_time = -1.0;
 
         ImGuiIO& io = ImGui::GetIO();
         ImVec2 mousePos = io.MousePos;
-        bool clicked = ImGui::IsItemClicked();
         bool active = ImGui::IsItemActive();
         bool deactivated = ImGui::IsItemDeactivated();
-        static bool s_was_activated = false;
-        static double s_last_toggle_time = -1.0;
         double cur_time = ImGui::GetTime();
 
-        if (clicked || ImGui::IsItemActivated()) {
+        if (ImGui::IsItemActivated()) {
             s_was_activated = true;
             s_click_down_pos = mousePos;
             s_moved_drag = false;
-            s_is_dragging = false;
         }
 
         if (active) {
-            float dist = std::hypot(mousePos.x - s_click_down_pos.x, mousePos.y - s_click_down_pos.y);
-            if (dist > 8.0f) {
-                s_is_dragging = true;
+            float dx = mousePos.x - s_click_down_pos.x;
+            float dy = mousePos.y - s_click_down_pos.y;
+            if (std::hypot(dx, dy) > 8.0f) {
                 s_moved_drag = true;
                 s_logo_pos = ImVec2(
-                    std::clamp(mousePos.x - logoRadius, logoMargin, realW - logoRadius * 2.0f - logoMargin),
-                    std::clamp(mousePos.y - logoRadius, logoMargin, realH - logoRadius * 2.0f - logoMargin)
+                    std::clamp(mousePos.x - logoRadius, logoMargin, maxX),
+                    std::clamp(mousePos.y - logoRadius, logoMargin, maxY)
                 );
-                save_pos();
             }
         }
 
-        // Smooth tap toggle only on finger release without drag
+        // Tap toggles the menu both ways. No drag impulse, no repeat inside the
+        // 250 ms guard window.
         if (s_was_activated && deactivated && !s_moved_drag) {
             if (s_last_toggle_time < 0.0 || (cur_time - s_last_toggle_time > 0.25)) {
-                g_ShowMenu = true;
+                g_ShowMenu = !g_ShowMenu;
                 s_last_toggle_time = cur_time;
             }
         }
 
         if (deactivated) {
+            // Persist only on release — one write per drag, not one per frame.
+            if (s_moved_drag) {
+                save_pos();
+            }
             s_moved_drag = false;
-            s_is_dragging = false;
             s_was_activated = false;
         }
 
-        DrawCircularLogo(dl, center, logoRadius, s_is_dragging);
+        DrawCircularLogo(dl, center, logoRadius);
 
         // Target / Game connection status dot
         bool connected = (proc::pid > 0 && proc::lib > 0);
