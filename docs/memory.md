@@ -172,3 +172,42 @@ Comprehensive resolution of Headshot / Silent Aim mechanics using internal `NXL`
    - Icon button size increased from `56x52` to `(sidebarW - 16.0f) x std::max(56.0f, 62.0f * ui_scale)`.
    - Vector icon size dynamically scaled from static `23px` to `size.y * 0.54f` (~`34px`+), with proportional stroke thickness (`3.0f` active pill indicator, `12.0f` corner rounding).
    - Generates spacious, touch-friendly, balanced ergonomics matching modern tablets and high-DPI displays.
+
+
+---
+
+## 9. Modular UI Refactoring, Strict Mutual Exclusivity & 17-Point Audit Resolution
+
+### 1. Architectural File Split
+In commit `bf27ca9` / `2530d91`, `src/ui/menu.cpp` was modularized into 3 dedicated files:
+1. `src/ui/floating_logo.hpp & .cpp`:
+   - Floating circular 'N' logo window (`##NinmodsKernelPill`).
+   - Dragging with instant viewport boundary clamping (`std::clamp`).
+   - Tap vs Drag discrimination on release (`s_was_activated && deactivated && !s_moved_drag`).
+   - Daemon connection status indicator dot (`proc::pid > 0 && proc::lib > 0`).
+   - Zero-trace persistent anchor via `/dev/.nin_logo_pos.txt` (tmpfs node).
+2. `src/ui/theme.hpp & .cpp`:
+   - Centralized `theme_orchid` dynamic palette with `sync_from_arr()`.
+   - 6 theme color swatches (`g_ThemeSwatches`).
+   - Vector icon renderer (`DrawVectorIcon`).
+3. `src/ui/menu.hpp & .cpp`:
+   - Dual-column glass main menu window.
+   - When `!g_ShowMenu`, delegates cleanly to `ui::floating_logo::render()`.
+   - Backward compatible API (`ui::menu::render()`, `ui::menu::save_logo_pos()`).
+
+### 2. Strict Mutual Exclusivity Lifecycle (`g_ShowMenu`)
+- **Menu Closed (`g_ShowMenu == false`):** Main window is not rendered; floating logo is drawn.
+- **Logo Tapped:** User releases finger without drag -> `g_ShowMenu = true`.
+- **Menu Open (`g_ShowMenu == true`):** Floating logo is completely hidden from render; main menu is drawn.
+- **Close Button Tapped ('X'):** `g_ShowMenu = false` -> Menu disappears, floating logo re-appears.
+
+### 3. Comprehensive 17-Point Audit Resolutions
+- **Style Stack Balance:** Exactly 20 `PushStyleColor` / `PopStyleColor(20)`. Zero stack leaks.
+- **Sidebar Overlap Prevention:** `btnH = std::clamp(availSidebarH / 4.6f, 36.0f, 60.0f);` and `powerY = std::max(tab2Bottom + spacing, bodyH - btnH - 12.0f * ui_scale);`. 0px overlap across all screen heights.
+- **Full Viewport Scaling:** `headerH`, `closeBtnSize`, `xRadius`, `badgeH`, `badgeW`, `contentGapX/Y`, `colGap`, `colW`, `WindowPadding`, `ItemSpacing`, `FramePadding`, and `GrabMinSize` scaled with `* ui_scale`.
+- **High-DPI Font Sharpness:** `LoadCustomIconFonts(io)` in `main.cpp` bakes `inter_medium` at 22px and `inter_bold` at 25px.
+- **Dynamic Theme Reactivity:** Sidebar active state derives alpha directly from `theme_orchid::ColPrimary`: `(ColPrimary & 0x00FFFFFF) | (48 << 24)`.
+- **Header Drag Boundary Clamping:** `s_menu_pos.x = std::clamp(s_menu_pos.x, 0.0f, realW - winW);` and `s_menu_pos.y = std::clamp(s_menu_pos.y, 0.0f, realH - winH);`. Menu cannot be lost off-screen.
+- **Touch Scroll Gesture:** `ImGuiHoveredFlags_AllowWhenBlockedByActiveItem` prevents widgets from swallowing swipe gestures.
+- **Format Safety:** Guarded target name with `targetName = g_currentTarget.name[0] ? g_currentTarget.name : "Enemy"`.
+- **Clean Telemetry & Layout Balance:** Tab 2 left column filled with `Air Flight`, `Phantom Mode`, and `MOVEMENT DIAGNOSTICS`. Duplicate slider labels removed.
