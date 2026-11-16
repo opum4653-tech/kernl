@@ -19,11 +19,6 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
-// Forward-declare Dear ImGui's ClearActiveID to cancel active widgets during scroll
-namespace ImGui {
-    IMGUI_API void ClearActiveID();
-}
-
 extern bool main_thread_flag;
 extern int native_window_screen_x;
 extern int native_window_screen_y;
@@ -38,10 +33,10 @@ static std::atomic<bool> g_should_exit{false};
 
 float g_ThemeColorArr[4] = { 0.882f, 0.000f, 0.596f, 1.0f };
 
-// DESIGN: ELECTRIC ORCHID GLASS — UNIFIED MODERN PALETTE
+// DESIGN: ELECTRIC ORCHID GLASS — DYNAMIC ADAPTIVE PALETTE
 namespace theme_orchid {
-    constexpr ImU32 ColPrimary       = IM_COL32(225, 0, 152, 255);       // Electric Orchid #E10098
-    constexpr ImU32 ColPrimaryLight  = IM_COL32(255, 90, 205, 255);      // Soft Orchid Glow #FF5ACD
+    inline ImU32 ColPrimary       = IM_COL32(225, 0, 152, 255);       // Electric Orchid #E10098 (Synchronized dynamically)
+    inline ImU32 ColPrimaryLight  = IM_COL32(255, 90, 205, 255);      // Soft Orchid Glow #FF5ACD
     constexpr ImU32 ColHeaderBg      = IM_COL32(21, 16, 31, 255);        // Header #15101F
     constexpr ImU32 ColTextMuted     = IM_COL32(155, 140, 180, 255);     // Muted Text #9B8CB4
     constexpr ImU32 ColWhite         = IM_COL32(252, 248, 255, 255);     // Clean White
@@ -300,7 +295,7 @@ static bool DrawSegmentedButtons(const char* str_id, int* selected, const char* 
             ImGui::PushStyleColor(ImGuiCol_Text, theme_orchid::ColTextMuted);
         }
 
-        if (ImGui::Button(btnLabel, ImVec2(btnW, height))) {
+        if (ImGui::Button(btnLabel, ImVec2(btnW, height)) && *selected != i) {
             *selected = i;
             changed = true;
         }
@@ -342,6 +337,17 @@ void render() {
     // Dynamically synchronize global viewport dimensions for accurate WorldToScreen projection
     g_sw = realW;
     g_sh = realH;
+
+    // Dynamically synchronize theme accent colors from g_ThemeColorArr
+    theme_orchid::ColPrimary = ImGui::ColorConvertFloat4ToU32(ImVec4(
+        g_ThemeColorArr[0], g_ThemeColorArr[1], g_ThemeColorArr[2], g_ThemeColorArr[3]
+    ));
+    theme_orchid::ColPrimaryLight = ImGui::ColorConvertFloat4ToU32(ImVec4(
+        std::min(1.0f, g_ThemeColorArr[0] * 1.15f + 0.1f),
+        std::min(1.0f, g_ThemeColorArr[1] * 1.15f + 0.1f),
+        std::min(1.0f, g_ThemeColorArr[2] * 1.15f + 0.1f),
+        1.0f
+    ));
 
     static int last_orientation = -1;
     static float last_screen_w = 0.0f;
@@ -410,7 +416,7 @@ void render() {
             bool active = ImGui::IsItemActive();
             bool deactivated = ImGui::IsItemDeactivated();
             static bool s_was_activated = false;
-            static double s_last_toggle_time = 0.0;
+            static double s_last_toggle_time = -1.0;
             double cur_time = ImGui::GetTime();
 
             if (clicked || ImGui::IsItemActivated()) {
@@ -425,21 +431,23 @@ void render() {
                 if (dist > 8.0f) {
                     s_is_dragging = true;
                     s_moved_drag = true;
-                    s_logo_pos = ImVec2(mousePos.x - logoRadius, mousePos.y - logoRadius);
+                    s_logo_pos = ImVec2(
+                        std::clamp(mousePos.x - logoRadius, logoMargin, realW - logoRadius * 2.0f - logoMargin),
+                        std::clamp(mousePos.y - logoRadius, logoMargin, realH - logoRadius * 2.0f - logoMargin)
+                    );
                     save_logo_pos();
                 }
             }
 
-            // Smooth tap toggle without artificial startup delay
-            if (s_was_activated && (clicked || (deactivated && !s_moved_drag))) {
-                if (cur_time - s_last_toggle_time > 0.25) {
+            // Smooth tap toggle only on release without drag
+            if (s_was_activated && deactivated && !s_moved_drag) {
+                if (s_last_toggle_time < 0.0 || (cur_time - s_last_toggle_time > 0.25)) {
                     g_ShowMenu = true;
                     s_last_toggle_time = cur_time;
                 }
-                s_moved_drag = false;
-                s_is_dragging = false;
-                s_was_activated = false;
-            } else if (deactivated) {
+            }
+
+            if (deactivated) {
                 s_moved_drag = false;
                 s_is_dragging = false;
                 s_was_activated = false;
@@ -479,20 +487,28 @@ void render() {
     ImGui::SetNextWindowSize(ImVec2(winW, winH), ImGuiCond_Always);
     ImGui::SetNextWindowPos(s_menu_pos, ImGuiCond_Always);
 
+    ImVec4 colPrim(g_ThemeColorArr[0], g_ThemeColorArr[1], g_ThemeColorArr[2], 1.0f);
+    ImVec4 colPrimLight(
+        std::min(1.0f, g_ThemeColorArr[0] * 1.15f + 0.1f),
+        std::min(1.0f, g_ThemeColorArr[1] * 1.15f + 0.1f),
+        std::min(1.0f, g_ThemeColorArr[2] * 1.15f + 0.1f),
+        1.0f
+    );
+
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.055f, 0.047f, 0.078f, 0.98f));
-    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.882f, 0.000f, 0.596f, 0.70f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(colPrim.x, colPrim.y, colPrim.z, 0.70f));
     ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.110f, 0.086f, 0.157f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.160f, 0.120f, 0.220f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0.220f, 0.160f, 0.300f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_CheckMark, ImVec4(0.882f, 0.000f, 0.596f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(0.882f, 0.000f, 0.596f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(1.000f, 0.353f, 0.804f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_CheckMark, colPrim);
+    ImGui::PushStyleColor(ImGuiCol_SliderGrab, colPrim);
+    ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, colPrimLight);
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.110f, 0.086f, 0.157f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.200f, 0.140f, 0.280f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.882f, 0.000f, 0.596f, 0.5f));
-    ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.882f, 0.000f, 0.596f, 0.40f));
-    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.882f, 0.000f, 0.596f, 0.60f));
-    ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.882f, 0.000f, 0.596f, 0.80f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(colPrim.x, colPrim.y, colPrim.z, 0.5f));
+    ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(colPrim.x, colPrim.y, colPrim.z, 0.40f));
+    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(colPrim.x, colPrim.y, colPrim.z, 0.60f));
+    ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(colPrim.x, colPrim.y, colPrim.z, 0.80f));
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.988f, 0.973f, 1.000f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_TextDisabled, ImVec4(0.608f, 0.549f, 0.706f, 1.0f));
 
@@ -963,7 +979,7 @@ void render() {
     }
     ImGui::End();
     ImGui::PopStyleVar(4);
-    ImGui::PopStyleColor(19);
+    ImGui::PopStyleColor(20);
 }
 
 } // namespace ui::menu
