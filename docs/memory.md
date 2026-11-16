@@ -320,5 +320,97 @@ Every write below is on the render thread while a reader sits on the data or aim
 
 ### Deleted in this pass
 
-`src/other/signature.hpp` (the `kernel::sig` scanner — zero callers, only an unused `#include` in `main.cpp`), `src/FONTS/ICONS.h`, `MonoDictionary::getValues` / `MonoDictionary::entry` (only `read_block` is used), `c_driver::mem_addr_virtophy` (never called), `c_driver::pid` (only written, never read after `set_pid` fan-out), and the whole JNI-URL/toast apparatus in `license.cpp` — `open_update_page`, `should_show_redirect_toast`, `trigger_redirect_toast`, `update_toast_timer`, `current_key`, `start_date`, `normalize`, `decode_string`, `open_url_jni`, `K_TELEGRAM_URL_BYTES`, `K_TELEGRAM_URL_SEED`, `s_toast_timer`, `s_jvm`, `s_activity` — none of it reachable from `main`, which only uses `init` / `set_key` / `is_valid` / `status_text` / `expiry_date`.
+`src/other/signature.hpp` (the `kernel::sig` scanner — zero callers, only an unused `#include` in `main.cpp`), `src/FONTS/ICONS.h`, `MonoDictionary::getValues` / `MonoDictionary::entry` (only `read_block` is used), `c_driver::mem_addr_virtophy` (never called), `c_driver::pid` (only written, never read after `set_pid` fan-out), and the whole JNI-URL/toast apparatus in `license.cpp` — `open_update_page`, `should_show_redirect_toast`, `trigger_redirect_toast`, `update_toast_timer`, `current_key`, `start_date`, `normalize`, `decode_string`, `open_url_jni`, `K_TELEGRAM_URL_BYTES`, `K_TELEGRAM_URL_SEED`, `s_toast_timer`, `s_jvm`, `s_activity` - none of it reachable from `main`, which only uses `init` / `set_key` / `is_valid` / `status_text` / `expiry_date`.
+
+---
+
+## 12. UI Font Ownership, Size-Matched Faces, Logo Hitbox & Build Diagnostics
+
+### 12.1 Heap Corruption: Atlas Freed `.rodata`
+
+`ImFontConfig::ImFontConfig()` sets `FontDataOwnedByAtlas = true`, and the flag name reads backwards from what `ImFontAtlas::AddFont()` does:
+
+```cpp
+if (!new_font_cfg.FontDataOwnedByAtlas)
+{
+    new_font_cfg.FontData = IM_ALLOC(new_font_cfg.FontDataSize);
+    new_font_cfg.FontDataOwnedByAtlas = true;
+    memcpy(new_font_cfg.FontData, font_cfg->FontData, size);
+}
+```
+
+Only `false` triggers the heap copy. With the default `true`, the atlas stored the *caller's* pointer and left ownership alone. Every static TTF blob in this tree is a `const unsigned char[]` in `.rodata` (`Roboto_Regular` in `includes/internal/Font.h`, `inter_medium`/`inter_bold` in `src/FONTS/MAIN_FONT.h`). So `~ImFontAtlas()` -> `Clear()` -> `ClearInputData()` -> `IM_FREE(FontData)` was a `free()` on a `.rodata` address on every `ImGui::DestroyContext` — a corrupting free in the allocator's bookkeeping.
+
+All five `AddFontFromMemoryTTF` call sites now pass `FontDataOwnedByAtlas = false`: three in `initGUI_draw()` (`draw.cpp`) and two in `LoadCustomFonts()` (`main.cpp`).
+
+`AddFontDefault()` needs no override — it routes through `AddFontFromMemoryCompressedTTF`, which `IM_ALLOC`s a decompressed heap buffer and forces the flag `true` itself at `imgui_draw.cpp:2285`.
+
+### 12.2 Size-Matched Font Faces
+
+`Fonts[0]` is Roboto rasterised at 32px with `GetGlyphRangesChineseFull()`. Every `AddText` then sampled that one raster at a different size. `CalcTextSizeA`/`AddText` scale the advance and the quad, not the glyph bitmap — a 32px raster drawn at 10px loses its stem and a 32px raster drawn at 63px is plain blur.
+
+Three additive faces were registered in `initGUI_draw()`, none repinning `Fonts[0]` (the menu layout is tuned against it plus `ScaleAllSizes(3.0f)`):
+
+| Global | Size | Ranges | Consumers |
+|---|---|---|---|
+| `g_EspFont` | 14px | `GetGlyphRangesDefault()` | `esp/loot.hpp`, `esp/weapon.hpp`, header `KERNEL CORE` sub-label, `ARMED`/`STANDBY` badge |
+| `g_UiFont` | 18px | `GetGlyphRangesDefault()` | `menu.cpp` `DrawToggleSwitch` labels (drawn at 17px) |
+| `g_LogoFont` | 64px | single-glyph `{ 'N', 'N', 0 }` | `floating_logo.cpp` `DrawCircularLogo` (drawn at `radius * 1.15`, 44..63px) |
+
+Declared in `src/globals.hpp` with a bare `struct ImFont;` forward declaration so the header stays free of `imgui.h`; defined as `nullptr` in `src/globals.cpp`. Every consumer guards with `g_X ? g_X : ImGui::GetFont()`, so a registration failure degrades instead of crashing.
+
+`g_LogoFont` carries a hand-built one-glyph range because only the literal `"N"` is ever drawn with it — a full Cyrillic set at 64px would be ~40 quads for one character.
+
+`esp/info.hpp` `drawTopInfo()` deliberately keeps `ImGui::GetFont()`. Player names come from the game and can be CJK; it is the only ESP path rendering arbitrary user text, so the full-range face has to stay reachable there. A narrowed-range face would drop the glyphs entirely, which is worse than a soft 13px sample.
+
+### 12.3 Floating Logo Hitbox: Circle, Not Bounding Box
+
+`Touch_AddUiRect` registered the logo's bounding box. The logo is a disc, so the four corners of that box (~46x46px each at `logoRadius = 38 * ui_scale`) were inside the barrier rect but outside the drawn circle — every tap there was swallowed and never reached the game.
+
+- `UiRect` gained `float r`.
+- `Touch_AddUiCircle(cx, cy, radius)` added; it stores the bounding box and sets `r`.
+- `Touch_IsPointInUi()` does a radial test when `r > 0.0f` and falls through to the rect test otherwise, so every existing rect registration is unchanged.
+- `floating_logo.cpp` now calls `Touch_AddUiCircle(s_logo_pos.x + logoRadius, s_logo_pos.y + logoRadius, logoRadius + 8.0f)`.
+- Declared in `includes/internal/Android_touch/TouchHelperA.h`.
+
+### 12.4 Logo Position Persistence
+
+`pos_is_sane()` rejected any coordinate past the cached viewport. The cached size is one frame behind right after a rotation, so a rotate-then-release dropped the write silently and the logo snapped back to its launch position on the next start.
+
+- It now rejects only non-finite and negative values.
+- `save_pos()` clamps against the cached viewport instead, so the write always lands with a usable coordinate.
+- `s_has_loaded_pos` and the lazy `load_pos()` call inside `render()` are gone; `main.cpp:177` calls `ui::menu::load_logo_pos()` once before the loop, which is the only path that needs it.
+
+### 12.5 Menu Opacity Floor
+
+The slider lives inside the window it dims through `ImGuiStyleVar_Alpha`. At a `0.20` floor, the control that would bring the opacity back was itself rendered at 20% — nearly invisible and very hard to grab. Floor raised to `0.40`.
+
+### 12.6 CI: Reading a Failed Build Without Log Access
+
+Two consecutive builds failed at the `ndk-build` step in ~2s. The Actions job-log endpoint returns `403` for unauthenticated callers, and the only publishable annotation was `Process completed with exit code 2` — no compiler diagnostic.
+
+`build.yml` now:
+
+- redirects `ndk-build` to `build.log`, captures `$?`, and on failure publishes the last 120 lines as `::error` annotations in 10 chunks of 12 lines (percent-escaped, `%0A` per line). The annotations endpoint *is* public.
+- uploads `build.log` as an artifact with `if: always()`, so a failing run still leaves a readable log.
+- gates the binary upload on `if: success()` with `if-no-files-found: error`.
+
+That diagnostic path is what located the actual fault: an edit pass had collapsed two statements onto a comment line.
+
+### 12.7 Two Merged Lines (the 2-Second Failure)
+
+Both were hard compile errors:
+
+- `src/ui/floating_logo.cpp` — the `// CIRCULAR FLOATING LOGO DRAWING` divider comment had absorbed `static void DrawCircularLogo(ImDrawList* dl, ImVec2 center, float radius) {`. The signature lived inside a `//` comment, so every call below it had no visible declaration.
+- `src/ui/menu.cpp` — `float fontSize = 17.0f * ui_scale;` and `ImVec2 tsz = font->CalcTextSizeA(...)` were joined on one physical line, leaving the `ImVec2 tsz` declaration outside any statement.
+
+Both repaired; no behaviour change. Braces/parens re-verified across all twelve touched files.
+
+### Deleted in this pass
+
+`ui::floating_logo::get_pos()` / `set_pos()` — declared in the header, defined in the .cpp, zero callers.
+
+### Build
+
+Run #32 green. `ninmods-kernel.zip` 1,675,546 bytes, `sha256:bd2a637d6b5a87a3737fa8ea498ad97a17f42c6172972845fa4f0160009aacab`.
 
