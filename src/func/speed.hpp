@@ -111,9 +111,13 @@ namespace speed_system {
         // Refuses execution if kernel driver is not loaded or uninitialized.
         if (!is_driver_active() || libAddress < 0x10000) return;
 
-        // Sync with UI variables
-        bool is_enabled = cfg::master_enabled && (cfg::motion::speed_hack || g_config.enabled);
-        float mult = (cfg::motion::speed_hack && cfg::motion::speed_mult >= 1.0f) ? cfg::motion::speed_mult : g_config.multiplier;
+        // Sync with UI variables. Snapshot the knobs once: the render thread
+        // owns them and this tick must act on one coherent set of values.
+        const bool  ui_speed_on = cfg::motion::speed_hack.load(std::memory_order_relaxed);
+        const float ui_speed_mx = cfg::motion::speed_mult.load(std::memory_order_relaxed);
+
+        bool is_enabled = cfg::master_enabled && (ui_speed_on || g_config.enabled);
+        float mult = (ui_speed_on && ui_speed_mx >= 1.0f) ? ui_speed_mx : g_config.multiplier;
         if (mult < 1.0f) mult = 1.0f;
         if (mult > 10.0f) mult = 10.0f;
 

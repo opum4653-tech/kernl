@@ -66,7 +66,6 @@ LOCAL_C_INCLUDES := \
     $(LOCAL_PATH)/../includes/network/curl/include \
     $(LOCAL_PATH)/../includes/network/openssl/include \
     $(LOCAL_PATH)/../includes/network/json \
-    $(LOCAL_PATH)/../includes/font \
     $(LOCAL_PATH)/../includes/internal \
     $(LOCAL_PATH)/../includes/internal/ImGui \
     $(LOCAL_PATH)/../includes/internal/ImGui/backends \
@@ -75,17 +74,14 @@ LOCAL_C_INCLUDES := \
     $(LOCAL_PATH)/../includes/internal/native_surface \
     $(LOCAL_PATH)/../includes/draw/ImGui \
     $(LOCAL_PATH)/../includes/draw/ImGui/backends \
-    $(LOCAL_PATH)/../includes/protect \
     $(LOCAL_PATH)/../src \
-    $(LOCAL_PATH)/../src/ENC \
     $(LOCAL_PATH)/../src/FONTS \
     $(LOCAL_PATH)/../src/ui \
     $(LOCAL_PATH)/../src/func \
     $(LOCAL_PATH)/../src/game \
     $(LOCAL_PATH)/../src/other \
     $(LOCAL_PATH)/../src/protect \
-    $(LOCAL_PATH)/../src/offsets \
-    $(LOCAL_PATH)/../src/aim
+    $(LOCAL_PATH)/../src/offsets
 
 # ═══════════════════════════════════════════════════════════
 #  C++ FLAGS

@@ -40,7 +40,6 @@ public:
         valid        = (count > 0 && count < 0x1000);
     }
 
-    inline uint64_t getValues()   const { return entries_head; }
     inline int      getNumValues() const { return count; }
 
     // Batch read an entire block of 64 entries with a single process_vm_readv syscall
@@ -66,15 +65,5 @@ public:
             }
         }
         return true;
-    }
-
-    // ReplicationEntity* de uma entry — validate hashCode & key to eliminate ghost/dead entries
-    inline uint64_t entry(int i) const {
-        if (!valid || i < 0 || i >= count) return 0;
-        int hashCode = rpm<int>(entries_head + i * 0x18);
-        if (hashCode < 0) return 0; // Slot is empty or deleted in il2cpp Dictionary
-        uint64_t key = rpm<uint64_t>(entries_head + i * 0x18 + 0x08);
-        if (!key) return 0;
-        return rpm<uint64_t>(entries_head + i * 0x18 + 0x10);
     }
 };

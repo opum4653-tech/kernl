@@ -46,7 +46,10 @@ This file is the permanent historical memory and technical log for the `ninmods-
   - `logoRadius` in `src/ui/menu.cpp` was set to `28.0f * ui_scale` (diameter 56px). On 1080p/1440p displays with 450+ PPI, 56px is smaller than standard touch accessibility guidelines (minimum 48dp / 72-80px).
 - **Fix Implemented:**
   - Increased `logoRadius` to **`38.0f * ui_scale`** (diameter 76px, +36% larger).
-  - The circular dark disc, outer orchid ring, center "N" letter font size (`radius * 1.15f`), daemon status dot, and touch hitbox (`Touch_SetUiRect`) all scale up proportionately.
+  - The circular dark disc, outer orchid ring, center "N" letter font size (`radius * 1.15f`), daemon status dot, and touch hitbox (`Touch_AddUiRect`) all scale up proportionately.
+  - The logo position persists to `/dev/.nin_logo_pos.txt` (tmpfs, never flashes) on drag release only — not per frame.
+  - Rotation and resolution changes clamp the stored position into the new viewport instead of resetting it.
+  - Tapping the logo opens the menu; the X button in the header closes it.
 
 ---
 
@@ -277,3 +280,45 @@ Following an exhaustive audit across the entire `ninmods-kernel` codebase, all p
 - **Build Script Hardening (`compile.sh`, `CMakeLists.txt`):**
   - Made `compile.sh` POSIX compliant with `-j$(nproc)` and conditional `package_sh.sh` execution.
   - Aligned CMake project and target names to `ninmods-kernel`.
+
+---
+
+## 11. Dead Code Purge & Cross-Thread Coherence Pass
+
+### 11.1 Shadow Headers Removed
+The tree carried two parallel copies of the same headers. `jni/Android.mk` puts `includes/internal` ahead of `includes`, so the `internal/` copy is what the compiler actually opened; every edit to the `includes/draw` copy was dead on arrival.
+
+- Deleted byte-identical duplicates: `includes/draw/Android_touch/TouchHelperA.h`, `includes/draw/Android_draw/draw.h`, `includes/draw/Font.h`.
+- Deleted `includes/protect/oxorany.{hpp,cpp}` (dupes of `src/protect/*`) and the whole `src/ENC/` directory (`base64.hpp`, `obfuscate.h`, `oxorany.h`, `oxorany_include.h`).
+- Deleted `includes/internal/Android_touch/Touch.hpp`; its slot API declarations (`IsFingerDown`, `GetFingerScreenPos`, `Touch_Down_Slot`, `Touch_Move_Slot`, `Touch_Up_Slot`) moved into the canonical `TouchHelperA.h`.
+- Deleted forwarder shims with no callers: `src/aim/aim.hpp`, `src/func/aim.hpp`, `src/encrypt.h`, `src/xorstr.hpp`, `src/main.h`, `src/other/utf_utils.h`, `includes/font/font_data.hpp` (`font_ttf` never referenced).
+- `Android.mk` include paths pruned accordingly: `src/ENC`, `src/aim`, `includes/font`, `includes/protect`.
+
+### 11.2 Dead Symbols Removed
+- `src/other/memory.hpp`: `proc::pm`, `struct MemChunk`, `init_mem()`, and the whole `namespace game` (`valid`/`init`/`tick`/`jitter_next`) — zero callers; the watchdog in `main.cpp` superseded it.
+- `src/game/math.hpp`: `GetPlayerHeadTF`, `GetPlayerPeTF`.
+- `src/func/esp/common.hpp`: `PANEL_ROW_H`, `PANEL_TOP_OFFSET`.
+- `includes/draw/Android_touch/Touch.cpp`: `other_touch`, `s_primaryFdIndex`, and the `bestFdIndex`/`maxArea` selection logic collapsed to plain primary-digitizer range tracking.
+- `includes/internal/Android_draw/draw.h`: `extern ImGuiWindow *g_window`, `extern ImFont* verdana` — both declared, never defined or read.
+- `src/globals.{hpp,cpp}`: `global_anim_time`, `g_ui_scale`, `abs_ScreenX`, `abs_ScreenY` — zero readers.
+- `Touch_SetUiRect` retired: the multi-region staging API is the only barrier; a single-rect setter invited panels to clobber each other's regions.
+
+### 11.3 Cross-Thread Coherence
+Every write below is on the render thread while a reader sits on the data or aim worker.
+
+- **`g_sw` / `g_sh` -> `std::atomic<float>`.** Plain floats meant a projection could be computed against a half-updated pair during a rotation. `WorldToScreenPoint` now snapshots both once before the multiply. Implicit conversion left every other arithmetic site untouched.
+- **`main_thread_flag` -> `std::atomic<bool>`.** Written by `menu::render` on shutdown, read by the main loop each frame.
+- **`proc::pid` / `proc::lib` -> `std::atomic` with `proc::snapshot()`.** Publish order is lib-store-then-pid-store; teardown is lib-clear-then-pid-clear, so no reader pairs a live pid with a dead module base. `data::update`, `addr::find_addr`, and the watchdog each take a single snapshot per pass instead of re-reading mid-walk.
+- **`cfg::*` knobs -> `std::atomic`.** The toggle and slider widgets now edit a local copy and store back once per interaction (`cfg::Checkbox`, `cfg::SliderFloat`, `cfg::SliderInt`); `DrawToggleSwitch` and `DrawSegmentedButtons` take atomic storage. Removes torn-float reads of `max_range`, `aim_fov`, `smooth`, and friends from the worker loops.
+- **`data::viewMatrix` de-exported.** Written by `update()` and consumed only by `boneScreen`/`scanLoot` on the same thread, in program order. Dropping it from `data.hpp` removes the only invitation to read a 64-byte struct cross-thread.
+- **Viewport refresh on rotation.** `drawBegin()` now rebuilds `native_window_screen_*` and `g_sw`/`g_sh` when the orientation changes; previously the size fed to `ImGui_ImplAndroid_NewFrame` stayed at the launch orientation for one frame.
+- **Driver backend selector was an unowned global.** `选择值` (a mangled-UTF-8 identifier) lived in `driver_config.h` as `inline int`, and `menu.cpp` declared it `extern` and read it. Nothing ever wrote it: `connect_driver()` stored the choice in a *different* variable of the same name inside `c_driver`. Both the dashboard and the DRIVER & SYSTEM INFO panel therefore printed `ARMED` forever. The selector is now `c_driver::m_selection` (private) with `getDriverSelectionCached()` as the read-only accessor; `print_dashboard()` and the menu panel ask the driver object.
+- **`g_appConfig` was `static` in a header.** Every translation unit that included `driver_config.h` got its own copy, so `main.cpp` and `menu.cpp` could disagree about `driverOption`. It is `inline` now — one definition, one instance.
+- **`LoadConfig()` lied.** It set `settingsLoaded = true` and returned `true` while restoring nothing, which made `DisplayCurrentConfig()` print "Unknown / Unknown" as though a mode had been picked. There is no persistence layer (`SaveConfig()` is an empty stub), so it now returns `false`.
+- **`print_dashboard()` was defined but never called.** Now invoked from the interactive path of `check_license_gate()`, just before `return true`.
+- **Fonts: `F107_data` icon face was loaded and never referenced.** `g_IconFont` was written in `LoadCustomFonts` and read nowhere; the 48 KB `src/FONTS/ICONS.h` blob existed only to feed it. Both removed.
+
+### Deleted in this pass
+
+`src/other/signature.hpp` (the `kernel::sig` scanner — zero callers, only an unused `#include` in `main.cpp`), `src/FONTS/ICONS.h`, `MonoDictionary::getValues` / `MonoDictionary::entry` (only `read_block` is used), `c_driver::mem_addr_virtophy` (never called), `c_driver::pid` (only written, never read after `set_pid` fan-out), and the whole JNI-URL/toast apparatus in `license.cpp` — `open_update_page`, `should_show_redirect_toast`, `trigger_redirect_toast`, `update_toast_timer`, `current_key`, `start_date`, `normalize`, `decode_string`, `open_url_jni`, `K_TELEGRAM_URL_BYTES`, `K_TELEGRAM_URL_SEED`, `s_toast_timer`, `s_jvm`, `s_activity` — none of it reachable from `main`, which only uses `init` / `set_key` / `is_valid` / `status_text` / `expiry_date`.
+

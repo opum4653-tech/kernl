@@ -5,14 +5,13 @@
 #include "imgui.h"
 #include "../../game/data.hpp"
 #include "../../ui/cfg.hpp"
+#include "../../globals.hpp"
 #include <cstdio>
 #include <cstring>
 #include <mutex>
 #include <vector>
 #include <algorithm>
 #include <cmath>
-
-extern float g_sw, g_sh;
 
 namespace func::esp {
 
@@ -79,8 +78,6 @@ namespace func::esp {
     static constexpr ImU32 C_BORDER = IM_COL32(255, 255, 255, 40);
 
     static constexpr float ESP_FONT_SIZE     = 12.f;
-    static constexpr float PANEL_ROW_H       = ESP_FONT_SIZE + 5.f; // 17px
-    static constexpr float PANEL_TOP_OFFSET   = 35.f;
 
     // BOUNDING BOX CALCULATION
     struct PlayerBox {

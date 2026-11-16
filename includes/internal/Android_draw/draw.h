@@ -48,8 +48,6 @@ using namespace std::chrono_literals;
 extern android::ANativeWindowCreator::DisplayInfo displayInfo;
 extern bool g_Initialized;
 
-extern ImGuiWindow *g_window;
-extern ImFont* verdana;
 // window创建的 大小
 extern int native_window_screen_x, native_window_screen_y;
 

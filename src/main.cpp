@@ -1,5 +1,5 @@
 #include "Android_draw/draw.h"
-#include "Android_touch/Touch.hpp"
+#include "Android_touch/TouchHelperA.h"
 #include "globals.hpp"
 #include "ui/menu.hpp"
 #include "protect/license.hpp"
@@ -10,9 +10,7 @@
 #include "func/esp.hpp"
 #include "func/aim/aim.hpp"
 #include "func/speed.hpp"
-#include "other/signature.hpp"
 #include "FONTS/MAIN_FONT.h"
-#include "FONTS/ICONS.h"
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
@@ -30,13 +28,14 @@
 
 #define LOGI(...) do {} while(0)
 
-ImFont* g_IconFont = nullptr;
 ImFont* g_BoldFont = nullptr;
 
-static void LoadCustomIconFonts(ImGuiIO& io) {
+static void LoadCustomFonts(ImGuiIO& io) {
+    // initGUI_draw() already pushed Roboto @32px first, so it stays Fonts[0] and
+    // ImGui::GetFont() keeps returning it — the menu layout was tuned against
+    // that face plus ScaleAllSizes(3.0f). These two are additive faces only.
     io.Fonts->AddFontFromMemoryTTF((void*)inter_medium, sizeof(inter_medium), 22.0f, NULL, io.Fonts->GetGlyphRangesCyrillic());
     g_BoldFont = io.Fonts->AddFontFromMemoryTTF((void*)inter_bold, sizeof(inter_bold), 25.0f, NULL, io.Fonts->GetGlyphRangesCyrillic());
-    g_IconFont = io.Fonts->AddFontFromMemoryTTF((void*)F107_data, F107_size, 25.0f, NULL, io.Fonts->GetGlyphRangesDefault());
     io.Fonts->Build();
 }
 
@@ -50,8 +49,12 @@ static void print_dashboard() {
         snprintf(exp_buf, sizeof(exp_buf), "Active / Dynamic Subscription");
     }
 
-    const char* dNames[] = { "NONE", "RT HOOK", "RT DEV", "DEV COMPAT", "QX 10-11", "KPM NEO" };
-    const char* dName = (选择值 >= 1 && 选择值 <= 5) ? dNames[选择值] : "ARMED";
+    // Driver name is owned by c_driver; reading a separate global here meant
+    // the dashboard printed ARMED even when a backend was loaded. The name is
+    // reported even while the node is still unloaded — status is a separate
+    // line — so a selected-but-not-yet-connected backend is visible.
+    const char* dName = driver ? driver->get_driver_name() : "ARMED";
+    const int   dOpt  = driver ? driver->getDriverSelectionCached() : 0;
 
     printf("====================================================\n");
     printf("   NinMods Kernel Overlay Engine v2.0 (ARM64)\n");
@@ -59,7 +62,7 @@ static void print_dashboard() {
     printf("Environment    : Android Linux aarch64 (Kernel Driver Safe)\n");
     printf("API Key Status : Valid / Active (%s)\n", lic::status_text());
     printf("Token Expiry   : %s\n", exp_buf);
-    printf("Driver Mode    : %s (Option %d)\n", dName, 选择值);
+    printf("Driver Mode    : %s (Option %d)\n", dName, dOpt);
     printf("Driver Status  : %s\n", (driver && driver->is_driver_loaded()) ? "Loaded / Active" : "Armed (Awaiting Node)");
     printf("Runtime Status : Ready | Kernel DMA Pipeline\n");
     printf("====================================================\n\n");
@@ -122,6 +125,7 @@ static bool check_license_gate(int argc, char** argv) {
 
     if (isatty(fileno(stdin))) {
         printf("[+] Interactive terminal detected. Launching overlay...\n\n");
+        print_dashboard();
         fflush(stdout);
         return true;
     }
@@ -129,9 +133,10 @@ static bool check_license_gate(int argc, char** argv) {
     printf("[?] Ready to load into memory. Awaiting START signal...\n");
     fflush(stdout);
 
+    // Daemon mode: block until the launcher writes a line. Anything typed is
+    // ignored; the newline itself is the go-ahead.
     char start_input[64] = {0};
-    if (fgets(start_input, sizeof(start_input), stdin)) {
-    }
+    (void)fgets(start_input, sizeof(start_input), stdin);
 
     printf("[+] Launching overlay...\n\n");
     fflush(stdout);
@@ -141,8 +146,6 @@ static bool check_license_gate(int argc, char** argv) {
 static int start_overlay() {
     screen_config();
 
-    ::abs_ScreenX = (displayInfo.height > displayInfo.width ? displayInfo.height : displayInfo.width);
-    ::abs_ScreenY = (displayInfo.height < displayInfo.width ? displayInfo.height : displayInfo.width);
     ::native_window_screen_x = (displayInfo.height > displayInfo.width ? displayInfo.height : displayInfo.width);
     ::native_window_screen_y = (displayInfo.height < displayInfo.width ? displayInfo.height : displayInfo.width);
 
@@ -156,7 +159,7 @@ static int start_overlay() {
     }
 
     ImGuiIO& io = ImGui::GetIO();
-    LoadCustomIconFonts(io);
+    LoadCustomFonts(io);
 
     Touch_Init(displayInfo.width, displayInfo.height, displayInfo.orientation, false);
     ui::menu::load_logo_pos();
@@ -171,30 +174,36 @@ static int start_overlay() {
 
         if (std::chrono::duration_cast<std::chrono::milliseconds>(currentCheckTime - lastProcessCheck).count() >= 1000) {
             lastProcessCheck = currentCheckTime;
-            if (proc::pid <= 0) {
-                proc::pid = get_pid();
-                if (proc::pid > 0) {
+            int curPid = proc::pid.load(std::memory_order_acquire);
+            if (curPid <= 0) {
+                curPid = get_pid();
+                if (curPid > 0) {
+                    proc::lib.store(0, std::memory_order_release);
+                    proc::pid.store(curPid, std::memory_order_release);
                     if (driver) {
-                        driver->initialize((pid_t)proc::pid);
+                        driver->initialize((pid_t)curPid);
                         driver->init_key((char*)"ninmods_kernel");
                         driver->hide_process();
                     }
-                    proc::lib = 0;
                 }
             } else {
                 char pPath[64];
-                snprintf(pPath, sizeof(pPath), "/proc/%d", proc::pid);
+                snprintf(pPath, sizeof(pPath), "/proc/%d", curPid);
                 if (access(pPath, F_OK) != 0) {
-                    proc::pid = 0;
-                    proc::lib = 0;
+                    // Clear lib before pid so a worker never pairs a live pid
+                    // with the previous module base.
+                    proc::lib.store(0, std::memory_order_release);
+                    proc::pid.store(0, std::memory_order_release);
                     data::thread_stop();
                     aimbot::thread_stop();
+                    curPid = 0;
                 }
             }
 
-            if (proc::pid > 0 && proc::lib == 0) {
-                proc::lib = get_lib("libil2cpp.so");
-                if (proc::lib > 0) {
+            if (curPid > 0 && proc::lib.load(std::memory_order_acquire) == 0) {
+                uint64_t base = get_lib("libil2cpp.so");
+                if (base > 0) {
+                    proc::lib.store(base, std::memory_order_release);
                     data::thread_start();
                     aimbot::thread_start();
                 }
@@ -209,8 +218,9 @@ static int start_overlay() {
             ui::menu::render();
             Touch_CommitUiRects();
 
-            if (proc::pid > 0 && proc::lib > 0) {
-                speed_system::tick(proc::lib);
+            uint64_t libBase = proc::lib.load(std::memory_order_acquire);
+            if (proc::pid.load(std::memory_order_acquire) > 0 && libBase > 0) {
+                speed_system::tick(libBase);
             }
         }
         drawEnd();

@@ -36,8 +36,10 @@ This document establishes the mandatory design, architecture, and coding rules f
      - Status dot showing kernel daemon connectivity (Green = Connected, Red = Disconnected)
 
 2. **Touch Penetration Barrier:**
-   - Whenever the menu or floating logo is rendered, the corresponding UI rect must be forwarded to the Touch subsystem:
-     `Touch_SetUiRect(x, y, w, h, true)`
+   - Every live UI panel appends its own rect each frame:
+     `Touch_AddUiRect(x, y, w, h)`. There is no single-rect replacement API.
+   - The render loop wraps the frame in `Touch_ClearUiRects()` … `Touch_CommitUiRects()`.
+   - A gesture that begins inside a rect stays swallowed until the finger lifts.
    - Touches within the logo or menu bounds must never penetrate into the underlying game canvas.
 
 ---

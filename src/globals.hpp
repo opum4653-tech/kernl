@@ -2,12 +2,14 @@
 #include <atomic>
 #include <cstdint>
 
-extern float global_anim_time;
-extern float g_ui_scale;
-extern float g_sw;
-extern float g_sh;
-extern std::atomic<bool> menu_visible;
+// Screen size is written by the render thread and read by the data and aim
+// worker threads (WorldToScreenPoint, FOV ring). Plain floats there meant a
+// projected coordinate could be computed against a half-updated pair during a
+// rotation, so the value is atomic. Implicit conversion keeps every existing
+// arithmetic site unchanged.
+extern std::atomic<float> g_sw;
+extern std::atomic<float> g_sh;
 
-extern int abs_ScreenX;
-extern int abs_ScreenY;
-extern bool main_thread_flag;
+// Written by the render thread when the menu requests shutdown, read by the
+// main loop each frame. Plain bool here is a cross-thread data race.
+extern std::atomic<bool> main_thread_flag;

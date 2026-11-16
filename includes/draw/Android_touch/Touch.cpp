@@ -23,9 +23,6 @@
 #ifndef INPUT_PROP_MAX
 #define INPUT_PROP_MAX 0x1f
 #endif
-
-bool other_touch = false;
-
 static uint32_t orientation = 0;
 static float screenHeight = 0, screenWidth = 0;
 
@@ -36,6 +33,10 @@ struct touchObj {
     // held. Without it, dragging the floating logo past its own hitbox handed
     // the finger to uinput mid-drag and the game camera spun.
     bool swallow = false;
+    // True between finger-down and the first SYN_REPORT of that gesture. The
+    // swallow decision is taken once, here, so a game drag that wanders into a
+    // UI rect is not hijacked halfway through.
+    bool freshDown = false;
     int x = 0;
     int y = 0;
     int id = 0;
@@ -56,7 +57,6 @@ static struct {
 static targ targF[maxE];
 static touchObj Finger[maxE][maxF];
 static int fdNum = 0, origfd[maxE], nowfd;
-static int s_primaryFdIndex = 0;
 static float s_digitizerMaxX = 0.0f, s_digitizerMaxY = 0.0f;
 
 static bool Touch_initialized = false;
@@ -127,20 +127,6 @@ void Touch_CommitUiRects() {
     s_uiRectCount = s_uiPendingCount;
 }
 
-// Legacy single-rect entry point. Replaces the set with one region.
-void Touch_SetUiRect(float x, float y, float w, float h, bool active) {
-    std::lock_guard<std::mutex> lock(s_uiRectMutex);
-    if (!active) {
-        s_uiRectCount = 0;
-        return;
-    }
-    s_uiRects[0].x = x;
-    s_uiRects[0].y = y;
-    s_uiRects[0].w = w;
-    s_uiRects[0].h = h;
-    s_uiRectCount = 1;
-}
-
 bool Touch_IsPointInUi(float x, float y) {
     std::lock_guard<std::mutex> lock(s_uiRectMutex);
     for (int i = 0; i < s_uiRectCount; ++i) {
@@ -161,9 +147,29 @@ static void Upload() {
     std::lock_guard<std::mutex> lock(s_uploadMutex);
     static bool isFirstDown = true;
     int tmpCnt = 0, tmpCnt2 = 0, i, j;
+
+    // If every held finger belongs to the overlay, there is nothing to forward.
+    // Writing here would emit a synthetic BTN_TOUCH=0 and the game would see a
+    // phantom finger-up mid-drag.
+    bool anySwallowed = false;
+    bool anyForwardable = false;
     for (i = 0; i < fdNum; i++) {
         for (j = 0; j < maxF; j++) {
             if (Finger[i][j].isDown) {
+                if (Finger[i][j].swallow) anySwallowed = true;
+                else anyForwardable = true;
+            }
+        }
+    }
+    if (anySwallowed && !anyForwardable) {
+        return;
+    }
+
+    for (i = 0; i < fdNum; i++) {
+        for (j = 0; j < maxF; j++) {
+            // Swallowed fingers never reach uinput: the gesture belongs to the
+            // overlay, and forwarding it would drive the game camera as well.
+            if (Finger[i][j].isDown && !Finger[i][j].swallow) {
                 if (tmpCnt2++ > 10) {
                     goto finish;
                 }
@@ -256,6 +262,10 @@ static void *TypeA(void *arg) {
                     Finger[i][latest].isDown = (ie.value != 0);
                     if (ie.value != 0) {
                         Finger[i][latest].id = (i * 2 + 1) * maxF + latest;
+                        Finger[i][latest].freshDown = true;
+                    } else {
+                        Finger[i][latest].swallow = false;
+                        Finger[i][latest].freshDown = false;
                     }
                     continue;
                 }
@@ -272,12 +282,14 @@ static void *TypeA(void *arg) {
                         Finger[i][latest].isDown = false;
                         Finger[i][latest].isTmpDown = false;
                         Finger[i][latest].swallow = false;
+                        Finger[i][latest].freshDown = false;
                         ImGuiIO &io = ImGui::GetIO();
                         io.MouseDown[0] = false;
                     } else {
                         Finger[i][latest].id = (i * 2 + 1) * maxF + latest;
                         Finger[i][latest].isDown = true;
                         Finger[i][latest].isTmpDown = true;
+                        Finger[i][latest].freshDown = true;
                         ImGuiIO &io = ImGui::GetIO();
                         io.MouseDown[0] = true;
                     }
@@ -338,18 +350,18 @@ static void *TypeA(void *arg) {
                     io.MousePos = ImVec2(x, y);
                     io.MouseDown[0] = true;
 
-                    // Intercept touch inside UI (Swallow from game / uinput).
-                    // The latch survives leaving the rect so a drag that started
-                    // on a UI panel never leaks back into the game mid-gesture.
-                    if (!Finger[i][latest].swallow && Touch_IsPointInUi(x, y)) {
-                        Finger[i][latest].swallow = true;
-                    }
-                    if (Finger[i][latest].swallow) {
-                        Finger[i][latest].isDown = false;
-                        Finger[i][latest].isTmpDown = false;
+                    // UI barrier. The swallow decision is taken on the first
+                    // SYN_REPORT of the gesture only, then latched until the
+                    // finger lifts. Deciding every frame meant a game drag that
+                    // crossed a UI rect got hijacked mid-swipe; never clearing
+                    // isDown here keeps io.MousePos live for the whole drag.
+                    if (Finger[i][latest].freshDown) {
+                        Finger[i][latest].freshDown = false;
+                        Finger[i][latest].swallow = Touch_IsPointInUi(x, y);
                     }
                 } else {
                     Finger[i][latest].swallow = false;
+                    Finger[i][latest].freshDown = false;
                     io.MouseDown[0] = false;
                 }
 
@@ -384,7 +396,6 @@ bool Touch_Init(int w, int h, uint32_t orientation_, bool readOnly) {
     struct input_absinfo absX[maxE], absY[maxE];
     int fd, i;
     float maxArea = 0.0f;
-    int bestFdIndex = -1;
     fdNum = 0;
 
     for (i = 0; i <= eventCount; i++) {
@@ -404,11 +415,12 @@ bool Touch_Init(int w, int h, uint32_t orientation_, bool readOnly) {
                     ioctl(fd, EVIOCGRAB, GRAB);
                 }
 
-                // Identify primary screen by largest digitizer resolution area
+                // Keep the digitizer range of the primary screen: the device
+                // with the largest resolution area. Normalising raw coordinates
+                // against the wrong device's range skews every tap.
                 float area = devMaxX * devMaxY;
                 if (area > maxArea) {
                     maxArea = area;
-                    bestFdIndex = fdNum;
                     s_digitizerMaxX = devMaxX;
                     s_digitizerMaxY = devMaxY;
                 }
@@ -427,8 +439,6 @@ bool Touch_Init(int w, int h, uint32_t orientation_, bool readOnly) {
     if (fdNum == 0) {
         return false;
     }
-
-    s_primaryFdIndex = (bestFdIndex >= 0) ? bestFdIndex : 0;
 
     if (!readOnly) {
         struct uinput_user_dev ui_dev;

@@ -19,7 +19,12 @@ namespace data {
     std::mutex               loots_mutex;
     std::atomic<uint64_t>    localPlayerAddr{0};
     std::atomic<bool>        inMatch{false};
-    matrix                   viewMatrix{};
+
+    // Camera matrix lives entirely inside this translation unit: it is written
+    // by update() and consumed by boneScreen/scanLoot, all on the data thread,
+    // in program order. It used to be exported through data.hpp with no external
+    // reader, which just invited a cross-thread read of a 64-byte struct.
+    static matrix            viewMatrix{};
 
     static std::atomic<bool> g_run{false};
     static std::thread       g_thread;
@@ -184,13 +189,17 @@ namespace data {
 
     // UPDATE
     void update() {
-        if (proc::pid <= 0 || proc::lib == 0) return;
+        // Snapshot the pair once. During a teardown the watchdog clears lib
+        // before pid, so re-reading mid-walk could pair a dead pid with the
+        // previous module base.
+        const auto snap = proc::snapshot();
+        if (snap.pid <= 0 || snap.lib == 0) return;
 
         std::vector<PlayerData> tmp;
         tmp.reserve(64);
 
         // Base chain
-        auto GfCell = rpm<uint64_t>(proc::lib + oxorany(Offsets::GameFacade));
+        auto GfCell = rpm<uint64_t>(snap.lib + oxorany(Offsets::GameFacade));
         if (!GfCell) return;
         auto GfClass = rpm<uint64_t>(GfCell);
         if (!GfClass) return;
@@ -363,7 +372,8 @@ namespace data {
             if (headWorld.y < -150.0f || headWorld.y > 600.0f) continue;
 
             float dist = calculate_distance(localPos, headWorld);
-            float maxTrackingDist = std::max(cfg::esp::max_range, cfg::aim::max_distance);
+            float maxTrackingDist = std::max(cfg::esp::max_range.load(std::memory_order_relaxed),
+                                             cfg::aim::max_distance.load(std::memory_order_relaxed));
             if (maxTrackingDist < 50.0f) maxTrackingDist = 200.0f;
             if (dist < 0.8f || dist > maxTrackingDist) continue;
 

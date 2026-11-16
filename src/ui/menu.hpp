@@ -2,6 +2,7 @@
 
 #include "imgui.h"
 #include "theme.hpp"
+#include "../globals.hpp"
 #include <cstdint>
 
 namespace ui::menu {
@@ -11,4 +12,3 @@ namespace ui::menu {
 }
 
 extern bool g_ShowMenu;
-extern bool main_thread_flag;

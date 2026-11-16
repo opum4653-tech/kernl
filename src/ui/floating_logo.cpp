@@ -172,11 +172,12 @@ void render(float realW, float realH, float ui_scale) {
             }
         }
 
-        // Tap toggles the menu both ways. No drag impulse, no repeat inside the
-        // 250 ms guard window.
+        // Tap opens the menu. The logo is not drawn while the menu is open, so
+        // the toggle below only ever fires from the closed state — closing goes
+        // through the X button or the EXIT control.
         if (s_was_activated && deactivated && !s_moved_drag) {
             if (s_last_toggle_time < 0.0 || (cur_time - s_last_toggle_time > 0.25)) {
-                g_ShowMenu = !g_ShowMenu;
+                g_ShowMenu = true;
                 s_last_toggle_time = cur_time;
             }
         }
@@ -193,7 +194,7 @@ void render(float realW, float realH, float ui_scale) {
         DrawCircularLogo(dl, center, logoRadius);
 
         // Target / Game connection status dot
-        bool connected = (proc::pid > 0 && proc::lib > 0);
+        bool connected = (proc::pid.load(std::memory_order_relaxed) > 0 && proc::lib.load(std::memory_order_relaxed) > 0);
         ImU32 stCol = connected ? IM_COL32(0, 240, 140, 255) : IM_COL32(255, 90, 90, 255);
         ImVec2 stDot(center.x + logoRadius * 0.68f, center.y - logoRadius * 0.68f);
         dl->AddCircleFilled(stDot, 6.0f * ui_scale, (stCol & 0x00FFFFFF) | (90 << 24));

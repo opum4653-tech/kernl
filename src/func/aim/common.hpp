@@ -9,6 +9,7 @@
 #include "../../ui/cfg.hpp"
 #include "../../other/memory.hpp"
 #include "../../other/vector3.h"
+#include "../../globals.hpp"
 #include <vector>
 #include <cmath>
 #include <algorithm>
@@ -16,9 +17,6 @@
 #include <ctime>
 #include <mutex>
 #include <unistd.h>
-
-extern float g_sw;
-extern float g_sh;
 
 namespace aimbot {
 

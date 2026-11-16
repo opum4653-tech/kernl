@@ -1,12 +1,7 @@
 // src/globals.cpp
 #include "globals.hpp"
 
-float global_anim_time = 0.0f;
-float g_ui_scale = 1.0f;
-float g_sw = 1920.0f;
-float g_sh = 1080.0f;
-std::atomic<bool> menu_visible{false};
+std::atomic<float> g_sw{1920.0f};
+std::atomic<float> g_sh{1080.0f};
 
-int abs_ScreenX = 1920;
-int abs_ScreenY = 1080;
-bool main_thread_flag = true;
+std::atomic<bool> main_thread_flag{true};

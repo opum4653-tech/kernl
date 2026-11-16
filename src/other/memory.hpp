@@ -2,15 +2,32 @@
 
 #include <cstdint>
 #include <cstring>
+#include <atomic>
 #include <fcntl.h>
 #include <unistd.h>
 #include "driver.h"
 #include "../protect/oxorany.hpp"
 
 namespace proc {
-    inline int      pid = -1;
-    inline uint64_t lib = 0;
-    inline int      pm  = -1;
+    // Written by the render thread (process watchdog in main loop), read by the
+    // data and aim worker threads on every read. Plain int/uint64_t here meant a
+    // worker could observe a cleared pid paired with the previous lib base — a
+    // whole run of reads against a dead module. Atomic keeps the pair coherent
+    // per-field, and every read of the pair goes through the snapshot below.
+    inline std::atomic<int>      pid{-1};
+    inline std::atomic<uint64_t> lib{0};
+
+    struct Snapshot {
+        int      pid;
+        uint64_t lib;
+    };
+
+    inline Snapshot snapshot() {
+        Snapshot s;
+        s.pid = pid.load(std::memory_order_acquire);
+        s.lib = lib.load(std::memory_order_acquire);
+        return s;
+    }
 }
 
 namespace sys {
@@ -98,7 +115,7 @@ inline bool addr_valid(uint64_t a) { return is_valid_ptr(a); }
 // STRICT KERNEL DRIVER MEMORY ACCESS ONLY
 // Zero userland syscall fallbacks.
 inline bool mem_read(uint64_t a, void* b, size_t l) {
-    if (proc::pid <= 0 || a < 0x10000 || l == 0 || b == nullptr) return false;
+    if (proc::pid.load(std::memory_order_relaxed) <= 0 || a < 0x10000 || l == 0 || b == nullptr) return false;
     if (!driver || !driver->is_driver_loaded()) {
         memset(b, 0, l);
         return false;
@@ -107,7 +124,7 @@ inline bool mem_read(uint64_t a, void* b, size_t l) {
 }
 
 inline bool mem_write(uint64_t a, const void* b, size_t l) {
-    if (proc::pid <= 0 || !is_valid_ptr(a) || l == 0 || b == nullptr) return false;
+    if (proc::pid.load(std::memory_order_relaxed) <= 0 || !is_valid_ptr(a) || l == 0 || b == nullptr) return false;
     if (!driver || !driver->is_driver_loaded()) {
         return false;
     }
@@ -123,29 +140,6 @@ template<typename T> inline T rpm(uint64_t a) {
 template<typename T> inline bool wpm(uint64_t a, const T& d) {
     return mem_write(a, &d, sizeof(T));
 }
-
-struct MemChunk {
-    uint64_t base;
-    size_t   size;
-    uint8_t  buf[0x2400];
-    bool     ok;
-
-    inline bool load(uint64_t addr, size_t len) {
-        if (len > sizeof(buf)) len = sizeof(buf);
-        base = addr;
-        size = len;
-        ok   = mem_read(addr, buf, len);
-        return ok;
-    }
-
-    template<typename T>
-    inline T at(size_t off) const {
-        T v{};
-        if (!ok || off + sizeof(T) > size) return v;
-        memcpy(&v, buf + off, sizeof(T));
-        return v;
-    }
-};
 
 inline int get_pid() {
     int pfd = sys::openat(AT_FDCWD, oxorany("/proc"), O_RDONLY | O_DIRECTORY);
@@ -221,7 +215,7 @@ inline int get_pid() {
 }
 
 inline uint64_t get_lib(const char* targetName = "libil2cpp.so") {
-    if (proc::pid <= 0) return 0;
+    if (proc::pid.load(std::memory_order_relaxed) <= 0) return 0;
 
     if (driver && driver->is_driver_loaded()) {
         uintptr_t base = driver->getModuleBase(targetName);
@@ -229,45 +223,4 @@ inline uint64_t get_lib(const char* targetName = "libil2cpp.so") {
     }
 
     return 0;
-}
-
-inline void init_mem() { }
-
-namespace game {
-    inline int  tick        = 0;
-    inline int  jitter_next = 47;
-
-    inline bool valid() {
-        if (proc::pid <= 0) {
-            proc::pid = get_pid();
-            if (proc::pid <= 0) return false;
-        }
-
-        if (proc::lib == 0) {
-            proc::lib = get_lib();
-            return false;
-        }
-
-        tick++;
-        if (tick >= jitter_next) {
-            int p = get_pid();
-            if (p != proc::pid) {
-                proc::pid = p;
-                proc::lib = 0;
-                tick = 0;
-                jitter_next = 47;
-                return false;
-            }
-            tick = 0;
-            static uint32_t s = 0xC5A1B4E7u;
-            s ^= s << 13; s ^= s >> 17; s ^= s << 5;
-            jitter_next = 40 + (int)(s % 31u);
-        }
-        return true;
-    }
-
-    inline void init() {
-        proc::pid = get_pid();
-        if (proc::pid > 0) proc::lib = get_lib();
-    }
 }

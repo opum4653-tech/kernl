@@ -1,5 +1,6 @@
 #include "Android_draw/draw.h"
 #include "Font.h"
+#include "globals.hpp"
 #include "other/logger.hpp"
 #include <dlfcn.h>
 
@@ -40,7 +41,6 @@ int native_window_screen_y = 0;
 android::ANativeWindowCreator::DisplayInfo displayInfo{0};
 uint32_t orientation = 999;
 bool g_Initialized = false;
-ImGuiWindow *g_window = nullptr;
 
 bool initGUI_draw(uint32_t _screen_x, uint32_t _screen_y, bool log, bool hide) {
 
@@ -180,6 +180,18 @@ void drawBegin() {
         LOG_INFO("Display orientation transition detected: %u -> %u (Dims: %dx%d)",
                  ::orientation, displayInfo.orientation, displayInfo.width, displayInfo.height);
         ::orientation = displayInfo.orientation;
+
+        // Rotate the viewport with the panel. Leaving native_window_screen_*
+        // stale here fed the wrong size to ImGui_ImplAndroid_NewFrame, which
+        // sets io.DisplaySize, so the first frame after a rotation laid the
+        // menu out against the previous orientation's dimensions.
+        int newW = (displayInfo.height > displayInfo.width ? displayInfo.height : displayInfo.width);
+        int newH = (displayInfo.height < displayInfo.width ? displayInfo.height : displayInfo.width);
+        ::native_window_screen_x = newW;
+        ::native_window_screen_y = newH;
+        ::g_sw = static_cast<float>(newW);
+        ::g_sh = static_cast<float>(newH);
+
         UpdateScreenData(displayInfo.width, displayInfo.height, displayInfo.orientation);
     }
     

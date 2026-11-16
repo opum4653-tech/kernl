@@ -19,10 +19,8 @@
 #include <atomic>
 #include <unistd.h>
 
-extern bool main_thread_flag;
 extern int native_window_screen_x;
 extern int native_window_screen_y;
-extern int 选择值;
 extern ImFont* g_BoldFont;
 
 // Starts with floating logo closed by default. Menu opens ONLY when user taps the floating logo.
@@ -121,17 +119,22 @@ static void handleTouchScroll() {
 
 // ----------------------------------------------------------------------------
 // CUSTOM WIDGET: PILL TOGGLE SWITCH
+// Storage is atomic because the worker threads read the same flag this widget
+// writes. The widget edits a local copy and stores it back once per press.
 // ----------------------------------------------------------------------------
-static bool DrawToggleSwitch(const char* label, bool* v, float row_height = 46.0f, float ui_scale = 1.0f) {
+static bool DrawToggleSwitch(const char* label, std::atomic<bool>* v, float row_height = 46.0f, float ui_scale = 1.0f) {
     ImVec2 curPos = ImGui::GetCursorScreenPos();
     float availW = ImGui::GetContentRegionAvail().x;
+
+    bool on = v->load(std::memory_order_relaxed);
 
     char btn_id[128];
     snprintf(btn_id, sizeof(btn_id), "##SwitchBtn_%s", label);
 
     bool pressed = ImGui::InvisibleButton(btn_id, ImVec2(availW, row_height));
     if (pressed) {
-        *v = !(*v);
+        on = !on;
+        v->store(on, std::memory_order_relaxed);
     }
 
     ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -153,17 +156,17 @@ static bool DrawToggleSwitch(const char* label, bool* v, float row_height = 46.0
     ImVec2 sMax(sMin.x + switchW, sMin.y + switchH);
 
     // Track color (Solid Green if ON, Dark slate if OFF)
-    ImU32 trackCol = *v ? theme_orchid::ColSwitchOnTrack : theme_orchid::ColSwitchOffTrack;
+    ImU32 trackCol = on ? theme_orchid::ColSwitchOnTrack : theme_orchid::ColSwitchOffTrack;
     dl->AddRectFilled(sMin, sMax, trackCol, switchRounding);
 
     // Subtle dark track border when OFF
-    if (!(*v)) {
+    if (!on) {
         dl->AddRect(sMin, sMax, IM_COL32(60, 50, 75, 220), switchRounding, 0, 1.2f);
     }
 
     // Circular white knob / thumb
     float knobRadius = switchRounding - 2.8f * ui_scale;
-    float knobX = *v ? (sMax.x - switchRounding) : (sMin.x + switchRounding);
+    float knobX = on ? (sMax.x - switchRounding) : (sMin.x + switchRounding);
     float knobY = sMin.y + switchRounding;
 
     dl->AddCircleFilled(ImVec2(knobX, knobY), knobRadius, theme_orchid::ColSwitchThumb, 32);
@@ -174,12 +177,14 @@ static bool DrawToggleSwitch(const char* label, bool* v, float row_height = 46.0
 // ----------------------------------------------------------------------------
 // CUSTOM WIDGET: SEGMENTED BUTTON ROW (DYNAMICALLY SCALED & RESPONSIVE)
 // ----------------------------------------------------------------------------
-static bool DrawSegmentedButtons(const char* str_id, int* selected, const char* const labels[], int count, float height = 30.0f, float ui_scale = 1.0f) {
+static bool DrawSegmentedButtons(const char* str_id, std::atomic<int>* selected, const char* const labels[], int count, float height = 30.0f, float ui_scale = 1.0f) {
     float availW = ImGui::GetContentRegionAvail().x;
     float gap = 3.0f * ui_scale;
     float btnW = (availW - gap * (count - 1)) / (float)count;
     if (btnW < 40.0f * ui_scale) btnW = 40.0f * ui_scale;
     bool changed = false;
+
+    int cur = selected->load(std::memory_order_relaxed);
 
     // Responsive padding based on available button width
     float padX = (btnW < 65.0f * ui_scale) ? 2.0f * ui_scale : 4.0f * ui_scale;
@@ -192,7 +197,7 @@ static bool DrawSegmentedButtons(const char* str_id, int* selected, const char* 
         char btnLabel[64];
         snprintf(btnLabel, sizeof(btnLabel), "%s##%s_%d", labels[i], str_id, i);
 
-        bool is_active = (*selected == i);
+        bool is_active = (cur == i);
         if (is_active) {
             ImGui::PushStyleColor(ImGuiCol_Button, theme_orchid::ColPrimary);
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, theme_orchid::ColPrimaryLight);
@@ -205,8 +210,9 @@ static bool DrawSegmentedButtons(const char* str_id, int* selected, const char* 
             ImGui::PushStyleColor(ImGuiCol_Text, theme_orchid::ColTextMuted);
         }
 
-        if (ImGui::Button(btnLabel, ImVec2(btnW, height)) && *selected != i) {
-            *selected = i;
+        if (ImGui::Button(btnLabel, ImVec2(btnW, height)) && cur != i) {
+            cur = i;
+            selected->store(cur, std::memory_order_relaxed);
             changed = true;
         }
 
@@ -340,16 +346,19 @@ void render() {
     ImGuiWindowFlags winFlags = ImGuiWindowFlags_NoTitleBar |
                                 ImGuiWindowFlags_NoResize |
                                 ImGuiWindowFlags_NoScrollbar |
-                                ImGuiWindowFlags_NoSavedSettings;
+                                ImGuiWindowFlags_NoSavedSettings |
+                                ImGuiWindowFlags_NoCollapse;
+
+    // Register the menu barrier from the rect we are about to force with
+    // SetNextWindowPos/Size. Doing it here rather than inside the Begin() body
+    // means the barrier still exists on a frame where Begin() reports the
+    // window as clipped — otherwise taps in that region bled into the game.
+    Touch_AddUiRect(s_menu_pos.x, s_menu_pos.y, winW, winH);
 
     if (ImGui::Begin("##NinmodsKernelMainWindow", nullptr, winFlags)) {
         ImDrawList* dl = ImGui::GetWindowDrawList();
         ImVec2 winPos = ImGui::GetWindowPos();
         ImVec2 winSize = ImGui::GetWindowSize();
-
-        // Report full menu window rect to Touch subsystem (appends — the logo
-        // rect from this same frame is kept).
-        Touch_AddUiRect(winPos.x, winPos.y, winSize.x, winSize.y);
 
         // --------------------------------------------------------------------
         // 1. TOP HEADER (SCALED BY ui_scale)
@@ -373,8 +382,10 @@ void render() {
         if (ImGui::IsItemActive()) {
             s_menu_pos.x += io.MouseDelta.x;
             s_menu_pos.y += io.MouseDelta.y;
-            s_menu_pos.x = std::clamp(s_menu_pos.x, 0.0f, realW - winW);
-            s_menu_pos.y = std::clamp(s_menu_pos.y, 0.0f, realH - winH);
+            // Same floored upper bound as the placement clamp: a window wider
+            // than the screen pins at the top-left instead of going negative.
+            s_menu_pos.x = std::clamp(s_menu_pos.x, 0.0f, std::max(0.0f, realW - winW));
+            s_menu_pos.y = std::clamp(s_menu_pos.y, 0.0f, std::max(0.0f, realH - winH));
         }
 
         // Header Branding ("NINMODS" + "KERNEL CORE")
@@ -389,7 +400,7 @@ void render() {
                     theme_orchid::ColPrimaryLight, "KERNEL CORE");
 
         // Live Connection Status Badge
-        bool connected = (proc::pid > 0 && proc::lib > 0);
+        bool connected = (proc::pid.load(std::memory_order_relaxed) > 0 && proc::lib.load(std::memory_order_relaxed) > 0);
         ImVec2 bMin(winPos.x + winSize.x - closeBtnSize - badgeW - 14.0f * ui_scale, winPos.y + (headerH - badgeH) * 0.5f);
         ImVec2 bMax(bMin.x + badgeW, bMin.y + badgeH);
         ImU32 badgeBg = connected ? IM_COL32(16, 48, 32, 220) : IM_COL32(48, 20, 24, 220);
@@ -453,10 +464,11 @@ void render() {
                 activeTab = 2;
             }
 
-            // Tab 3: Power / Exit. Clamped between the two rules so it can never
-            // ride up over Tab 2 on a short window.
+            // Tab 3: Power / Exit. Bottom of the sidebar, clamped between the
+            // Tab 2 clearance and the child's lower edge — the old std::max had
+            // no upper bound, so a short window pushed the button out of clip.
             float powerMinY = 12.0f * ui_scale + (btnH + btnSpacing) * 3.0f;
-            float powerMaxY = std::max(powerMinY, bodyH - btnH - 12.0f * ui_scale);
+            float powerMaxY = std::max(powerMinY, bodyH - btnH);
             float powerY = std::clamp(bodyH - btnH - 12.0f * ui_scale, powerMinY, powerMaxY);
             ImGui::SetCursorPos(ImVec2(btnX, powerY));
             if (DrawSidebarIconButton("##TabPower", ICON_POWER, false, btnSize, ui_scale)) {
@@ -504,15 +516,15 @@ void render() {
                 }
                 ImGui::Dummy(ImVec2(0, 6 * ui_scale));
 
-                ImGui::Checkbox("ESP Box (Chaturbhuj)", &cfg::esp::box);
-                ImGui::Checkbox("ESP Health Bar (Right)", &cfg::esp::health);
-                ImGui::Checkbox("ESP Armor Bar", &cfg::esp::armor);
-                ImGui::Checkbox("ESP Laser Line", &cfg::esp::tracer);
-                ImGui::Checkbox("ESP Player Name", &cfg::esp::name);
-                ImGui::Checkbox("ESP Distance", &cfg::esp::distance);
-                ImGui::Checkbox("ESP Bot Tag (AI)", &cfg::esp::bot_tag);
-                ImGui::Checkbox("ESP Weapon Name", &cfg::esp::weapon);
-                ImGui::Checkbox("Firing Indicator", &cfg::esp::firing_ind);
+                cfg::Checkbox("ESP Box (Chaturbhuj)", cfg::esp::box);
+                cfg::Checkbox("ESP Health Bar (Right)", cfg::esp::health);
+                cfg::Checkbox("ESP Armor Bar", cfg::esp::armor);
+                cfg::Checkbox("ESP Laser Line", cfg::esp::tracer);
+                cfg::Checkbox("ESP Player Name", cfg::esp::name);
+                cfg::Checkbox("ESP Distance", cfg::esp::distance);
+                cfg::Checkbox("ESP Bot Tag (AI)", cfg::esp::bot_tag);
+                cfg::Checkbox("ESP Weapon Name", cfg::esp::weapon);
+                cfg::Checkbox("Firing Indicator", cfg::esp::firing_ind);
 
                 handleTouchScroll();
             }
@@ -527,9 +539,9 @@ void render() {
                 cdl->AddLine(ImVec2(rpos.x, rpos.y - 4), ImVec2(rpos.x + 120 * ui_scale, rpos.y - 4), theme_orchid::ColPrimary, 2.0f);
                 ImGui::Dummy(ImVec2(0, 4 * ui_scale));
 
-                ImGui::Checkbox("Ignore Bot Players", &cfg::esp::ignore_bots);
-                ImGui::Checkbox("Crosshair Center", &cfg::esp::crosshair);
-                ImGui::Checkbox("Loot ESP", &cfg::esp::loot);
+                cfg::Checkbox("Ignore Bot Players", cfg::esp::ignore_bots);
+                cfg::Checkbox("Crosshair Center", cfg::esp::crosshair);
+                cfg::Checkbox("Loot ESP", cfg::esp::loot);
 
                 ImGui::Dummy(ImVec2(0, 4 * ui_scale));
                 static const char* const boxStyles[] = { "Corner", "Full", "Glow" };
@@ -538,17 +550,17 @@ void render() {
 
                 ImGui::Dummy(ImVec2(0, 4 * ui_scale));
                 ImGui::SetNextItemWidth(-1);
-                ImGui::SliderFloat("##MaxRange", &cfg::esp::max_range, 50.0f, 500.0f, "%.0f m");
+                cfg::SliderFloat("##MaxRange", cfg::esp::max_range, 50.0f, 500.0f, "%.0f m");
                 ImGui::TextDisabled("Max Render Distance");
 
                 ImGui::Dummy(ImVec2(0, 4 * ui_scale));
                 ImGui::SetNextItemWidth(-1);
-                ImGui::SliderFloat("##LaserThickness", &cfg::esp::tracer_thickness, 0.5f, 4.0f, "%.1f px");
+                cfg::SliderFloat("##LaserThickness", cfg::esp::tracer_thickness, 0.5f, 4.0f, "%.1f px");
                 ImGui::TextDisabled("Laser Line Width");
 
                 ImGui::Dummy(ImVec2(0, 4 * ui_scale));
                 ImGui::SetNextItemWidth(-1);
-                ImGui::SliderFloat("##BoxThickness", &cfg::esp::box_thickness, 1.0f, 5.0f, "%.1f px");
+                cfg::SliderFloat("##BoxThickness", cfg::esp::box_thickness, 1.0f, 5.0f, "%.1f px");
                 ImGui::TextDisabled("Box Border Width");
 
                 ImGui::Dummy(ImVec2(0, 6 * ui_scale));
@@ -584,10 +596,10 @@ void render() {
                 }
                 ImGui::Dummy(ImVec2(0, 6 * ui_scale));
 
-                ImGui::Checkbox("Enable Aim Assist", &cfg::aim::enable);
-                ImGui::Checkbox("Aim Silent", &cfg::aim::silent);
-                ImGui::Checkbox("Scope Aim (Instant Head)", &cfg::aim::scope_aim);
-                ImGui::Checkbox("Sniper Headshot Lock", &cfg::aim::sniper_aim);
+                cfg::Checkbox("Enable Aim Assist", cfg::aim::enable);
+                cfg::Checkbox("Aim Silent", cfg::aim::silent);
+                cfg::Checkbox("Scope Aim (Instant Head)", cfg::aim::scope_aim);
+                cfg::Checkbox("Sniper Headshot Lock", cfg::aim::sniper_aim);
 
                 ImGui::Dummy(ImVec2(0, 4 * ui_scale));
                 static const char* const boneLabels[] = { "Head", "Chest", "Hip" };
@@ -610,9 +622,9 @@ void render() {
                 cdl->AddLine(ImVec2(lpos.x, lpos.y - 4), ImVec2(lpos.x + 100 * ui_scale, lpos.y - 4), theme_orchid::ColPrimary, 2.0f);
                 ImGui::Dummy(ImVec2(0, 4 * ui_scale));
 
-                ImGui::Checkbox("Ignore Knocked", &cfg::aim::ignore_knocked);
-                ImGui::Checkbox("Ignore AI Bots", &cfg::aim::ignore_bots);
-                ImGui::Checkbox("Visible Check", &cfg::aim::visible_check);
+                cfg::Checkbox("Ignore Knocked", cfg::aim::ignore_knocked);
+                cfg::Checkbox("Ignore AI Bots", cfg::aim::ignore_bots);
+                cfg::Checkbox("Visible Check", cfg::aim::visible_check);
 
                 handleTouchScroll();
             }
@@ -627,26 +639,26 @@ void render() {
                 cdl->AddLine(ImVec2(rpos.x, rpos.y - 4), ImVec2(rpos.x + 125 * ui_scale, rpos.y - 4), theme_orchid::ColPrimary, 2.0f);
                 ImGui::Dummy(ImVec2(0, 4 * ui_scale));
 
-                ImGui::Checkbox("Draw FOV Circle", &cfg::aim::show_fov);
+                cfg::Checkbox("Draw FOV Circle", cfg::aim::show_fov);
 
                 ImGui::Dummy(ImVec2(0, 4 * ui_scale));
                 ImGui::SetNextItemWidth(-1);
-                ImGui::SliderFloat("##AimFovSlider", &cfg::aim::aim_fov, 10.0f, 360.0f, "%.0f deg");
+                cfg::SliderFloat("##AimFovSlider", cfg::aim::aim_fov, 10.0f, 360.0f, "%.0f deg");
                 ImGui::TextDisabled("Aim FOV Range");
 
                 ImGui::Dummy(ImVec2(0, 4 * ui_scale));
                 ImGui::SetNextItemWidth(-1);
-                ImGui::SliderFloat("##SilentRateSlider", &cfg::aim::headshot_rate, 0.0f, 100.0f, "%.0f%%");
+                cfg::SliderFloat("##SilentRateSlider", cfg::aim::headshot_rate, 0.0f, 100.0f, "%.0f%%");
                 ImGui::TextDisabled("Silent Aim Hit Rate");
 
                 ImGui::Dummy(ImVec2(0, 4 * ui_scale));
                 ImGui::SetNextItemWidth(-1);
-                ImGui::SliderFloat("##AimSmooth", &cfg::aim::smooth, 1.0f, 25.0f, "%.1f");
+                cfg::SliderFloat("##AimSmooth", cfg::aim::smooth, 1.0f, 25.0f, "%.1f");
                 ImGui::TextDisabled("Smooth Factor (Higher = Humanized)");
 
                 ImGui::Dummy(ImVec2(0, 4 * ui_scale));
                 ImGui::SetNextItemWidth(-1);
-                ImGui::SliderFloat("##AimMaxDist", &cfg::aim::max_distance, 20.0f, 300.0f, "%.0f m");
+                cfg::SliderFloat("##AimMaxDist", cfg::aim::max_distance, 20.0f, 300.0f, "%.0f m");
                 ImGui::TextDisabled("Max Aiming Range");
 
                 ImGui::Dummy(ImVec2(0, 8 * ui_scale));
@@ -691,38 +703,38 @@ void render() {
                 }
                 ImGui::Dummy(ImVec2(0, 6 * ui_scale));
 
-                ImGui::Checkbox("Wide FOV (iPad View)", &cfg::motion::ipad_view);
+                cfg::Checkbox("Wide FOV (iPad View)", cfg::motion::ipad_view);
                 if (cfg::motion::ipad_view) {
                     ImGui::SetNextItemWidth(-1);
-                    ImGui::SliderFloat("##IpadScale", &cfg::motion::ipad_val, 1.0f, 2.5f, "%.1fx");
+                    cfg::SliderFloat("##IpadScale", cfg::motion::ipad_val, 1.0f, 2.5f, "%.1fx");
                 }
 
-                ImGui::Checkbox("Speed Hack", &cfg::motion::speed_hack);
+                cfg::Checkbox("Speed Hack", cfg::motion::speed_hack);
                 if (cfg::motion::speed_hack) {
                     ImGui::SetNextItemWidth(-1);
-                    ImGui::SliderFloat("##SpeedMult", &cfg::motion::speed_mult, 1.0f, 5.0f, "%.1fx");
+                    cfg::SliderFloat("##SpeedMult", cfg::motion::speed_mult, 1.0f, 5.0f, "%.1fx");
                 }
 
-                ImGui::Checkbox("High Jump", &cfg::motion::high_jump);
+                cfg::Checkbox("High Jump", cfg::motion::high_jump);
                 if (cfg::motion::high_jump) {
                     ImGui::SetNextItemWidth(-1);
-                    ImGui::SliderFloat("##HighJump", &cfg::motion::high_jump_val, 1.0f, 5.0f, "%.1fx");
+                    cfg::SliderFloat("##HighJump", cfg::motion::high_jump_val, 1.0f, 5.0f, "%.1fx");
                 }
 
-                ImGui::Checkbox("Auto-Pickup Range", &cfg::motion::pickup_range);
+                cfg::Checkbox("Auto-Pickup Range", cfg::motion::pickup_range);
                 if (cfg::motion::pickup_range) {
                     ImGui::SetNextItemWidth(-1);
-                    ImGui::SliderFloat("##PickupRange", &cfg::motion::pickup_val, 5.0f, 35.0f, "%.0f m");
+                    cfg::SliderFloat("##PickupRange", cfg::motion::pickup_val, 5.0f, 35.0f, "%.0f m");
                 }
 
-                ImGui::Checkbox("Air Flight (Elevation)", &cfg::motion::air_flight);
+                cfg::Checkbox("Air Flight (Elevation)", cfg::motion::air_flight);
                 if (cfg::motion::air_flight) {
                     ImGui::SetNextItemWidth(-1);
-                    ImGui::SliderFloat("##FlightHeight", &cfg::motion::flight_height, 2.0f, 15.0f, "%.1f m");
+                    cfg::SliderFloat("##FlightHeight", cfg::motion::flight_height, 2.0f, 15.0f, "%.1f m");
                 }
 
-                ImGui::Checkbox("Ghost Hack", &cfg::motion::ghost_hack);
-                ImGui::Checkbox("Phantom Mode", &cfg::motion::phantom_mode);
+                cfg::Checkbox("Ghost Hack", cfg::motion::ghost_hack);
+                cfg::Checkbox("Phantom Mode", cfg::motion::phantom_mode);
 
                 ImGui::Dummy(ImVec2(0, 6 * ui_scale));
                 ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "MOVEMENT DIAGNOSTICS");
@@ -737,7 +749,7 @@ void render() {
 
                 ImGui::TextDisabled("SPEED:");
                 ImGui::SameLine(statColW);
-                ImGui::Text("%.1fx", cfg::motion::speed_hack ? cfg::motion::speed_mult : 1.0f);
+                ImGui::Text("%.1fx", cfg::motion::speed_hack ? cfg::motion::speed_mult.load(std::memory_order_relaxed) : 1.0f);
 
                 ImGui::TextDisabled("ENTITY:");
                 ImGui::SameLine(statColW);
@@ -756,14 +768,14 @@ void render() {
                 cdl->AddLine(ImVec2(rpos.x, rpos.y - 4), ImVec2(rpos.x + 130 * ui_scale, rpos.y - 4), theme_orchid::ColPrimary, 2.0f);
                 ImGui::Dummy(ImVec2(0, 4 * ui_scale));
 
-                ImGui::Checkbox("Hitbox Scaler", &cfg::motion::hitbox_scale);
+                cfg::Checkbox("Hitbox Scaler", cfg::motion::hitbox_scale);
                 if (cfg::motion::hitbox_scale) {
                     ImGui::SetNextItemWidth(-1);
-                    ImGui::SliderFloat("##HitboxScale", &cfg::motion::hitbox_size, 1.0f, 3.0f, "%.1fx");
+                    cfg::SliderFloat("##HitboxScale", cfg::motion::hitbox_size, 1.0f, 3.0f, "%.1fx");
                 }
 
-                ImGui::Checkbox("No Recoil", &cfg::motion::no_recoil);
-                ImGui::Checkbox("No Reload", &cfg::motion::no_reload);
+                cfg::Checkbox("No Recoil", cfg::motion::no_recoil);
+                cfg::Checkbox("No Reload", cfg::motion::no_reload);
 
                 ImGui::Dummy(ImVec2(0, 4 * ui_scale));
                 ImGui::TextDisabled("DRIVER & SYSTEM INFO");
@@ -771,20 +783,20 @@ void render() {
                 const char* dName = driver ? driver->get_driver_name() : "ARMED";
 
                 char pidStr[32];
-                snprintf(pidStr, sizeof(pidStr), "%d", proc::pid);
+                snprintf(pidStr, sizeof(pidStr), "%d", proc::pid.load());
 
                 char libStr[32];
-                snprintf(libStr, sizeof(libStr), "0x%lX", (unsigned long)proc::lib);
+                snprintf(libStr, sizeof(libStr), "0x%lX", (unsigned long)proc::lib.load());
 
                 float labelColW = std::clamp(80.0f * ui_scale, 75.0f, 96.0f);
 
                 ImGui::TextDisabled("PID:");
                 ImGui::SameLine(labelColW);
-                ImGui::Text("%s", proc::pid > 0 ? pidStr : "NONE");
+                ImGui::Text("%s", proc::pid.load(std::memory_order_relaxed) > 0 ? pidStr : "NONE");
 
                 ImGui::TextDisabled("LIB BASE:");
                 ImGui::SameLine(labelColW);
-                ImGui::Text("%s", proc::lib > 0 ? libStr : "NONE");
+                ImGui::Text("%s", proc::lib.load(std::memory_order_relaxed) > 0 ? libStr : "NONE");
 
                 ImGui::TextDisabled("DRIVER:");
                 ImGui::SameLine(labelColW);

@@ -23,23 +23,25 @@
 #include <sys/prctl.h>
 #include <fstream>
 
-inline int 选择值 = 0;
-inline int 隐藏 = 0;
-
 struct AppConfig {
     int driverOption = 0;
     int captureMode = 0;
     bool settingsLoaded = false;
 };
 
-static AppConfig g_appConfig;
+// One definition across all translation units. As a file-static it was copied
+// into every TU that included driver.h, so main.cpp and menu.cpp could read
+// different driverOption values.
+inline AppConfig g_appConfig;
 
 inline void SaveConfig() {
 }
 
 inline bool LoadConfig() {
-    g_appConfig.settingsLoaded = true;
-    return true;
+    // No persistence layer exists yet (SaveConfig is a stub), so nothing is
+    // restored here. Reporting settingsLoaded=true made DisplayCurrentConfig
+    // print "Unknown / Unknown" as if a mode had been chosen.
+    return false;
 }
 
 inline void DisplayCurrentConfig() {

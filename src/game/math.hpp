@@ -4,9 +4,8 @@
 #include "Offsets.h"
 #include "../other/vector3.h"
 #include "../other/memory.hpp"
+#include "../globals.hpp"
 #include <cmath>
-
-extern float g_sw, g_sh;
 
 inline Vector3 GetPosition(uint64_t Transform) {
     auto transformObjValue = rpm<uint64_t>(Transform + 0x10);
@@ -59,21 +58,17 @@ inline Vector3 GetNodePosition(uint64_t nodeTransform) {
     return GetPosition(transformValue);
 }
 
-// Bone helpers
-inline uint64_t GetPlayerHeadTF(uint64_t player) {
-    return rpm<uint64_t>(player + Offsets::Bone_Head);
-}
-
-inline uint64_t GetPlayerPeTF(uint64_t player) {
-    return rpm<uint64_t>(player + Offsets::Bone_LeftToe);
-}
-
 inline Vector3 WorldToScreenPoint(const matrix& vm, const Vector3& pos) {
+    // Snapshot the viewport once: g_sw/g_sh are written by the render thread on
+    // rotation, and reading them twice could mix two different screen sizes
+    // into one projection.
+    const float sw = g_sw;
+    const float sh = g_sh;
     float v12 = (pos.x * vm.m14) + (pos.y * vm.m24) + (pos.z * vm.m34) + vm.m44;
     if (v12 >= 0.001f) {
         float inv = 1.0f / v12;
-        float cx = g_sw * 0.5f;
-        float cy = g_sh * 0.5f;
+        float cx = sw * 0.5f;
+        float cy = sh * 0.5f;
         float v9  = (pos.x * vm.m11) + (pos.y * vm.m21) + (pos.z * vm.m31) + vm.m41;
         float v10 = (pos.x * vm.m12) + (pos.y * vm.m22) + (pos.z * vm.m32) + vm.m42;
         return Vector3(cx + cx * v9 * inv, cy - cy * v10 * inv, v12);

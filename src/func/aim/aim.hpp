@@ -89,6 +89,11 @@ namespace aimbot {
         while (aim_thread_running().load(std::memory_order_relaxed)) {
             if (cfg::master_enabled && (cfg::aim::enable || cfg::aim::silent || cfg::motion::air_flight || cfg::motion::phantom_mode)) {
                 update();
+            } else {
+                // Feature off or master switch down: clear the telemetry so the
+                // menu readout and FOV lock ring do not show a stale target
+                // left over from before the toggle.
+                publish_target_invalid();
             }
 
             uint64_t lp = data::localPlayerAddr.load(std::memory_order_relaxed);
@@ -129,6 +134,7 @@ namespace aimbot {
         stop_silent_writer();
         motion::reset();
         restore_headshot_override();
+        publish_target_invalid();
     }
 
 } // namespace aimbot

@@ -18,5 +18,4 @@ namespace data {
 
     extern std::atomic<uint64_t>   localPlayerAddr;
     extern std::atomic<bool>       inMatch;
-    extern matrix                  viewMatrix;
 }
