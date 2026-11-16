@@ -64,7 +64,8 @@ void load_pos() {
 
 // ----------------------------------------------------------------------------
 // CIRCULAR FLOATING LOGO DRAWING ('N')
-// ----------------------------------------------------------------------------static void DrawCircularLogo(ImDrawList* dl, ImVec2 center, float radius) {
+// ----------------------------------------------------------------------------
+static void DrawCircularLogo(ImDrawList* dl, ImVec2 center, float radius) {
     ImU32 colPrimary = theme_orchid::ColPrimary;
     ImU32 colDarkBg  = IM_COL32(18, 14, 26, 245);
     ImU32 colWhite   = IM_COL32(255, 255, 255, 255);

@@ -141,7 +141,8 @@ static bool DrawToggleSwitch(const char* label, std::atomic<bool>* v, float row_
 
     // 1. Label on the left, vertically centered
     ImFont* font = g_UiFont ? g_UiFont : ImGui::GetFont();
-    float fontSize = 17.0f * ui_scale;    ImVec2 tsz = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, label);
+    float fontSize = 17.0f * ui_scale;
+    ImVec2 tsz = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, label);
     ImVec2 label_pos(curPos.x + 8.0f * ui_scale, curPos.y + (row_height - tsz.y) * 0.5f);
     dl->AddText(font, fontSize, label_pos, theme_orchid::ColTextWhite, label);
 

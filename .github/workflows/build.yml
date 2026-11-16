@@ -24,9 +24,28 @@ jobs:
 
       - name: Build with ndk-build
         run: |
-          set -o pipefail
-          echo "Starting ndk-build for ninmods-kernel..."
-          ndk-build NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=jni/Android.mk NDK_APPLICATION_MK=jni/Application.mk -j$(nproc)
+          ndk-build NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=jni/Android.mk NDK_APPLICATION_MK=jni/Application.mk -j"$(nproc)" > build.log 2>&1
+          status=$?
+          echo "=== ndk-build exit: $status ==="
+          echo "=== build.log lines: $(wc -l < build.log) ==="
+          if [ "$status" -ne 0 ]; then
+            # Job logs are auth-gated; the annotations endpoint is public.
+            # Publish the diagnostic tail as ::error annotations in chunks so
+            # the real compiler message can be read without the browser.
+            tail -n 120 build.log | nl -ba -v1 > diag.txt
+            for i in 0 1 2 3 4 5 6 7 8 9; do
+              start=$((i * 12 + 1))
+              payload=$(sed -n "${start},$((start + 11))p" diag.txt | sed 's/%/%25/g; s/\r//g' | awk '{printf "%s%%0A", $0}')
+              if [ -n "$payload" ]; then
+                echo "::error title=build-log-$((i + 1))::$payload"
+              fi
+            done
+            echo "=== first errors ==="
+            grep -nE "error:|fatal error:|undefined reference|No rule to make target" build.log | head -n 20
+            echo "=== tail ==="
+            tail -n 40 build.log
+            exit "$status"
+          fi
           echo "Build finished successfully:"
           STRIP_BIN=$(find "$ANDROID_NDK_ROOT" -name "llvm-strip" 2>/dev/null | head -n 1)
           if [ -n "$STRIP_BIN" ] && [ -x "$STRIP_BIN" ]; then
@@ -38,8 +57,18 @@ jobs:
           (cd libs/arm64-v8a && zip -9 ninmods-kernel.zip ninmods-kernel)
           ls -lh libs/arm64-v8a/
 
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: ignore
+
       - name: Upload Kernel Mod Binary
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: ninmods-kernel.zip
           path: libs/arm64-v8a/ninmods-kernel.zip
+          if-no-files-found: error
