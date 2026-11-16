@@ -124,7 +124,7 @@ namespace func::esp {
         const float padX = 6.f;
         const float padY = 3.f;
 
-        ImFont* font = ImGui::GetFont();
+        ImFont* font = g_EspFont ? g_EspFont : ImGui::GetFont();
         ImVec2 ts = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, wn);
         float pw = ts.x + padX * 2.f;
         float ph = fs + padY * 2.f;

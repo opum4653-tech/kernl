@@ -34,7 +34,7 @@ namespace func::esp {
         snprintf(buf, sizeof(buf), "%s  %.0fm", cat, li.distance);
 
         const float fs = ESP_FONT_SIZE - 2.f;
-        ImFont* font = ImGui::GetFont();
+        ImFont* font = g_EspFont ? g_EspFont : ImGui::GetFont();
         ImVec2 ts = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, buf);
         float pad = 4.f;
         float px = li.screenPos.x - ts.x * 0.5f - pad;

@@ -165,10 +165,78 @@ bool ImGui_init() {
     style->GrabRounding      = 3;
     
     io.IniFilename = NULL;
-    static ImFontConfig font_cfg;
-    font_cfg.SizePixels = 22.0f;
-    io.Fonts->AddFontFromMemoryTTF((void *) Roboto_Regular, sizeof(Roboto_Regular), 32.0f, &font_cfg, io.Fonts->GetGlyphRangesChineseFull());
-    io.Fonts->AddFontDefault(&font_cfg);
+
+    // FontDataOwnedByAtlas MUST stay false for every static TTF blob.
+    //
+    // The mechanism, precisely: ImFontAtlas::AddFont() only takes a private
+    // heap copy when the flag is FALSE —
+    //     if (!cfg.FontDataOwnedByAtlas) { cfg.FontData = IM_ALLOC(size);
+    //                                      memcpy(...); cfg.FontDataOwnedByAtlas = true; }
+    // — and when the flag is TRUE it keeps the caller's pointer as-is. Roboto_Regular
+    // and the MAIN_FONT blobs are const arrays in .rodata, so the default (true)
+    // meant the atlas stored a .rodata pointer and ImFontAtlas::ClearInputData()
+    // later IM_FREE()d it. That is a free() on a non-heap address on every
+    // shutdown (ImGui::DestroyContext -> ~ImFontAtlas -> Clear), which corrupts
+    // the allocator's free-list bookkeeping.
+    //
+    // false makes ImGui copy the blob to the heap and own the copy, so the
+    // matching free is legitimate. The ownership transfer is the fix; the flag
+    // name reads backwards from what it does here.
+    static ImFontConfig s_fontCfg;
+    s_fontCfg.FontDataOwnedByAtlas = false;
+    s_fontCfg.SizePixels = 22.0f;
+    s_fontCfg.OversampleH = 2;
+    s_fontCfg.OversampleV = 1;
+
+    // Fonts[0]. The menu layout (every 17/14/12px AddText plus ScaleAllSizes)
+    // was tuned against this 32px face, so it stays the default text face.
+    io.Fonts->AddFontFromMemoryTTF((void*)Roboto_Regular, sizeof(Roboto_Regular),
+                                   32.0f, &s_fontCfg, io.Fonts->GetGlyphRangesChineseFull());
+
+    // AddFontDefault -> AddFontFromMemoryCompressedTTF allocates a heap buffer
+    // and forces FontDataOwnedByAtlas = true itself, so the flag needs no
+    // override here - only the size bump matters.
+    ImFontConfig s_defCfg;
+    s_defCfg.SizePixels = 22.0f;
+    io.Fonts->AddFontDefault(&s_defCfg);
+
+    // Dedicated faces for the places that were sampling the 32px CJK menu face
+    // at a very different size. Both are ASCII-only by design: their only
+    // consumers are literals ("GUN", "ARMED", "KERNEL CORE", weapon names) and
+    // an address hit on the player-name path, which keeps the CJK-capable
+    // Fonts[0] so Chinese/Cyrillic names still render.
+    //
+    //  - ESP loot/weapon pills draw at 10px. Sampling a 32px raster down to 10
+    //    loses the stem, so the text looked thin and the advance was skewed.
+    //  - Menu toggle-row labels draw at 17px.
+    ImFontConfig s_smallCfg;
+    s_smallCfg.FontDataOwnedByAtlas = false;
+    s_smallCfg.SizePixels = 14.0f;
+    s_smallCfg.OversampleH = 2;
+    s_smallCfg.OversampleV = 2;
+    ::g_EspFont = io.Fonts->AddFontFromMemoryTTF((void*)Roboto_Regular, sizeof(Roboto_Regular),
+                                                 14.0f, &s_smallCfg, io.Fonts->GetGlyphRangesDefault());
+
+    // Menu body text: the toggle rows draw their labels at 17px.
+    ImFontConfig s_uiCfg;
+    s_uiCfg.FontDataOwnedByAtlas = false;
+    s_uiCfg.SizePixels = 18.0f;
+    s_uiCfg.OversampleH = 2;
+    s_uiCfg.OversampleV = 2;
+    ::g_UiFont = io.Fonts->AddFontFromMemoryTTF((void*)Roboto_Regular, sizeof(Roboto_Regular),
+                                                18.0f, &s_uiCfg, io.Fonts->GetGlyphRangesDefault());
+
+    // Single-glyph face: only 'N' is ever drawn with it, so the atlas cost is
+    // one 64px quad instead of a full Cyrillic set at 64px.
+    static const ImWchar s_logoGlyphs[] = { 'N', 'N', 0 };
+    ImFontConfig s_logoCfg;
+    s_logoCfg.FontDataOwnedByAtlas = false;
+    s_logoCfg.SizePixels = 64.0f;
+    s_logoCfg.OversampleH = 2;
+    s_logoCfg.OversampleV = 2;
+    ::g_LogoFont = io.Fonts->AddFontFromMemoryTTF((void*)Roboto_Regular, sizeof(Roboto_Regular),
+                                                  64.0f, &s_logoCfg, s_logoGlyphs);
+
     ImGui::GetStyle().ScaleAllSizes(3.0f);
     ::g_Initialized = true;
     return true;

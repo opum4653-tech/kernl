@@ -140,9 +140,8 @@ static bool DrawToggleSwitch(const char* label, std::atomic<bool>* v, float row_
     ImDrawList* dl = ImGui::GetWindowDrawList();
 
     // 1. Label on the left, vertically centered
-    ImFont* font = ImGui::GetFont();
-    float fontSize = 17.0f * ui_scale;
-    ImVec2 tsz = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, label);
+    ImFont* font = g_UiFont ? g_UiFont : ImGui::GetFont();
+    float fontSize = 17.0f * ui_scale;    ImVec2 tsz = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, label);
     ImVec2 label_pos(curPos.x + 8.0f * ui_scale, curPos.y + (row_height - tsz.y) * 0.5f);
     dl->AddText(font, fontSize, label_pos, theme_orchid::ColTextWhite, label);
 
@@ -395,7 +394,10 @@ void render() {
         dl->AddText(brandFont, brandFontSize, brandPos, theme_orchid::ColWhite, "NINMODS");
 
         float brandTextW = brandFont->CalcTextSizeA(brandFontSize, FLT_MAX, 0.0f, "NINMODS").x;
-        dl->AddText(ImGui::GetFont(), 14.0f * ui_scale,
+        // Sub-label and badge draw at 12-14px; the 14px ESP face suits them.
+        // Knock the 32px menu face down to 12 and the stems go muddy.
+        ImFont* smallFont = g_EspFont ? g_EspFont : ImGui::GetFont();
+        dl->AddText(smallFont, 14.0f * ui_scale,
                     ImVec2(brandPos.x + brandTextW + 8.0f * ui_scale, brandPos.y + 3.0f * ui_scale),
                     theme_orchid::ColPrimaryLight, "KERNEL CORE");
 
@@ -409,9 +411,9 @@ void render() {
         dl->AddRect(bMin, bMax, badgeBorder, 6.0f * ui_scale, 0, 1.0f);
 
         const char* stTxt = connected ? "ARMED" : "STANDBY";
-        ImVec2 ssz = ImGui::GetFont()->CalcTextSizeA(12.0f * ui_scale, FLT_MAX, 0.0f, stTxt);
+        ImVec2 ssz = smallFont->CalcTextSizeA(12.0f * ui_scale, FLT_MAX, 0.0f, stTxt);
         ImVec2 stPos(bMin.x + (badgeW - ssz.x) * 0.5f, bMin.y + (badgeH - ssz.y) * 0.5f);
-        dl->AddText(ImGui::GetFont(), 12.0f * ui_scale, stPos, theme_orchid::ColWhite, stTxt);
+        dl->AddText(smallFont, 12.0f * ui_scale, stPos, theme_orchid::ColWhite, stTxt);
 
         // Close Button (Smooth 'X')
         ImVec2 cMin(winPos.x + winSize.x - closeBtnSize - 8.0f * ui_scale, winPos.y + (headerH - closeBtnSize) * 0.5f);
@@ -807,7 +809,11 @@ void render() {
                 ImGui::Text("%.1f", io.Framerate);
 
                 ImGui::Dummy(ImVec2(0, 4 * ui_scale));
-                ImGui::SliderFloat("##Opacity", &ui_opacity, 0.2f, 1.0f, "Opacity: %.2f");
+                // Floor is 0.40, not 0.20. The slider lives inside the window
+                // it dims via ImGuiStyleVar_Alpha, so at 0.20 the control that
+                // would bring the opacity back was itself at 20% - nearly
+                // invisible and very hard to grab.
+                ImGui::SliderFloat("##Opacity", &ui_opacity, 0.40f, 1.0f, "Opacity: %.2f");
 
                 ImGui::Dummy(ImVec2(0, 4 * ui_scale));
                 ImGui::TextDisabled("Theme Accent");

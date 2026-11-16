@@ -99,6 +99,10 @@ static constexpr int kMaxUiRects = 8;
 
 struct UiRect {
     float x, y, w, h;
+    // Non-zero = treated as a circle: (x,y) is the top-left of the bounding
+    // box, radius is r. The floating logo is a circle but its bounding box
+    // has four ~46x46 px dead corners that used to swallow game taps.
+    float r;
 };
 
 static UiRect s_uiRects[kMaxUiRects];   // published, read by touch thread
@@ -116,6 +120,17 @@ void Touch_AddUiRect(float x, float y, float w, float h) {
     s_uiPending[s_uiPendingCount].y = y;
     s_uiPending[s_uiPendingCount].w = w;
     s_uiPending[s_uiPendingCount].h = h;
+    s_uiPending[s_uiPendingCount].r = 0.0f;
+    ++s_uiPendingCount;
+}
+
+void Touch_AddUiCircle(float cx, float cy, float radius) {
+    if (s_uiPendingCount >= kMaxUiRects) return;
+    s_uiPending[s_uiPendingCount].x = cx - radius;
+    s_uiPending[s_uiPendingCount].y = cy - radius;
+    s_uiPending[s_uiPendingCount].w = radius * 2.0f;
+    s_uiPending[s_uiPendingCount].h = radius * 2.0f;
+    s_uiPending[s_uiPendingCount].r = radius;
     ++s_uiPendingCount;
 }
 
@@ -131,6 +146,17 @@ bool Touch_IsPointInUi(float x, float y) {
     std::lock_guard<std::mutex> lock(s_uiRectMutex);
     for (int i = 0; i < s_uiRectCount; ++i) {
         const UiRect& r = s_uiRects[i];
+        if (r.r > 0.0f) {
+            // Circular region: the logo. Bounding-box hits in the corners are
+            // not UI, so the tap goes through to the game instead of dying on
+            // an invisible square.
+            const float cx = r.x + r.r;
+            const float cy = r.y + r.r;
+            const float dx = x - cx;
+            const float dy = y - cy;
+            if (dx * dx + dy * dy <= r.r * r.r) return true;
+            continue;
+        }
         if (x >= r.x && x <= (r.x + r.w) &&
             y >= r.y && y <= (r.y + r.h)) {
             return true;

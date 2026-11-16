@@ -32,10 +32,23 @@ ImFont* g_BoldFont = nullptr;
 
 static void LoadCustomFonts(ImGuiIO& io) {
     // initGUI_draw() already pushed Roboto @32px first, so it stays Fonts[0] and
-    // ImGui::GetFont() keeps returning it — the menu layout was tuned against
+    // ImGui::GetFont() keeps returning it - the menu layout was tuned against
     // that face plus ScaleAllSizes(3.0f). These two are additive faces only.
-    io.Fonts->AddFontFromMemoryTTF((void*)inter_medium, sizeof(inter_medium), 22.0f, NULL, io.Fonts->GetGlyphRangesCyrillic());
-    g_BoldFont = io.Fonts->AddFontFromMemoryTTF((void*)inter_bold, sizeof(inter_bold), 25.0f, NULL, io.Fonts->GetGlyphRangesCyrillic());
+    //
+    // FontDataOwnedByAtlas must be false so ImFontAtlas copies the blob to the
+    // heap and owns the copy. inter_medium/inter_bold live in MAIN_FONT.h as
+    // static arrays in .rodata; with the default flag (true) the atlas keeps
+    // that .rodata pointer and ~ImFontAtlas later IM_FREE()s it — a free() on a
+    // non-heap address. See the same note in draw.cpp initGUI_draw().
+    ImFontConfig cfg;
+    cfg.FontDataOwnedByAtlas = false;
+
+    cfg.SizePixels = 22.0f;
+    io.Fonts->AddFontFromMemoryTTF((void*)inter_medium, sizeof(inter_medium), 22.0f, &cfg, io.Fonts->GetGlyphRangesCyrillic());
+
+    cfg.SizePixels = 25.0f;
+    g_BoldFont = io.Fonts->AddFontFromMemoryTTF((void*)inter_bold, sizeof(inter_bold), 25.0f, &cfg, io.Fonts->GetGlyphRangesCyrillic());
+
     io.Fonts->Build();
 }
 

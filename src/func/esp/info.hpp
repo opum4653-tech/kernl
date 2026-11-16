@@ -26,6 +26,10 @@ namespace func::esp {
         }
 
         const float fs = ESP_FONT_SIZE + 1.f;
+        // Fonts[0] on purpose: player names come from the game and can be CJK.
+        // This is the only ESP path that renders arbitrary user text, so it
+        // keeps the full-range face; a 13px sample of a 32px raster is soft but
+        // legible, while a narrowed-range face would drop the glyphs entirely.
         ImFont* font = ImGui::GetFont();
         ImVec2 ts = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, fullText);
         float tx = cx - ts.x * 0.5f;

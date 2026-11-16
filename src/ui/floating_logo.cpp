@@ -13,10 +13,9 @@
 namespace ui::floating_logo {
 
 static ImVec2 s_logo_pos = ImVec2(-1.0f, -1.0f);
-static bool s_has_loaded_pos = false;
 
 // Cached viewport, refreshed every render(). Used by save_pos() so the position
-// can be validated even when called from the shutdown path.
+// can be normalized even when called from the shutdown path.
 static float s_last_view_w = 0.0f;
 static float s_last_view_h = 0.0f;
 
@@ -29,16 +28,24 @@ static bool pos_is_sane(float x, float y) {
     if (!std::isfinite(x) || !std::isfinite(y)) return false;
     // (0,0) is a legal placement, so only reject genuinely out-of-range values.
     if (x < 0.0f || y < 0.0f) return false;
-    if (s_last_view_w > 0.0f && x > s_last_view_w) return false;
-    if (s_last_view_h > 0.0f && y > s_last_view_h) return false;
     return true;
 }
 
 void save_pos() {
     if (!pos_is_sane(s_logo_pos.x, s_logo_pos.y)) return;
+
+    // render() already clamps to the live viewport, but the cached size here
+    // can be one frame behind right after a rotation. Clamp against it instead
+    // of rejecting, so a rotate-then-release still persists a usable position
+    // rather than silently dropping the write and snapping back on next launch.
+    float x = s_logo_pos.x;
+    float y = s_logo_pos.y;
+    if (s_last_view_w > 0.0f) x = std::min(x, s_last_view_w);
+    if (s_last_view_h > 0.0f) y = std::min(y, s_last_view_h);
+
     FILE* fp = fopen("/dev/.nin_logo_pos.txt", "w");
     if (!fp) return;
-    fprintf(fp, "%.1f %.1f\n", s_logo_pos.x, s_logo_pos.y);
+    fprintf(fp, "%.1f %.1f\n", x, y);
     fclose(fp);
 }
 
@@ -53,21 +60,11 @@ void load_pos() {
         }
         fclose(fp);
     }
-    s_has_loaded_pos = true;
-}
-
-ImVec2 get_pos() {
-    return s_logo_pos;
-}
-
-void set_pos(ImVec2 pos) {
-    s_logo_pos = pos;
 }
 
 // ----------------------------------------------------------------------------
 // CIRCULAR FLOATING LOGO DRAWING ('N')
-// ----------------------------------------------------------------------------
-static void DrawCircularLogo(ImDrawList* dl, ImVec2 center, float radius) {
+// ----------------------------------------------------------------------------static void DrawCircularLogo(ImDrawList* dl, ImVec2 center, float radius) {
     ImU32 colPrimary = theme_orchid::ColPrimary;
     ImU32 colDarkBg  = IM_COL32(18, 14, 26, 245);
     ImU32 colWhite   = IM_COL32(255, 255, 255, 255);
@@ -79,7 +76,11 @@ static void DrawCircularLogo(ImDrawList* dl, ImVec2 center, float radius) {
     dl->AddCircle(center, radius, colPrimary, 64, 2.0f);
 
     // 3. Center "N" Letter with subtle drop shadow
-    ImFont* font = ImGui::GetFont();
+    // Font.Size must be the atlas size. Only SizePixels is scaled by
+    // CalcFontScale, so passing fontSize here and fontSize to AddText keeps
+    // the quad at the size the glyphs were actually rasterised at. Sampling
+    // the 32px menu face up to ~63px looked visibly soft.
+    ImFont* font = g_LogoFont ? g_LogoFont : ImGui::GetFont();
     const char* txt = "N";
     float fontSize = radius * 1.15f;
     ImVec2 tsz = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, txt);
@@ -93,10 +94,6 @@ static void DrawCircularLogo(ImDrawList* dl, ImVec2 center, float radius) {
 // FLOATING LOGO RENDER & INTERACTION LOGIC
 // ----------------------------------------------------------------------------
 void render(float realW, float realH, float ui_scale) {
-    if (!s_has_loaded_pos) {
-        load_pos();
-    }
-
     s_last_view_w = realW;
     s_last_view_h = realH;
 
@@ -116,11 +113,11 @@ void render(float realW, float realH, float ui_scale) {
     s_logo_pos.x = std::clamp(s_logo_pos.x, logoMargin, maxX);
     s_logo_pos.y = std::clamp(s_logo_pos.y, logoMargin, maxY);
 
-    // Register the logo's touch zone with the multi-rect API. Appending rather
-    // than replacing means the menu rect (registered later in the same frame)
-    // coexists with this one instead of overwriting it.
-    Touch_AddUiRect(s_logo_pos.x - 8.0f, s_logo_pos.y - 8.0f,
-                    logoDiameter + 16.0f, logoDiameter + 16.0f);
+    // Register the logo's touch zone as a circle, not its bounding box: the
+    // four corners of the box are outside the drawn disc and used to eat game
+    // taps. Appending rather than replacing means the menu rect (registered
+    // later in the same frame) coexists with this one.
+    Touch_AddUiCircle(s_logo_pos.x + logoRadius, s_logo_pos.y + logoRadius, logoRadius + 8.0f);
 
     ImGui::SetNextWindowPos(s_logo_pos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(logoDiameter, logoDiameter), ImGuiCond_Always);

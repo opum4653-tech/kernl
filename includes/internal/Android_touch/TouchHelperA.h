@@ -9,6 +9,7 @@ bool Touch_IsPointInUi(float x, float y);
 // then commit so the touch thread sees the whole set at once.
 void Touch_ClearUiRects();
 void Touch_AddUiRect(float x, float y, float w, float h);
+void Touch_AddUiCircle(float cx, float cy, float radius);
 void Touch_CommitUiRects();
 
 // Slot-addressed injection used by non-gesture callers.
