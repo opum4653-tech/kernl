@@ -85,14 +85,16 @@ static void print_dashboard() {
 static bool check_license_gate(int argc, char** argv) {
     lic::init();
 
-    printf("[*] NinMods Kernel Overlay — Authentication Gate\n");
-    printf("[*] Validating session key...\n");
+    printf("[*] NinMods Kernel Overlay Engine v2.0\n");
+    printf("[*] Verifying authorization...\n");
+    fflush(stdout);
 
     for (int i = 1; i < argc; i++) {
         if (argv[i] && strlen(argv[i]) >= 8 && strcmp(argv[i], "ffmax") != 0 && strcmp(argv[i], "START") != 0) {
             if (lic::set_key(argv[i]) && lic::is_valid()) {
                 printf("[+] Pre-authorized via CLI argument.\n");
                 printf("[+] Key validated. Overlay authorized.\n\n");
+                print_dashboard();
                 fflush(stdout);
                 return true;
             }
@@ -104,8 +106,12 @@ static bool check_license_gate(int argc, char** argv) {
         if (lic::set_key(env_key) && lic::is_valid()) {
             printf("[+] Pre-authorized via secure environment session.\n");
             printf("[+] Key validated. Overlay authorized.\n\n");
+            print_dashboard();
             fflush(stdout);
             return true;
+        } else {
+            printf("[-] Saved session key is invalid or expired.\n");
+            fflush(stdout);
         }
     }
 
@@ -135,10 +141,11 @@ static bool check_license_gate(int argc, char** argv) {
     }
 
     printf("[+] Key validated successfully. Overlay authorized.\n");
+    print_dashboard();
+    fflush(stdout);
 
     if (isatty(fileno(stdin))) {
         printf("[+] Interactive terminal detected. Launching overlay...\n\n");
-        print_dashboard();
         fflush(stdout);
         return true;
     }
