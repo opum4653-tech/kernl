@@ -24,7 +24,6 @@ extern int native_window_screen_x;
 extern int native_window_screen_y;
 extern int 选择值;
 extern ImFont* g_BoldFont;
-extern ImFont* g_IconFont;
 
 // Starts with floating logo closed by default. Menu opens ONLY when user taps the floating logo.
 bool g_ShowMenu = false;
@@ -49,8 +48,10 @@ static bool DrawSidebarIconButton(const char* str_id, EIconType icon_type, bool 
     float iconSize = size.y * 0.54f;
 
     if (is_active) {
-        dl->AddRectFilled(bMin, bMax, IM_COL32(225, 0, 152, 48), 12.0f * ui_scale);
-        dl->AddRect(bMin, bMax, IM_COL32(225, 0, 152, 160), 12.0f * ui_scale, 0, 1.5f);
+        ImU32 colActiveBg = (theme_orchid::ColPrimary & 0x00FFFFFF) | (48 << 24);
+        ImU32 colActiveBorder = (theme_orchid::ColPrimary & 0x00FFFFFF) | (160 << 24);
+        dl->AddRectFilled(bMin, bMax, colActiveBg, 12.0f * ui_scale);
+        dl->AddRect(bMin, bMax, colActiveBorder, 12.0f * ui_scale, 0, 1.5f);
         dl->AddRectFilled(ImVec2(bMin.x + 3.0f * ui_scale, bMin.y + 8.0f * ui_scale),
                           ImVec2(bMin.x + 7.5f * ui_scale, bMax.y - 8.0f * ui_scale),
                           theme_orchid::ColPrimary, 3.0f * ui_scale);
@@ -181,7 +182,7 @@ static bool DrawSegmentedButtons(const char* str_id, int* selected, const char* 
     bool changed = false;
 
     // Responsive padding based on available button width
-    float padX = (btnW < 65.0f * ui_scale) ? 2.0f : 4.0f * ui_scale;
+    float padX = (btnW < 65.0f * ui_scale) ? 2.0f * ui_scale : 4.0f * ui_scale;
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(padX, 2.0f * ui_scale));
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f * ui_scale);
 
@@ -369,6 +370,8 @@ void render() {
         if (ImGui::IsItemActive()) {
             s_menu_pos.x += io.MouseDelta.x;
             s_menu_pos.y += io.MouseDelta.y;
+            s_menu_pos.x = std::clamp(s_menu_pos.x, 0.0f, realW - winW);
+            s_menu_pos.y = std::clamp(s_menu_pos.y, 0.0f, realH - winH);
         }
 
         // Header Branding ("NINMODS" + "KERNEL CORE")
