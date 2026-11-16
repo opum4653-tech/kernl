@@ -1,4 +1,5 @@
 #include "theme.hpp"
+#include <cmath>
 
 float g_ThemeColorArr[4] = { 0.882f, 0.000f, 0.596f, 1.0f };
 
