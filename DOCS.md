@@ -107,23 +107,17 @@ Kernel/Kernel/
 ├── .github/workflows/
 │   └── build.yml                            # GitHub Actions CI for ARM64 NDK compilation
 ├── .gitignore                               # Ignores obj/, libs/, logs, and temporary artifacts
+├── CMakeLists.txt                           # Modern CMake build configuration
 ├── DOCS.md                                  # Enterprise architecture and technical documentation
-└── jni/
-    ├── Android.mk                           # NDK build configuration & static lib linkage
-    ├── Application.mk                       # Application flags & ABI definition (arm64-v8a)
-    ├── include/
-    │   ├── Android_draw/draw.h              # Native surface draw definitions
-    │   ├── Android_touch/TouchHelperA.h     # Input device event parser
-    │   ├── ImGui/                           # ImGui 1.90.1 core & Android/OpenGL backends
-    │   ├── native_surface/                  # Isolated ANativeWindow surface creator
-    │   ├── external/                        # Prebuilt OpenSSL, libcurl, and JSON headers
-    │   └── Scarecrow/offsets.h              # OB55 synchronized game offsets
-    └── src/
-        ├── main.cpp                         # Process lifecycle, touch routing, floating logo
-        ├── display_manager.hpp & .cpp       # Zero-fork hardware display probe & RAM cache
-        ├── crash_handler.hpp & .cpp         # Alternate signal stack crash protection
-        ├── Android_draw/draw.cpp            # EGL surface initialization & frame presenter
-        └── ENC/oxorany.cpp                  # Compile-time string & symbol encryption
+└── src/
+    ├── main.cpp                             # Process lifecycle, driver loop, license gating
+    ├── ui/
+    │   ├── theme.hpp & .cpp                 # Dynamic theme_orchid palette, color swatches & vector icons
+    │   ├── floating_logo.hpp & .cpp         # Floating 'N' logo, clamped dragging, /dev/.nin_logo_pos.txt
+    │   ├── menu.hpp & .cpp                  # Dual-column glass menu, scaled header/tabs, touch scroll
+    │   └── cfg.hpp                          # Unified feature configuration & state storage
+    ├── func/                                # Kernel ESP, Aimbot, and Speed modules
+    └── other/                               # Display manager, crash guard, and driver interfaces
 ```
 
 ---
