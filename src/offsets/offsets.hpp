@@ -52,7 +52,7 @@ namespace Offsets {
         constexpr uintptr_t HeadCollider         = 0x740;   // Primary: Head Collider (BKEPAKCAGNJ 0x740)
         constexpr uintptr_t HeadCollider_Alt     = 0x738;   // Auxiliary: Head Collider (BANPEGJEAKE 0x738)
         constexpr uintptr_t LockedAimingCollider = 0x80;    // Primary: Collider on AttackableEntity (<AONPKGBGHHI> 0x80)
-        constexpr uintptr_t LockedAimingCollider_Alt = 0x80;// Auxiliary: LockedAimingCollider (0x80)
+        constexpr uintptr_t LockedAimingCollider_Alt = 0x78;// Auxiliary: LockedAimingCollider (0x78 in internal)
         constexpr uintptr_t IsBot                = 0x4A0;   // Boolean (IsClientBot 0x4A0)
         constexpr uintptr_t Name                 = 0x498;   // MonoString* OriginalNickName (0x498)
         constexpr uintptr_t Speed                = 0x560;   // Single (Speed 0x560)

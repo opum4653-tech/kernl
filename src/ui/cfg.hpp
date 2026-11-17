@@ -49,6 +49,7 @@ namespace esp {
 namespace aim {
     inline std::atomic<int>   read_interval_ms{16};   // Read loop cadence (ms). Higher = lower syscall frequency.
     inline std::atomic<bool>  enable          {false}; // Traditional Aim Assist
+    inline std::atomic<bool>  auto_headshot   {false}; // 100% Auto Headshot (Locks HeadCollider, HitGroup=1, Head 3D)
     inline std::atomic<bool>  silent          {false}; // Aim Silent: direct ray trajectory steering, zero camera movement
     inline std::atomic<bool>  scope_aim       {false}; // Off by default. Enabling adds a write path on scope.
     inline std::atomic<bool>  sniper_aim      {false}; // Off by default. Enabling forces head lock, ignoring headshot_rate.

@@ -87,21 +87,29 @@ namespace func::esp {
 
     inline PlayerBox computePlayerBox(const PlayerData& p) {
         PlayerBox pb{ {0,0}, {0,0}, false };
-        if (!ok(p.Head) || !ok(p.Toe)) return pb;
+        if (!ok(p.Head)) return pb;
 
-        float topY = ImMin(p.Head.y, p.Toe.y);
-        float botY = ImMax(p.Head.y, p.Toe.y);
+        float topY = p.Head.y;
+        float botY = ok(p.Toe) ? p.Toe.y : (p.Head.y + 50.0f);
+        if (topY > botY) std::swap(topY, botY);
+
         float height = botY - topY;
-        if (height < 2.f) return pb;
+        if (height < 6.f) {
+            // Distance-based height fallback if toe is too close to head or compressed
+            height = std::clamp((g_sh * 1.6f) / std::max(p.distance, 1.0f), 15.0f, g_sh * 0.9f);
+            botY = topY + height;
+        }
 
-        float midX = (p.Head.x + p.Toe.x) * 0.5f;
-        float width = height * 0.45f;
+        // Align horizontally centered on p.Head.x (spine center) matching internal reference
+        float midX = p.Head.x;
+        float width = height * 0.50f;
         float halfW = width * 0.5f;
 
-        const float padY = height * 0.08f;
+        const float padTop = height * 0.12f;
+        const float padBot = height * 0.05f;
 
-        pb.tl = ImVec2(midX - halfW, topY - padY);
-        pb.br = ImVec2(midX + halfW, botY + padY * 0.5f);
+        pb.tl = ImVec2(midX - halfW, topY - padTop);
+        pb.br = ImVec2(midX + halfW, botY + padBot);
         pb.valid = true;
         return pb;
     }

@@ -70,11 +70,14 @@ static void DrawCircularLogo(ImDrawList* dl, ImVec2 center, float radius) {
     ImU32 colDarkBg  = IM_COL32(18, 14, 26, 245);
     ImU32 colWhite   = IM_COL32(255, 255, 255, 255);
 
+    // 0. Outer Halo Glow
+    dl->AddCircle(center, radius + 2.0f, IM_COL32(230, 80, 180, 70), 64, 2.5f);
+
     // 1. Base Dark Disc
     dl->AddCircleFilled(center, radius, colDarkBg, 64);
 
     // 2. Clean Solid Outline Border in Active Theme Accent
-    dl->AddCircle(center, radius, colPrimary, 64, 2.0f);
+    dl->AddCircle(center, radius, colPrimary, 64, 2.5f);
 
     // 3. Center "N" Letter with subtle drop shadow
     // Font.Size must be the atlas size. Only SizePixels is scaled by
@@ -98,7 +101,7 @@ void render(float realW, float realH, float ui_scale) {
     s_last_view_w = realW;
     s_last_view_h = realH;
 
-    const float logoRadius = 38.0f * ui_scale;
+    const float logoRadius = 48.0f * ui_scale;
     const float logoMargin = 16.0f * ui_scale;
     const float logoDiameter = logoRadius * 2.0f;
 

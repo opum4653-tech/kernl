@@ -27,9 +27,14 @@ namespace func::esp {
                 dl->AddLine(s[0], s[1], col, thick);
             }
         } else if (type == 1) {
-            // Full Chaturbhuj (Rectangular) 2D Box
-            dl->AddRect({tl.x - 1.f, tl.y - 1.f}, {br.x + 1.f, br.y + 1.f},
-                        IM_COL32(0, 0, 0, 180), round, 0, thick + 1.5f);
+            // Full 2D Box with internal-style multi-pass glow border
+            for (int g = 1; g <= 3; g++) {
+                dl->AddRect(
+                    ImVec2(tl.x - g, tl.y - g),
+                    ImVec2(br.x + g, br.y + g),
+                    withAlpha(col, 0.35f - g * 0.08f),
+                    round + g, 0, thick + g * 0.8f);
+            }
             dl->AddRect(tl, br, col, round, 0, thick);
             dl->AddRectFilled(tl, br, withAlpha(col, 0.05f), round);
         } else {

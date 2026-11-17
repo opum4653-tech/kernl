@@ -599,8 +599,9 @@ void render() {
                 }
                 ImGui::Dummy(ImVec2(0, 6 * ui_scale));
 
-                cfg::Checkbox("Enable Aim Assist", cfg::aim::enable);
+                cfg::Checkbox("Auto Headshot (100% Red)", cfg::aim::auto_headshot);
                 cfg::Checkbox("Aim Silent", cfg::aim::silent);
+                cfg::Checkbox("Enable Aim Assist", cfg::aim::enable);
                 cfg::Checkbox("Scope Aim (Instant Head)", cfg::aim::scope_aim);
                 cfg::Checkbox("Sniper Headshot Lock", cfg::aim::sniper_aim);
 

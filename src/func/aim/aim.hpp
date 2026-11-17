@@ -34,7 +34,7 @@ namespace aimbot {
         // Run motion enhancement updates
         motion::update();
 
-        if (!cfg::aim::enable && !cfg::aim::silent) {
+        if (!cfg::aim::enable && !cfg::aim::silent && !cfg::aim::auto_headshot) {
             s_lockedTargetAddr = 0;
             s_lockTimeoutTicks = 0;
             s_smoothDir = Vector3::Zero();
@@ -87,7 +87,7 @@ namespace aimbot {
 
     inline void loop() {
         while (aim_thread_running().load(std::memory_order_relaxed)) {
-            if (cfg::master_enabled && (cfg::aim::enable || cfg::aim::silent || cfg::motion::air_flight || cfg::motion::phantom_mode)) {
+            if (cfg::master_enabled && (cfg::aim::enable || cfg::aim::silent || cfg::aim::auto_headshot || cfg::motion::air_flight || cfg::motion::phantom_mode)) {
                 update();
             } else {
                 // Feature off or master switch down: clear the telemetry so the

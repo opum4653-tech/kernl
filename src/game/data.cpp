@@ -381,6 +381,11 @@ namespace data {
             if (headScreen.z < 0.001f) continue;
 
             Vector3 toeScreen = boneScreen(span.at<uint64_t>(Offsets::Bone_LeftToe));
+            if (toeScreen.z < 0.001f) {
+                Vector3 toeWorld = headWorld;
+                toeWorld.y -= 1.75f;
+                toeScreen = WorldToScreenPoint(viewMatrix, toeWorld);
+            }
             if (toeScreen.z < 0.001f) continue;
 
             // Build

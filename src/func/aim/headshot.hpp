@@ -29,6 +29,7 @@ namespace aimbot {
 
         if (captured && is_valid_ptr(lastTarget)) {
             wpm<uint64_t>(lastTarget + Offsets::Player::LockedAimingCollider, origCol);
+            wpm<uint64_t>(lastTarget + Offsets::Player::LockedAimingCollider_Alt, origCol);
         }
         lastTarget = 0;
         origCol = 0;
@@ -41,7 +42,7 @@ namespace aimbot {
         bool isSniperShot = (cfg::aim::sniper_aim && (isScoping || is_sniper_id(target.weaponType)));
         bool lockToHead = false;
 
-        if (isSniperShot || rate >= 100.0f) {
+        if (cfg::aim::auto_headshot || isSniperShot || rate >= 100.0f) {
             lockToHead = true;
         } else if (rate <= 0.0f) {
             lockToHead = false;
@@ -57,7 +58,7 @@ namespace aimbot {
         }
 
         // AIM COLLIDER OVERRIDE & REVERSE PATH:
-        // Set LockedAimingCollider (0x80 on AttackableEntity) to the enemy's Head Collider (0x740 / 0x738)
+        // Set LockedAimingCollider (0x80 & 0x78 on AttackableEntity) to the enemy's Head Collider (0x740 / 0x738)
         // With strict original value capture and restoration when unlocked or switching targets.
         uint64_t& lastTarget = get_last_headshot_target();
         uint64_t& origCol    = get_orig_headshot_col();
@@ -67,6 +68,7 @@ namespace aimbot {
             if (lastTarget != target.addr) {
                 if (captured && is_valid_ptr(lastTarget)) {
                     wpm<uint64_t>(lastTarget + Offsets::Player::LockedAimingCollider, origCol);
+                    wpm<uint64_t>(lastTarget + Offsets::Player::LockedAimingCollider_Alt, origCol);
                 }
                 origCol = rpm<uint64_t>(target.addr + Offsets::Player::LockedAimingCollider);
                 captured = true;
@@ -79,10 +81,18 @@ namespace aimbot {
             }
             if (is_valid_ptr(headCol)) {
                 wpm<uint64_t>(target.addr + Offsets::Player::LockedAimingCollider, headCol);     // 0x80
+                wpm<uint64_t>(target.addr + Offsets::Player::LockedAimingCollider_Alt, headCol); // 0x78
+
+                uint64_t localPlayer = data::localPlayerAddr.load(std::memory_order_relaxed);
+                if (is_valid_ptr(localPlayer)) {
+                    wpm<uint64_t>(localPlayer + Offsets::Player::LockedAimingCollider, headCol);
+                    wpm<uint64_t>(localPlayer + Offsets::Player::LockedAimingCollider_Alt, headCol);
+                }
             }
         } else {
             if (captured && is_valid_ptr(lastTarget)) {
                 wpm<uint64_t>(lastTarget + Offsets::Player::LockedAimingCollider, origCol);
+                wpm<uint64_t>(lastTarget + Offsets::Player::LockedAimingCollider_Alt, origCol);
                 lastTarget = 0;
                 origCol = 0;
                 captured = false;
