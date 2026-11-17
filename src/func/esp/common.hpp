@@ -102,10 +102,10 @@ namespace func::esp {
         float width = height * 0.48f;
         float halfW = width * 0.5f;
 
-        // Head bone is at eye level, add 10% padding above head for skull/helmet
-        // Toe bone is at sole level, add 4% padding below feet for boots
-        const float padTop = height * 0.10f;
-        const float padBot = height * 0.04f;
+        // Head bone is at eye level, add 12% padding above head for skull/helmet (STORM_MODS standard)
+        // Toe bone is at sole level, add 5% padding below feet for boots
+        const float padTop = height * 0.12f;
+        const float padBot = height * 0.05f;
 
         pb.tl = ImVec2(midX - halfW, topY - padTop);
         pb.br = ImVec2(midX + halfW, botY + padBot);

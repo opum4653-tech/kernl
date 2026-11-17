@@ -117,6 +117,9 @@ namespace aimbot {
                 uint64_t targetAddr = s_targetAddr.load(std::memory_order_relaxed);
                 if (is_valid_ptr(targetAddr)) {
                     uint64_t headCollider = rpm<uint64_t>(targetAddr + Offsets::Player::HeadCollider);
+                    if (!is_valid_ptr(headCollider)) {
+                        headCollider = rpm<uint64_t>(targetAddr + Offsets::Player::HeadCollider_Alt);
+                    }
                     if (is_valid_ptr(headCollider)) {
                         wpm<uint64_t>(targetAddr + Offsets::Player::LockedAimingCollider, headCollider);
                     }
@@ -201,11 +204,31 @@ namespace aimbot {
             }
         }
 
-        // Automatic Head Collider Swap (Runs whenever Aim Silent, Auto Headshot, or Scope Aim is active)
+        // Automatic Head Collider Swap & Hit Confirmation (Runs whenever Aim Silent, Auto Headshot, or Scope Aim is active)
         uint64_t headCollider = rpm<uint64_t>(target.addr + Offsets::Player::HeadCollider);
+        if (!is_valid_ptr(headCollider)) {
+            headCollider = rpm<uint64_t>(target.addr + Offsets::Player::HeadCollider_Alt);
+        }
         if (is_valid_ptr(headCollider)) {
             wpm<uint64_t>(target.addr + Offsets::Player::LockedAimingCollider, headCollider);
+            Vector3 targetHeadPos(
+                s_targetHeadX.load(std::memory_order_relaxed),
+                s_targetHeadY.load(std::memory_order_relaxed),
+                s_targetHeadZ.load(std::memory_order_relaxed)
+            );
+            if (is_valid_ptr(aimInfo)) {
+                wpm<uint64_t>(aimInfo + Offsets::Aim::HitCollider, headCollider);
+                wpm<Vector3>(aimInfo + Offsets::Aim::HitPoint, targetHeadPos);
+            }
+            if (is_valid_ptr(aimInfoAlt)) {
+                wpm<uint64_t>(aimInfoAlt + Offsets::Aim::HitCollider, headCollider);
+                wpm<Vector3>(aimInfoAlt + Offsets::Aim::HitPoint, targetHeadPos);
+            }
         }
+
+        // Weapon Engine Aiming State Binding (Dual Client/Server Verification Bypass)
+        wpm<uint64_t>(localPlayer + Offsets::Player_AimingTarget, target.addr);
+        wpm<bool>(localPlayer + Offsets::Player_AimingAdjusted, true);
     }
 
 } // namespace aimbot

@@ -31,10 +31,16 @@ namespace Offsets {
 // Player Entity Fields
     namespace Player {
         constexpr uintptr_t Rotation             = 0x614;   // Vector3
-        constexpr uintptr_t HeadTF               = 0x6A0;   // Head ITransformNode (0x6A0 in OB55)
-        constexpr uintptr_t FootTF               = 0x6C8;   // Foot / Root ITransformNode (0x6C8 in OB55)
-        constexpr uintptr_t HeadCollider         = 0x738;   // Head Collider (0x738 in OB55)
+        constexpr uintptr_t HeadTF               = 0x6A8;   // Head ITransformNode (0x6A8 proven in STORM_MODS & pewpew)
+        constexpr uintptr_t HeadTF_Alt           = 0x6A0;   // Auxiliary Head TF
+        constexpr uintptr_t SpineTF              = 0x6B8;   // Spine ITransformNode (0x6B8)
+        constexpr uintptr_t FootTF               = 0x6D0;   // Foot / Root ITransformNode (0x6D0 proven in STORM_MODS & pewpew)
+        constexpr uintptr_t FootTF_Alt           = 0x6C8;   // Auxiliary Foot TF
+        constexpr uintptr_t HeadCollider         = 0x740;   // Head Collider (0x740 proven in STORM_MODS & pewpew)
+        constexpr uintptr_t HeadCollider_Alt     = 0x738;   // Auxiliary Head Collider (0x738)
         constexpr uintptr_t LockedAimingCollider = 0x80;    // LockedAimingCollider (0x80 in OB55)
+        constexpr uintptr_t AimingTarget         = 0xE68;   // LastAimingTargetFromWeapon (0xE68 in OB55)
+        constexpr uintptr_t AimingAdjusted       = 0xE60;   // LastAimingInfoFromWeaponAdjusted (0xE60 in OB55)
         constexpr uintptr_t Camera               = 0x690;   // FollowCamera (0x690)
         constexpr uintptr_t Camera_Alt           = 0x698;   // FollowCamera auxiliary
         constexpr uintptr_t FollowCamera_Sub     = 0x690;   // FollowCamera auxiliary pointer
@@ -106,16 +112,18 @@ namespace Offsets {
 
 // Aim Information (HitInfo / Trajectory)
     namespace Aim {
+        constexpr uintptr_t HitCollider          = 0x20;    // Collider JINDNOFABKB (0x20)
+        constexpr uintptr_t HitPoint             = 0x28;    // Vector3 HPCOJHGFEEG (0x28)
         constexpr uintptr_t Direction            = 0x40;    // Vector3 RayDir (0x40)
         constexpr uintptr_t StartPosition        = 0x4C;    // Vector3 (0x4C)
     }
 
 // Skeleton Bones
     namespace Bone {
-        constexpr uintptr_t Head                 = 0x6A0;   // Head ITransformNode (0x6A0 in OB55)
-        constexpr uintptr_t Hip                  = 0x6A8;   // Hip / Waist ITransformNode (0x6A8 in OB55)
-        constexpr uintptr_t Chest                = 0x6B0;   // Chest / Spine ITransformNode (0x6B0 in OB55)
-        constexpr uintptr_t Root                 = 0x6C8;   // Root / Feet ITransformNode (0x6C8 in OB55)
+        constexpr uintptr_t Head                 = 0x6A8;   // Head ITransformNode (0x6A8)
+        constexpr uintptr_t Hip                  = 0x6B0;   // Hip / Waist ITransformNode (0x6B0)
+        constexpr uintptr_t Spine                = 0x6B8;   // Chest / Spine ITransformNode (0x6B8)
+        constexpr uintptr_t Root                 = 0x6D0;   // Root / Feet ITransformNode (0x6D0)
         constexpr uintptr_t LeftToe              = 0x6F0;   // Foot/Toe ITransformNode (0x6F0)
     }
 
@@ -181,11 +189,15 @@ namespace Offsets {
 
     constexpr uintptr_t Bone_Head                = Bone::Head;
     constexpr uintptr_t Bone_Hip                 = Bone::Hip;
-    constexpr uintptr_t Bone_Chest               = Bone::Chest;
+    constexpr uintptr_t Bone_Chest               = Bone::Spine;
+    constexpr uintptr_t Bone_Spine               = Bone::Spine;
     constexpr uintptr_t Bone_Root                = Bone::Root;
     constexpr uintptr_t Bone_LeftToe             = Bone::LeftToe;
     constexpr uintptr_t Player_HeadCollider      = Player::HeadCollider;
+    constexpr uintptr_t Player_HeadCollider_Alt  = Player::HeadCollider_Alt;
     constexpr uintptr_t Player_LockedAimingCollider = Player::LockedAimingCollider;
+    constexpr uintptr_t Player_AimingTarget      = Player::AimingTarget;
+    constexpr uintptr_t Player_AimingAdjusted    = Player::AimingAdjusted;
 
     constexpr uintptr_t StaticFields_Instance    = Unity::StaticFields_Instance;
 

@@ -300,9 +300,10 @@ namespace data {
                 if (rpm<bool>(umaData + Offsets::Avatar::UmaData_LocalPlayer)) continue;
             }
 
-            // Head world (Primary: OB55 Bone_Head 0x6A0)
+            // Head world (Primary: OB55 Bone_Head 0x6A8, fallback: HeadTF_Alt 0x6A0)
             uint64_t hNode = span.at<uint64_t>(Offsets::Bone_Head);
             if (!hNode) hNode = span.at<uint64_t>(Offsets::Player_HeadTF);
+            if (!hNode) hNode = span.at<uint64_t>(Offsets::Player::HeadTF_Alt);
             if (!hNode) continue;
             Vector3 headWorld = GetNodePosition(hNode);
             if (headWorld == Vector3::Zero() || headWorld.sqrMagnitude() < 1.0f) continue;
@@ -317,12 +318,17 @@ namespace data {
             Vector3 headScreen = WorldToScreenPoint(viewMatrix, headWorld);
             if (headScreen.z < 0.001f) continue;
 
-            // Feet / Root world (Primary: Root 0x6C8, Secondary: LeftToe 0x6F0)
-            uint64_t footNode = span.at<uint64_t>(Offsets::Player_FootTF);
+            // Feet / Root world (Primary: Root 0x6D0, Secondary: LeftToe 0x6F0, FootTF_Alt 0x6C8)
+            uint64_t footNode = span.at<uint64_t>(Offsets::Bone_Root);
+            if (!footNode) footNode = span.at<uint64_t>(Offsets::Player_FootTF);
             Vector3 toeScreen = footNode ? boneScreen(footNode) : Vector3::Zero();
             if (toeScreen.z < 0.001f) {
                 uint64_t toeNode = span.at<uint64_t>(Offsets::Bone_LeftToe);
                 if (toeNode) toeScreen = boneScreen(toeNode);
+            }
+            if (toeScreen.z < 0.001f) {
+                uint64_t footAlt = span.at<uint64_t>(Offsets::Player::FootTF_Alt);
+                if (footAlt) toeScreen = boneScreen(footAlt);
             }
             if (toeScreen.z < 0.001f) {
                 Vector3 toeWorld = headWorld;
