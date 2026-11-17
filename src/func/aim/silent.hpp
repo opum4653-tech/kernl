@@ -15,7 +15,6 @@ namespace aimbot {
     inline uint64_t          s_silentHeadCollider = 0;
     inline Vector3           s_silentDir = Vector3::Zero();
     inline Vector3           s_silentHitPos = Vector3::Zero();
-    inline Vector3           s_silentOrigin = Vector3::Zero();
     inline int32_t           s_silentHitGroup = 1;
     inline std::thread       s_writerThread;
 
@@ -29,7 +28,6 @@ namespace aimbot {
             s_silentHeadCollider = 0;
             s_silentDir = Vector3::Zero();
             s_silentHitPos = Vector3::Zero();
-            s_silentOrigin = Vector3::Zero();
             s_silentHitGroup = 1;
         }
     }
@@ -42,7 +40,7 @@ namespace aimbot {
     inline void writer_loop() {
         while (s_writerRunning.load(std::memory_order_relaxed)) {
             if (!s_hasSilentData.load(std::memory_order_relaxed) || s_silentAimInfo == 0) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
                 continue;
             }
 
@@ -51,11 +49,9 @@ namespace aimbot {
                 if (s_hasSilentData.load(std::memory_order_relaxed) && s_silentAimInfo != 0) {
                     // 1. Primary AimInfo (0xE58: LastAimingInfoFromWeapon)
                     wpm<Vector3>(s_silentAimInfo + Offsets::Aim::Direction, s_silentDir);           // 0x40 RayDir (Normalized!)
-                    wpm<Vector3>(s_silentAimInfo + Offsets::Aim::HitNormal, s_silentHitPos);        // 0x34 HitNormal (Target head location as internal)
+                    wpm<Vector3>(s_silentAimInfo + Offsets::Aim::HitNormal, s_silentDir);           // 0x34 HitNormal (Normalized surface normal)
                     wpm<Vector3>(s_silentAimInfo + Offsets::Aim::HitLocation, s_silentHitPos);      // 0x28 HitLocation (Head 3D)
-                    wpm<Vector3>(s_silentAimInfo + 0x74, s_silentOrigin);                           // 0x74 OrigStartPosition
-                    if (s_silentHeadCollider != 0) {
-                        wpm<uint64_t>(s_silentAimInfo + Offsets::Aim::HitObject, s_silentHeadCollider);   // 0x18 HitObject
+                    if (is_valid_ptr(s_silentHeadCollider)) {
                         wpm<uint64_t>(s_silentAimInfo + Offsets::Aim::HitCollider, s_silentHeadCollider); // 0x20 Head Collider
                     }
                     wpm<int32_t>(s_silentAimInfo + Offsets::Aim::HitGroup, s_silentHitGroup);       // 0x64 HitGroup (1 = Head!)
@@ -66,11 +62,9 @@ namespace aimbot {
                     // 2. Auxiliary AimInfo (0xE50) if present
                     if (s_silentAimInfoAlt != 0) {
                         wpm<Vector3>(s_silentAimInfoAlt + Offsets::Aim::Direction, s_silentDir);
-                        wpm<Vector3>(s_silentAimInfoAlt + Offsets::Aim::HitNormal, s_silentHitPos);
+                        wpm<Vector3>(s_silentAimInfoAlt + Offsets::Aim::HitNormal, s_silentDir);
                         wpm<Vector3>(s_silentAimInfoAlt + Offsets::Aim::HitLocation, s_silentHitPos);
-                        wpm<Vector3>(s_silentAimInfoAlt + 0x74, s_silentOrigin);
-                        if (s_silentHeadCollider != 0) {
-                            wpm<uint64_t>(s_silentAimInfoAlt + Offsets::Aim::HitObject, s_silentHeadCollider);
+                        if (is_valid_ptr(s_silentHeadCollider)) {
                             wpm<uint64_t>(s_silentAimInfoAlt + Offsets::Aim::HitCollider, s_silentHeadCollider);
                         }
                         wpm<int32_t>(s_silentAimInfoAlt + Offsets::Aim::HitGroup, s_silentHitGroup);
@@ -79,21 +73,13 @@ namespace aimbot {
                         wpm<int16_t>(s_silentAimInfoAlt + Offsets::Aim::SpecialHitType, 0);
                     }
 
-                    // 3. Keep target's & localPlayer's LockedAimingCollider locked to head collider
-                    if (s_silentHeadCollider != 0) {
-                        if (s_silentTargetAddr != 0) {
-                            wpm<uint64_t>(s_silentTargetAddr + Offsets::Player::LockedAimingCollider, s_silentHeadCollider);     // 0x80
-                            wpm<uint64_t>(s_silentTargetAddr + Offsets::Player::LockedAimingCollider_Alt, s_silentHeadCollider); // 0x78
-                        }
-                        uint64_t lp = data::localPlayerAddr.load(std::memory_order_relaxed);
-                        if (lp != 0) {
-                            wpm<uint64_t>(lp + Offsets::Player::LockedAimingCollider, s_silentHeadCollider);
-                            wpm<uint64_t>(lp + Offsets::Player::LockedAimingCollider_Alt, s_silentHeadCollider);
-                        }
+                    // 3. Keep target's LockedAimingCollider locked to head collider (Target only!)
+                    if (is_valid_ptr(s_silentTargetAddr) && is_valid_ptr(s_silentHeadCollider)) {
+                        wpm<uint64_t>(s_silentTargetAddr + Offsets::Player::LockedAimingCollider, s_silentHeadCollider); // 0x80
                     }
                 }
             }
-            std::this_thread::sleep_for(std::chrono::microseconds(500));
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
     }
 
@@ -117,9 +103,14 @@ namespace aimbot {
             return;
         }
 
-        // Silent aim & Auto Headshot stay primed whenever a target is in FOV or weapon is firing.
-        // If neither auto_headshot nor silent is active, or if trigger_mode requires firing and no grace period:
-        if (!cfg::aim::auto_headshot && !cfg::aim::silent && !isFiring && cfg::aim::trigger_mode == 0 && s_lockTimeoutTicks == 0) {
+        // Silent trajectory only activates when Silent Aim is enabled
+        if (!cfg::aim::silent) {
+            clear_silent_data();
+            return;
+        }
+
+        // Silent aim stays primed whenever a target is in FOV or weapon is firing.
+        if (!isFiring && cfg::aim::trigger_mode == 0 && s_lockTimeoutTicks == 0) {
             clear_silent_data();
             return;
         }
@@ -196,18 +187,15 @@ namespace aimbot {
             s_silentHeadCollider = headCol;
             s_silentDir          = normDir;
             s_silentHitPos       = target3D;
-            s_silentOrigin       = bulletOrigin;
             s_silentHitGroup     = hitGroup;
             s_hasSilentData.store(true, std::memory_order_relaxed);
         }
 
         // Immediate write to ensure zero lag on initial bullet
         wpm<Vector3>(aimInfoWeapon + Offsets::Aim::Direction, normDir);
-        wpm<Vector3>(aimInfoWeapon + Offsets::Aim::HitNormal, target3D); // Target Head 3D as internal
+        wpm<Vector3>(aimInfoWeapon + Offsets::Aim::HitNormal, normDir);
         wpm<Vector3>(aimInfoWeapon + Offsets::Aim::HitLocation, target3D);
-        wpm<Vector3>(aimInfoWeapon + 0x74, bulletOrigin); // OrigStartPosition
         if (is_valid_ptr(headCol)) {
-            wpm<uint64_t>(aimInfoWeapon + Offsets::Aim::HitObject, headCol);
             wpm<uint64_t>(aimInfoWeapon + Offsets::Aim::HitCollider, headCol);
         }
         wpm<int32_t>(aimInfoWeapon + Offsets::Aim::HitGroup, hitGroup);
