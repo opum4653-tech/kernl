@@ -284,7 +284,7 @@ void render() {
     // background -> all windows -> foreground, so this is what keeps the menu
     // window and the floating logo above ESP and the FOV circle.
     func::esp::draw();
-    func::aim::render_fov(ImGui::GetBackgroundDrawList());
+    aimbot::render_fov(ImGui::GetBackgroundDrawList());
 
     if (g_should_exit.load()) {
         main_thread_flag = false;
@@ -633,7 +633,7 @@ void render() {
                 ImGui::Dummy(ImVec2(0, 6 * ui_scale));
                 ImGui::SetNextItemWidth(-1);
                 cfg::SliderFloat("##HeadBiasSlider", cfg::aim::head_bias, 0.10f, 0.35f, "%.2f m");
-                ImGui::TextDisabled("Headshot Elevation Bias (0.22m = 100% Red)");
+                ImGui::TextDisabled("%s", "Headshot Elevation Bias (0.22m = 100% Red)");
 
                 handleTouchScroll();
             }

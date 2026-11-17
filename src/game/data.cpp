@@ -170,10 +170,6 @@ namespace data {
                 std::lock_guard<std::mutex> lk(players_mutex);
                 if (!players.empty()) players.clear();
             }
-            {
-                std::lock_guard<std::mutex> lk(loots_mutex);
-                if (!loots.empty()) loots.clear();
-            }
             if (!g_visStable.empty()) g_visStable.clear();
             if (!g_visCounter.empty()) g_visCounter.clear();
             return;

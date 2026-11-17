@@ -25,6 +25,7 @@ namespace esp {
 }
 
 namespace aim {
+    inline std::atomic<int>   read_interval_ms {16};   // Syscall cadence (ms)
     inline std::atomic<bool>  silent           {false}; // Aim Silent
     inline std::atomic<bool>  scope_aim        {false}; // Scope Aim (Instant Head)
     inline std::atomic<bool>  auto_headshot    {false}; // Auto Headshot (100% Red)

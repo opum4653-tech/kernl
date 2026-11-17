@@ -148,42 +148,6 @@ namespace aimbot {
             return;
         }
 
-        // TRADITIONAL AIM ASSIST BLEND
-        // "Enable Aim Assist" used to gate update() and then do nothing at all:
-        // only silent / auto_headshot ever reached apply_trajectory, so the
-        // toggle and the Smooth Factor slider under it were inert. Aim assist
-        // steers the same bullet vector but blends toward the target over
-        // frames so the turn reads as human drag instead of a silent snap.
-        // Silent aim and auto headshot stay instant by design.
-        const bool assistOnly = cfg::aim::enable &&
-                                !cfg::aim::silent.load(std::memory_order_relaxed) &&
-                                !cfg::aim::auto_headshot.load(std::memory_order_relaxed);
-        if (assistOnly) {
-            float smooth = cfg::aim::smooth.load(std::memory_order_relaxed);
-            if (!std::isfinite(smooth)) smooth = 5.0f;
-            smooth = std::clamp(smooth, 1.0f, 25.0f);
-
-            if (target.addr != s_smoothTargetAddr || s_smoothDir == Vector3::Zero()) {
-                // New target: seed the blend with the incoming vector so the
-                // first frame already points at the enemy. Starting from zero
-                // would sweep the bullet in from an arbitrary direction.
-                s_smoothDir = normDir;
-                s_smoothTargetAddr = target.addr;
-            } else {
-                // t is per-tick approach; higher smooth = slower approach.
-                float t = 1.0f / smooth;
-                Vector3 blended = s_smoothDir + (normDir - s_smoothDir) * t;
-                Vector3 n = blended.normalized();
-                if (std::isfinite(n.x) && std::isfinite(n.y) && std::isfinite(n.z) && n != Vector3::Zero()) {
-                    s_smoothDir = n;
-                }
-            }
-            normDir = s_smoothDir;
-        } else {
-            s_smoothDir = normDir;
-            s_smoothTargetAddr = target.addr;
-        }
-
         // Steer bullet trajectory via shared writer thread
         {
             std::lock_guard<std::mutex> lock(s_silentLock);

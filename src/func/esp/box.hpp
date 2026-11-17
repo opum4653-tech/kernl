@@ -9,7 +9,7 @@ namespace func::esp {
 
         if (type == 0) {
             // Corner Bracket Box
-            float len = (br.x - tl.x) * cfg::esp::bracket_frac;
+            float len = (br.x - tl.x) * 0.28f;
             ImVec2 pts[8][2] = {
                 {tl,                 {tl.x + len, tl.y}},
                 {tl,                 {tl.x, tl.y + len}},

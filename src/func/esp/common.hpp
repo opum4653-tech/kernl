@@ -17,10 +17,7 @@ namespace func::esp {
 
     inline bool is_active() {
         if (!cfg::master_enabled) return false;
-        return cfg::esp::box || cfg::esp::health || cfg::esp::armor ||
-               cfg::esp::name || cfg::esp::distance || cfg::esp::weapon ||
-               cfg::esp::tracer || cfg::esp::loot || cfg::esp::crosshair ||
-               cfg::esp::firing_ind;
+        return cfg::esp::box || cfg::esp::armor || cfg::esp::tracer || cfg::esp::bot_tag;
     }
 
     // HELPER COLOR CONVERSIONS
