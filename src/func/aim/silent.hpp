@@ -134,8 +134,8 @@ namespace aimbot {
         float bias = cfg::aim::head_bias.load(std::memory_order_relaxed);
         if (bias < 0.05f || bias > 0.40f) bias = 0.22f;
 
-        if (lockToHead || cfg::aim::auto_headshot || cfg::aim::target_bone == 0) {
-            target3D.y += bias; // Pure head sphere center
+        if (lockToHead || cfg::aim::auto_headshot || cfg::aim::silent || cfg::aim::target_bone == 0) {
+            target3D.y += bias; // 100% pure headshot (hits upper head sphere collider)
         } else if (cfg::aim::target_bone == 1) {
             target3D.y += Offsets::Aim::HeightOffset_Neck; // Neck (-0.15f)
         } else if (cfg::aim::target_bone == 2) {
