@@ -34,6 +34,7 @@ namespace Offsets {
         constexpr uintptr_t HeadTF               = 0x6A0;   // Head ITransformNode (0x6A0 in OB55)
         constexpr uintptr_t FootTF               = 0x6C8;   // Foot / Root ITransformNode (0x6C8 in OB55)
         constexpr uintptr_t HeadCollider         = 0x738;   // Head Collider (0x738 in OB55)
+        constexpr uintptr_t LockedAimingCollider = 0x80;    // LockedAimingCollider (0x80 in OB55)
         constexpr uintptr_t Camera               = 0x690;   // FollowCamera (0x690)
         constexpr uintptr_t Camera_Alt           = 0x698;   // FollowCamera auxiliary
         constexpr uintptr_t FollowCamera_Sub     = 0x690;   // FollowCamera auxiliary pointer
@@ -183,6 +184,8 @@ namespace Offsets {
     constexpr uintptr_t Bone_Chest               = Bone::Chest;
     constexpr uintptr_t Bone_Root                = Bone::Root;
     constexpr uintptr_t Bone_LeftToe             = Bone::LeftToe;
+    constexpr uintptr_t Player_HeadCollider      = Player::HeadCollider;
+    constexpr uintptr_t Player_LockedAimingCollider = Player::LockedAimingCollider;
 
     constexpr uintptr_t StaticFields_Instance    = Unity::StaticFields_Instance;
 

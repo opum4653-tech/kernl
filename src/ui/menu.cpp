@@ -629,6 +629,12 @@ void render() {
                 SectionHeader("TRAJECTORY & FOV", ui_scale);
 
                 cfg::Checkbox("Draw FOV Circle", cfg::aim::show_fov);
+                if (cfg::aim::show_fov.load(std::memory_order_relaxed)) {
+                    ImGui::Dummy(ImVec2(0, 4 * ui_scale));
+                    ImGui::SetNextItemWidth(-1);
+                    cfg::SliderFloat("##FovRangeSlider", cfg::aim::aim_fov, 10.0f, 180.0f, "FOV Range: %.0f deg");
+                    ImGui::TextDisabled("%s", "Adjust kill zone circle radius");
+                }
 
                 ImGui::Dummy(ImVec2(0, 6 * ui_scale));
                 ImGui::SetNextItemWidth(-1);

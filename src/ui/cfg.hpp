@@ -39,13 +39,16 @@ namespace aim {
         ImGuiIO& io = ImGui::GetIO();
         float currentSw = g_sw.load(std::memory_order_relaxed);
         float sw = (currentSw > 0.0f) ? currentSw : ((io.DisplaySize.x > 0.0f) ? io.DisplaySize.x : 2400.0f);
-        if (aim_fov > 0.0f && sw > 0.0f) {
-            float r = (aim_fov / 180.0f) * (sw * 0.50f);
+        float deg = aim_fov.load(std::memory_order_relaxed);
+        if (deg < 10.0f) deg = 10.0f;
+        if (deg > 180.0f) deg = 180.0f;
+        if (sw > 0.0f) {
+            float r = (deg / 180.0f) * (sw * 0.50f);
             if (r < 30.0f) r = 30.0f;
             if (r > sw * 0.50f) r = sw * 0.50f;
             return r;
         }
-        return (fov_radius > 0.0f) ? fov_radius.load() : 180.0f;
+        return 180.0f;
     }
 }
 

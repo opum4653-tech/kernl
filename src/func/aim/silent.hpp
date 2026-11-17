@@ -5,61 +5,141 @@
 
 namespace aimbot {
 
-    // High-speed writer state matching pewpew / crack_master architecture
-    inline std::atomic<bool> s_writerRunning{false};
-    inline std::atomic<bool> s_hasSilentData{false};
-    inline std::mutex        s_silentLock;
-    inline uint64_t          s_silentAimInfo = 0;
-    inline uint64_t          s_silentAimInfoAlt = 0;
-    inline Vector3           s_silentDir = Vector3::Zero();
-    inline std::thread       s_writerThread;
+    // High-speed writer state — zero lock contention (atomic hand-off)
+    inline std::atomic<bool>     s_writerRunning{false};
+    inline std::atomic<bool>     s_hasTarget{false};
+    inline std::atomic<uint64_t> s_targetAddr{0};
+    inline std::atomic<float>    s_targetHeadX{0.f};
+    inline std::atomic<float>    s_targetHeadY{0.f};
+    inline std::atomic<float>    s_targetHeadZ{0.f};
+    inline std::thread           s_writerThread;
 
     inline void clear_silent_data() {
-        if (s_hasSilentData.load(std::memory_order_relaxed) || s_silentAimInfo != 0) {
-            std::lock_guard<std::mutex> lock(s_silentLock);
-            s_hasSilentData.store(false, std::memory_order_relaxed);
-            s_silentAimInfo = 0;
-            s_silentAimInfoAlt = 0;
-            s_silentDir = Vector3::Zero();
-        }
+        s_hasTarget.store(false, std::memory_order_relaxed);
+        s_targetAddr.store(0, std::memory_order_relaxed);
     }
 
-    // High-speed writer thread (pewpew Producer/Consumer architecture):
-    // Dedicated high-speed thread writing ONLY to AimInfo + 0x40 (Direction / raycast).
-    // ZERO writes to enemy entities, ZERO writes to internal collider fields (0x20, 0x64, 0x28, 0x34).
-    // Unity's internal raycast executes naturally along this vector, hitting the enemy's head
-    // collider and generating authentic, legitimate server-side headshot damage packets.
-    // Result: Zero server kicks, zero "Match results is still being calculated" errors.
+    inline void set_silent_target(const PlayerData& target) {
+        if (!is_valid_ptr(target.addr)) {
+            clear_silent_data();
+            return;
+        }
+
+        Vector3 headPos = target.headWorld;
+        if (headPos == Vector3::Zero() || !std::isfinite(headPos.x) || !std::isfinite(headPos.y) || !std::isfinite(headPos.z)) {
+            clear_silent_data();
+            return;
+        }
+
+        // Apply Headshot Elevation Bias (default 0.22m into skull center)
+        float bias = cfg::aim::head_bias.load(std::memory_order_relaxed);
+        if (bias < 0.05f || bias > 0.40f) bias = 0.22f;
+        headPos.y += bias;
+
+        s_targetHeadX.store(headPos.x, std::memory_order_relaxed);
+        s_targetHeadY.store(headPos.y, std::memory_order_relaxed);
+        s_targetHeadZ.store(headPos.z, std::memory_order_relaxed);
+        s_targetAddr.store(target.addr, std::memory_order_relaxed);
+        s_hasTarget.store(true, std::memory_order_release);
+    }
+
+    // High-Speed Writer Thread (Hybrid pewpew + STORM_MODS architecture):
+    // 1. Silent Aim: Writes unnormalized displacement vector (targetPos - startPos) to AimInfo + 0x40.
+    //    Fixes the 1-meter raycast bug caused by vector normalization.
+    // 2. Auto Headshot: Swaps target's LockedAimingCollider (0x80) with HeadCollider (0x738)
+    //    from STORM_MODS, guaranteeing 100% Red damage across all hits.
+    // 3. Zero Lock Contention: Lock-free atomic synchronization eliminates thread starvation.
     inline void writer_loop() {
         while (s_writerRunning.load(std::memory_order_relaxed)) {
-            // Strict Menu Toggle Guard:
-            // If neither Silent Aim nor Auto Headshot is active in the menu, immediately purge and sleep
-            if (!cfg::aim::silent.load(std::memory_order_relaxed) && !cfg::aim::auto_headshot.load(std::memory_order_relaxed)) {
-                if (s_hasSilentData.load(std::memory_order_relaxed) || s_silentAimInfo != 0) {
+            if (!cfg::master_enabled.load(std::memory_order_relaxed) ||
+                (!cfg::aim::silent.load(std::memory_order_relaxed) &&
+                 !cfg::aim::auto_headshot.load(std::memory_order_relaxed) &&
+                 !cfg::aim::scope_aim.load(std::memory_order_relaxed))) {
+                if (s_hasTarget.load(std::memory_order_relaxed)) {
+                    clear_silent_data();
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(15));
+                continue;
+            }
+
+            if (!data::inMatch.load(std::memory_order_relaxed)) {
+                if (s_hasTarget.load(std::memory_order_relaxed)) {
+                    clear_silent_data();
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(15));
+                continue;
+            }
+
+            uint64_t localPlayer = data::localPlayerAddr.load(std::memory_order_relaxed);
+            if (!is_valid_ptr(localPlayer)) {
+                if (s_hasTarget.load(std::memory_order_relaxed)) {
                     clear_silent_data();
                 }
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
                 continue;
             }
 
-            if (!s_hasSilentData.load(std::memory_order_relaxed) || s_silentAimInfo == 0) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                continue;
+            // High-cadence firing check
+            bool isFiring = rpm<bool>(localPlayer + Offsets::Player::IsFiring);
+            if (!isFiring) {
+                isFiring = rpm<bool>(localPlayer + Offsets::Player::IsFiring_Alt);
             }
 
-            {
-                std::lock_guard<std::mutex> lock(s_silentLock);
-                if (s_hasSilentData.load(std::memory_order_relaxed) && s_silentAimInfo != 0) {
-                    wpm<Vector3>(s_silentAimInfo + Offsets::Aim::Direction, s_silentDir);
-                    wpm<bool>(s_silentAimInfo + 0x71, false);
+            bool hasTarget = s_hasTarget.load(std::memory_order_acquire);
+            uint64_t targetAddr = s_targetAddr.load(std::memory_order_relaxed);
 
-                    if (s_silentAimInfoAlt != 0) {
-                        wpm<Vector3>(s_silentAimInfoAlt + Offsets::Aim::Direction, s_silentDir);
-                        wpm<bool>(s_silentAimInfoAlt + 0x71, false);
+            if (isFiring && hasTarget && is_valid_ptr(targetAddr)) {
+                Vector3 targetHead(
+                    s_targetHeadX.load(std::memory_order_relaxed),
+                    s_targetHeadY.load(std::memory_order_relaxed),
+                    s_targetHeadZ.load(std::memory_order_relaxed)
+                );
+
+                // 1. Silent Aim Steering (AimInfo + 0x40 RayDir)
+                if (cfg::aim::silent.load(std::memory_order_relaxed) ||
+                    cfg::aim::scope_aim.load(std::memory_order_relaxed) ||
+                    cfg::aim::auto_headshot.load(std::memory_order_relaxed)) {
+
+                    uint64_t aimInfo = rpm<uint64_t>(localPlayer + Offsets::Player::AimInfo);
+                    uint64_t aimInfoAlt = rpm<uint64_t>(localPlayer + Offsets::Player::AimInfo_Alt);
+                    if (!is_valid_ptr(aimInfo)) {
+                        aimInfo = aimInfoAlt;
+                        aimInfoAlt = 0;
+                    }
+
+                    if (is_valid_ptr(aimInfo)) {
+                        Vector3 startPos = rpm<Vector3>(aimInfo + Offsets::Aim::StartPosition);
+                        if (startPos == Vector3::Zero() || !std::isfinite(startPos.x)) {
+                            uint64_t localHead = rpm<uint64_t>(localPlayer + Offsets::Bone_Head);
+                            if (localHead) startPos = GetNodePosition(localHead);
+                        }
+
+                        if (startPos != Vector3::Zero() && std::isfinite(startPos.x)) {
+                            // Full unnormalized displacement vector (pewpew & STORM_MODS standard)
+                            Vector3 dir = targetHead - startPos;
+                            if (dir.sqrMagnitude() > 0.001f) {
+                                wpm<Vector3>(aimInfo + Offsets::Aim::Direction, dir);
+                                if (is_valid_ptr(aimInfoAlt)) {
+                                    wpm<Vector3>(aimInfoAlt + Offsets::Aim::Direction, dir);
+                                }
+                            }
+                        }
                     }
                 }
+
+                // 2. Auto Headshot (100% Red Hitbox Collider Swap from STORM_MODS)
+                if (cfg::aim::auto_headshot.load(std::memory_order_relaxed)) {
+                    uint64_t headCollider = rpm<uint64_t>(targetAddr + Offsets::Player::HeadCollider);
+                    if (is_valid_ptr(headCollider)) {
+                        wpm<uint64_t>(targetAddr + Offsets::Player::LockedAimingCollider, headCollider);
+                    }
+                }
+
+                // High-performance yield while shooting
+                sched_yield();
+            } else {
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
             }
-            sched_yield();
         }
     }
 
@@ -76,7 +156,7 @@ namespace aimbot {
         }
     }
 
-    // 3D Silent bullet trajectory calculation and steering
+    // 3D Silent bullet trajectory calculation and steering entry
     inline void apply_trajectory(uint64_t localPlayer, const PlayerData& target, bool lockToHead, bool isFiring) {
         (void)lockToHead;
         if (!is_valid_ptr(localPlayer) || !is_valid_ptr(target.addr)) {
@@ -84,86 +164,54 @@ namespace aimbot {
             return;
         }
 
-        // Strictly gated by menu toggles — ZERO activation when disabled
-        if (!cfg::aim::silent.load(std::memory_order_relaxed) && !cfg::aim::auto_headshot.load(std::memory_order_relaxed)) {
+        if (!cfg::aim::silent.load(std::memory_order_relaxed) &&
+            !cfg::aim::auto_headshot.load(std::memory_order_relaxed) &&
+            !cfg::aim::scope_aim.load(std::memory_order_relaxed)) {
             clear_silent_data();
             return;
         }
 
-        // Primed when firing or actively acquired inside FOV
-        if (!isFiring && s_lockTimeoutTicks == 0) {
-            clear_silent_data();
-            return;
-        }
+        set_silent_target(target);
 
-        // Resolve Weapon AimingInfo (0xE58 primary, 0xE50 auxiliary)
-        uint64_t aimInfoWeapon = rpm<uint64_t>(localPlayer + Offsets::Player::AimInfo);
-        uint64_t aimInfoAlt    = rpm<uint64_t>(localPlayer + Offsets::Player::AimInfo_Alt);
-        if (!is_valid_ptr(aimInfoWeapon)) {
-            aimInfoWeapon = aimInfoAlt;
-            aimInfoAlt = 0;
-        }
-        if (!is_valid_ptr(aimInfoWeapon)) {
-            clear_silent_data();
-            return;
-        }
+        // Immediate first-frame raycast alignment if firing
+        if (isFiring) {
+            uint64_t aimInfo = rpm<uint64_t>(localPlayer + Offsets::Player::AimInfo);
+            uint64_t aimInfoAlt = rpm<uint64_t>(localPlayer + Offsets::Player::AimInfo_Alt);
+            if (!is_valid_ptr(aimInfo)) {
+                aimInfo = aimInfoAlt;
+                aimInfoAlt = 0;
+            }
 
-        // Read start position (0x4C) - ammoBase
-        Vector3 bulletOrigin = rpm<Vector3>(aimInfoWeapon + Offsets::Aim::StartPosition);
-        if (bulletOrigin == Vector3::Zero() || bulletOrigin.sqrMagnitude() < 0.01f || !std::isfinite(bulletOrigin.x)) {
-            uint64_t localHead = rpm<uint64_t>(localPlayer + Offsets::Bone_Head);
-            if (localHead) bulletOrigin = GetNodePosition(localHead);
-        }
+            if (is_valid_ptr(aimInfo)) {
+                Vector3 startPos = rpm<Vector3>(aimInfo + Offsets::Aim::StartPosition);
+                if (startPos == Vector3::Zero() || !std::isfinite(startPos.x)) {
+                    uint64_t localHead = rpm<uint64_t>(localPlayer + Offsets::Bone_Head);
+                    if (localHead) startPos = GetNodePosition(localHead);
+                }
 
-        if (bulletOrigin == Vector3::Zero() || bulletOrigin.sqrMagnitude() < 0.01f ||
-            !std::isfinite(bulletOrigin.x) || !std::isfinite(bulletOrigin.y) || !std::isfinite(bulletOrigin.z)) {
-            clear_silent_data();
-            return;
-        }
+                Vector3 targetHead(
+                    s_targetHeadX.load(std::memory_order_relaxed),
+                    s_targetHeadY.load(std::memory_order_relaxed),
+                    s_targetHeadZ.load(std::memory_order_relaxed)
+                );
 
-        Vector3 target3D = target.headWorld;
-        if (target3D == Vector3::Zero() || !std::isfinite(target3D.x) || !std::isfinite(target3D.y) || !std::isfinite(target3D.z)) {
-            clear_silent_data();
-            return;
-        }
+                if (startPos != Vector3::Zero() && std::isfinite(startPos.x)) {
+                    Vector3 dir = targetHead - startPos;
+                    if (dir.sqrMagnitude() > 0.001f) {
+                        wpm<Vector3>(aimInfo + Offsets::Aim::Direction, dir);
+                        if (is_valid_ptr(aimInfoAlt)) {
+                            wpm<Vector3>(aimInfoAlt + Offsets::Aim::Direction, dir);
+                        }
+                    }
+                }
+            }
 
-        // Elevating target3D.y by +0.22f (head_bias) centers the ray directly inside
-        // the head hitbox sphere, ensuring 100% RED HEADSHOT numbers!
-        float bias = cfg::aim::head_bias.load(std::memory_order_relaxed);
-        if (bias < 0.05f || bias > 0.40f) bias = 0.22f;
-        target3D.y += bias;
-
-        // Compute delta vector towards target
-        Vector3 diff = target3D - bulletOrigin;
-        float distSq = diff.sqrMagnitude();
-        if (distSq <= 1e-4f) {
-            clear_silent_data();
-            return;
-        }
-
-        // Normalized unit direction vector (crucial for Unity raycast & look rotation)
-        Vector3 normDir = diff.normalized();
-        if (!std::isfinite(normDir.x) || !std::isfinite(normDir.y) || !std::isfinite(normDir.z) || normDir == Vector3::Zero()) {
-            clear_silent_data();
-            return;
-        }
-
-        // Steer bullet trajectory via shared writer thread
-        {
-            std::lock_guard<std::mutex> lock(s_silentLock);
-            s_silentAimInfo      = aimInfoWeapon;
-            s_silentAimInfoAlt   = is_valid_ptr(aimInfoAlt) ? aimInfoAlt : 0;
-            s_silentDir          = normDir;
-            s_hasSilentData.store(true, std::memory_order_relaxed);
-        }
-
-        // Immediate write to ensure instant bullet alignment on first frame
-        wpm<Vector3>(aimInfoWeapon + Offsets::Aim::Direction, normDir);
-        wpm<bool>(aimInfoWeapon + 0x71, false);
-
-        if (is_valid_ptr(aimInfoAlt)) {
-            wpm<Vector3>(aimInfoAlt + Offsets::Aim::Direction, normDir);
-            wpm<bool>(aimInfoAlt + 0x71, false);
+            if (cfg::aim::auto_headshot.load(std::memory_order_relaxed)) {
+                uint64_t headCollider = rpm<uint64_t>(target.addr + Offsets::Player::HeadCollider);
+                if (is_valid_ptr(headCollider)) {
+                    wpm<uint64_t>(target.addr + Offsets::Player::LockedAimingCollider, headCollider);
+                }
+            }
         }
     }
 
