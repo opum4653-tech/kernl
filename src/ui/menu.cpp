@@ -239,7 +239,7 @@ void render() {
     // 1. Render pure kernel driver overlays (ESP & Aim assist FOV)
     // Note: func::aim::update() runs dedicatedly in background aim thread (aim.hpp)
     func::esp::draw();
-    func::aim::render_fov(ImGui::GetBackgroundDrawList());
+    func::aim::render_fov(ImGui::GetForegroundDrawList());
 
     if (g_should_exit.load()) {
         main_thread_flag = false;

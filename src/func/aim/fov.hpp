@@ -3,29 +3,37 @@
 
 namespace aimbot {
 
-    // FOV CIRCLE & ACTIVE TARGET LOCK VISUALIZER
-    // Scaled dynamically by cfg::aim::get_fov_radius()
-    inline void render_fov(ImDrawList* dl) {
+    // FOV CIRCLE & ACTIVE TARGET LOCK VISUALIZER (Matching pewpew draw_overlay architecture)
+    inline void render_fov(ImDrawList* dl = nullptr) {
         if (!cfg::master_enabled) return;
-        if ((!cfg::aim::enable && !cfg::aim::silent) || !cfg::aim::show_fov) return;
-        if (!data::inMatch.load(std::memory_order_relaxed)) return;
+        if (!cfg::aim::show_fov) return;
 
-        float cx = g_sw * 0.5f;
-        float cy = g_sh * 0.5f;
-        float r  = cfg::aim::get_fov_radius();
+        if (!dl) {
+            dl = ImGui::GetForegroundDrawList();
+        }
 
-        // Smooth Orchid / White FOV circle (shows exact trigger zone)
-        dl->AddCircle(ImVec2(cx, cy), r, IM_COL32(255, 255, 255, 45), 64, 1.0f);
-        dl->AddCircle(ImVec2(cx, cy), r + 1.0f, IM_COL32(225, 0, 153, 160), 64, 1.5f);
+        ImGuiIO& io = ImGui::GetIO();
+        float sw = (g_sw > 0.0f) ? g_sw : ((io.DisplaySize.x > 0.0f) ? io.DisplaySize.x : 2400.0f);
+        float sh = (g_sh > 0.0f) ? g_sh : ((io.DisplaySize.y > 0.0f) ? io.DisplaySize.y : 1080.0f);
 
-        // Lock ring reads a coherent snapshot — the aim worker rewrites the
-        // struct on its own thread and an unguarded read can tear the vector.
-        TargetInfo t = snapshot_target();
-        if (t.valid && t.screenPos.z >= 0.001f) {
-            dl->AddCircle(ImVec2(t.screenPos.x, t.screenPos.y),
-                          10.0f, IM_COL32(255, 30, 80, 240), 16, 2.0f);
-            dl->AddCircle(ImVec2(t.screenPos.x, t.screenPos.y),
-                          3.5f, IM_COL32(255, 255, 255, 255), 12, 1.5f);
+        ImVec2 center(sw * 0.5f, sh * 0.5f);
+        float r = cfg::aim::get_fov_radius();
+        if (r < 30.0f) r = 180.0f;
+
+        // Clean, visible FOV Circle at screen center (pewpew style)
+        // Main visible circle (crisp white, 1.5px)
+        dl->AddCircle(center, r, IM_COL32(255, 255, 255, 220), 64, 1.5f);
+        // Outer aesthetic theme glow (electric orchid, 1.0px)
+        dl->AddCircle(center, r + 1.0f, IM_COL32(225, 0, 153, 140), 64, 1.0f);
+
+        // Active Target Lock Indicator (if in match and locked onto enemy)
+        if (data::inMatch.load(std::memory_order_relaxed)) {
+            TargetInfo t = snapshot_target();
+            if (t.valid && t.screenPos.z >= 0.001f && t.screenPos.x > 1.0f && t.screenPos.y > 1.0f) {
+                ImVec2 pos(t.screenPos.x, t.screenPos.y);
+                dl->AddCircle(pos, 12.0f, IM_COL32(255, 40, 80, 230), 24, 2.0f);
+                dl->AddCircleFilled(pos, 3.5f, IM_COL32(255, 255, 255, 255));
+            }
         }
     }
 
