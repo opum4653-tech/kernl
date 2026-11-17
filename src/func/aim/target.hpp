@@ -40,8 +40,8 @@ namespace aimbot {
         result.isScoping = (camFovOffset < -0.5f || camFovOffset > 0.5f);
 
         bool triggerActive = false;
-        if (cfg::aim::trigger_mode == 1) {
-            triggerActive = true; // Always In FOV
+        if (cfg::aim::trigger_mode == 1 || cfg::aim::silent || cfg::aim::auto_headshot) {
+            triggerActive = true; // Continuous priming while enemy is acquired in FOV
         } else if ((cfg::aim::scope_aim || cfg::aim::sniper_aim) && result.isScoping) {
             triggerActive = true; // Instant activation when scoping
         } else {

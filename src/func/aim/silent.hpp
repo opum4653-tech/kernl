@@ -109,8 +109,9 @@ namespace aimbot {
             return;
         }
 
-        // Silent aim stays primed whenever a target is in FOV or weapon is firing.
-        if (!isFiring && cfg::aim::trigger_mode == 0 && s_lockTimeoutTicks == 0) {
+        // Silent aim stays primed whenever a target is acquired in FOV or weapon is firing.
+        // Guarantees immediate 100% red-number headshot registration on single-taps and sprays.
+        if (!isFiring && cfg::aim::trigger_mode == 0 && s_lockTimeoutTicks == 0 && !cfg::aim::silent) {
             clear_silent_data();
             return;
         }
