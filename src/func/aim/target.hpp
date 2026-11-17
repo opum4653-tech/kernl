@@ -38,13 +38,9 @@ namespace aimbot {
         }
         result.isScoping = (camFovOffset < -0.5f || camFovOffset > 0.5f);
 
-        bool triggerActive = false;
-        if (cfg::aim::silent || cfg::aim::auto_headshot) {
+        bool triggerActive = isFiring;
+        if (cfg::aim::scope_aim && result.isScoping) {
             triggerActive = true;
-        } else if (cfg::aim::scope_aim && result.isScoping) {
-            triggerActive = true;
-        } else {
-            triggerActive = isFiring;
         }
         result.triggerActive = triggerActive;
 
