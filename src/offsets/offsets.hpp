@@ -31,8 +31,9 @@ namespace Offsets {
 // Player Entity Fields
     namespace Player {
         constexpr uintptr_t Rotation             = 0x614;   // Vector3
-        constexpr uintptr_t HeadTF               = 0x6A8;   // Head ITransformNode (0x6A8)
-        constexpr uintptr_t FootTF               = 0x6F0;   // Foot ITransformNode (0x6F0)
+        constexpr uintptr_t HeadTF               = 0x6A0;   // Head ITransformNode (0x6A0 in OB55)
+        constexpr uintptr_t FootTF               = 0x6C8;   // Foot / Root ITransformNode (0x6C8 in OB55)
+        constexpr uintptr_t HeadCollider         = 0x738;   // Head Collider (0x738 in OB55)
         constexpr uintptr_t Camera               = 0x690;   // FollowCamera (0x690)
         constexpr uintptr_t Camera_Alt           = 0x698;   // FollowCamera auxiliary
         constexpr uintptr_t FollowCamera_Sub     = 0x690;   // FollowCamera auxiliary pointer
@@ -110,7 +111,10 @@ namespace Offsets {
 
 // Skeleton Bones
     namespace Bone {
-        constexpr uintptr_t Head                 = 0x6A8;   // Head ITransformNode (0x6A8)
+        constexpr uintptr_t Head                 = 0x6A0;   // Head ITransformNode (0x6A0 in OB55)
+        constexpr uintptr_t Hip                  = 0x6A8;   // Hip / Waist ITransformNode (0x6A8 in OB55)
+        constexpr uintptr_t Chest                = 0x6B0;   // Chest / Spine ITransformNode (0x6B0 in OB55)
+        constexpr uintptr_t Root                 = 0x6C8;   // Root / Feet ITransformNode (0x6C8 in OB55)
         constexpr uintptr_t LeftToe              = 0x6F0;   // Foot/Toe ITransformNode (0x6F0)
     }
 
@@ -175,6 +179,9 @@ namespace Offsets {
     constexpr uintptr_t AimInfo_StartPosition    = Aim::StartPosition;
 
     constexpr uintptr_t Bone_Head                = Bone::Head;
+    constexpr uintptr_t Bone_Hip                 = Bone::Hip;
+    constexpr uintptr_t Bone_Chest               = Bone::Chest;
+    constexpr uintptr_t Bone_Root                = Bone::Root;
     constexpr uintptr_t Bone_LeftToe             = Bone::LeftToe;
 
     constexpr uintptr_t StaticFields_Instance    = Unity::StaticFields_Instance;

@@ -97,13 +97,15 @@ namespace func::esp {
             botY = topY + height;
         }
 
-        // Align horizontally centered on p.Head.x (spine center) matching internal reference
-        float midX = p.Head.x;
-        float width = height * 0.50f;
+        // Align horizontally centered between head and toe (natural spine alignment)
+        float midX = ok(p.Toe) ? ((p.Head.x + p.Toe.x) * 0.5f) : p.Head.x;
+        float width = height * 0.48f;
         float halfW = width * 0.5f;
 
-        const float padTop = height * 0.12f;
-        const float padBot = height * 0.05f;
+        // Head bone is at eye level, add 10% padding above head for skull/helmet
+        // Toe bone is at sole level, add 4% padding below feet for boots
+        const float padTop = height * 0.10f;
+        const float padBot = height * 0.04f;
 
         pb.tl = ImVec2(midX - halfW, topY - padTop);
         pb.br = ImVec2(midX + halfW, botY + padBot);

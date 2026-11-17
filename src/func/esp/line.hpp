@@ -33,9 +33,9 @@ namespace func::esp {
             lineStart = ImVec2(g_sw * 0.5f, g_sh);
             target = ImVec2(midX, botY);
         } else {
-            // Screen Top Origin (Default) -> Target Head / Top of Box
+            // Screen Top Origin (Default) -> Target Enemy Head
             lineStart = ImVec2(g_sw * 0.5f, 0.f);
-            target = ImVec2(midX, topY);
+            target = ImVec2(p.Head.x, p.Head.y);
         }
 
         float aa = ImClamp(1.f - p.distance / cfg::esp::max_range, 0.25f, 1.f);
