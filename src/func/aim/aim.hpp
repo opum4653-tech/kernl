@@ -28,6 +28,7 @@ namespace aimbot {
         if (!cfg::master_enabled) {
             motion::reset();
             publish_target_invalid();
+            clear_silent_data();
             return;
         }
 
@@ -39,6 +40,7 @@ namespace aimbot {
             s_lockTimeoutTicks = 0;
             s_smoothDir = Vector3::Zero();
             publish_target_invalid();
+            clear_silent_data();
             return;
         }
 
@@ -47,6 +49,7 @@ namespace aimbot {
             s_lockTimeoutTicks = 0;
             restore_headshot_override();
             publish_target_invalid();
+            clear_silent_data();
             return;
         }
 
@@ -56,6 +59,7 @@ namespace aimbot {
             s_lockTimeoutTicks = 0;
             restore_headshot_override();
             publish_target_invalid();
+            clear_silent_data();
             return;
         }
 
@@ -63,6 +67,7 @@ namespace aimbot {
         if (!acq.valid) {
             restore_headshot_override();
             publish_target_invalid();
+            clear_silent_data();
             return;
         }
 
@@ -81,8 +86,12 @@ namespace aimbot {
         // Headshot evaluation & collider mapping
         bool lockToHead = evaluate_headshot(acq.target, acq.isScoping);
 
-        // 3D Silent bullet trajectory steering
-        apply_trajectory(localPlayer, acq.target, lockToHead, (acq.isFiring || acq.triggerActive));
+        // 3D Silent bullet trajectory steering (Only runs when Silent Aim or Auto Headshot is ON)
+        if (cfg::aim::silent || cfg::aim::auto_headshot) {
+            apply_trajectory(localPlayer, acq.target, lockToHead, (acq.isFiring || acq.triggerActive));
+        } else {
+            clear_silent_data();
+        }
     }
 
     inline void loop() {
@@ -94,6 +103,7 @@ namespace aimbot {
                 // menu readout and FOV lock ring do not show a stale target
                 // left over from before the toggle.
                 publish_target_invalid();
+                clear_silent_data();
             }
 
             uint64_t lp = data::localPlayerAddr.load(std::memory_order_relaxed);

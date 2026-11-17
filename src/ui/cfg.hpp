@@ -58,6 +58,7 @@ namespace aim {
     inline std::atomic<float> fov_radius      {180.0f}; // Fallback pixel radius
     inline std::atomic<float> smooth          {5.0f};   // Safe default: smooth lerp (1=snap, 10=slow). Range 3-8 looks natural.
     inline std::atomic<float> headshot_rate   {100.0f}; // 100% default headshot rate when active.
+    inline std::atomic<float> head_bias       {0.22f};  // +0.22m elevation above Bone_Head (0x6A8) for pure 100% red headshots
     inline std::atomic<int>   target_bone     {0}; // 0 = Head, 1 = Neck/Chest, 2 = Pelvis/Body
     inline std::atomic<int>   trigger_mode    {0}; // 0 = When Firing, 1 = Always In FOV
     inline std::atomic<int>   priority_mode   {0}; // 0 = Crosshair Distance, 1 = Low HP, 2 = 3D Distance

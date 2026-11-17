@@ -656,6 +656,11 @@ void render() {
 
                 ImGui::Dummy(ImVec2(0, 4 * ui_scale));
                 ImGui::SetNextItemWidth(-1);
+                cfg::SliderFloat("##HeadBiasSlider", cfg::aim::head_bias, 0.10f, 0.35f, "%.2f m");
+                ImGui::TextDisabled("Head Elevation Bias (0.22m = Pure Red)");
+
+                ImGui::Dummy(ImVec2(0, 4 * ui_scale));
+                ImGui::SetNextItemWidth(-1);
                 cfg::SliderFloat("##AimSmooth", cfg::aim::smooth, 1.0f, 25.0f, "%.1f");
                 ImGui::TextDisabled("Smooth Factor (Higher = Humanized)");
 

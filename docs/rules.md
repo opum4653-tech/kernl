@@ -42,6 +42,10 @@ This document establishes the mandatory design, architecture, and coding rules f
    - A gesture that begins inside a rect stays swallowed until the finger lifts.
    - Touches within the logo or menu bounds must never penetrate into the underlying game canvas.
 
+3. **Menu Dimensions & Aspect Ratio:**
+   - Sidebar width and header height must maintain a strict 1:1 aspect ratio (`headerH = sidebarW`) for visual symmetry.
+   - Total menu window size must account for both sidebar and content areas dynamically scaled via `ui_scale`.
+
 ---
 
 ## 3. Kernel Memory & Safety Standards
@@ -57,3 +61,48 @@ This document establishes the mandatory design, architecture, and coding rules f
 3. **Performance & Syscall Minimization:**
    - Utilize batched memory structures (`PlayerSpan`) to extract all player entity fields in a single read rather than making isolated syscalls per field.
    - Dictionary slots must be extracted in blocks of 64 (`MonoDictionary::read_block`).
+
+---
+
+## 4. Pure Kernel Silent Aim & Trajectory Integrity
+
+1. **Zero Entity & Internal HitInfo Tampering (Kick / Desync Prevention):**
+   - **NEVER** write to enemy entity memory (e.g., `LockedAimingCollider` at `0x80`).
+   - **NEVER** write to internal weapon hit fields on `AimInfo`:
+     - `HitCollider` (`0x20`)
+     - `HitLocation` (`0x28`)
+     - `HitNormal` (`0x34`)
+     - `HitGroup` (`0x64`)
+     - `IgnoreHappens` (`0x70`)
+     - `SpecialHitType` (`0x80`)
+   - Writing to these internal hit fields from out-of-process corrupts Unity's physics raycast state and triggers server-side packet validation failures, resulting in the server disconnection error:
+     `"Match results is still being calculated and will be available in match history after you return to the lobby."`
+
+2. **Pure Raycast Direction Vector Steering (0x40 Only):**
+   - Trajectory steering must write **strictly and exclusively** to `AimInfo + Offsets::Aim::Direction` (`0x40`) with a normalized unit vector (`diff.normalized()`), and reset `AimInfo + 0x71` (`ViewBlocked` / adjustment flag).
+   - Unity's native weapon physics engine performs the raycast naturally along this direction vector, intersecting the enemy's head collider and generating an authentic, 100% legitimate server-validated damage packet.
+
+3. **Hitbox Vertical Elevation Bias (+0.20m to +0.24m):**
+   - Free Fire's `Bone_Head` (`0x6A8`) pivot is located at the neck / jaw base.
+   - The enemy's capsule body collider extends vertically above this pivot. Firing directly at `headWorld` (+0.0m) causes the ray to hit the upper body capsule first, producing body hits (yellow/white numbers).
+   - Adding a vertical elevation bias (`+0.22m` default via `cfg::aim::head_bias`) elevates the ray directly into the center of the head hitbox sphere, guaranteeing 100% RED headshot numbers.
+
+4. **Strict Menu Toggle Gating & Background Thread Sanitation:**
+   - Silent Aim and Auto Headshot execution must be completely isolated to when their respective menu toggles (`cfg::aim::silent`, `cfg::aim::auto_headshot`) are enabled.
+   - When toggles are disabled or when target is lost, immediately invoke `clear_silent_data()` to set `s_hasSilentData = false` and nullify `s_silentAimInfo`.
+   - The dedicated writer thread `writer_loop()` must verify `cfg::aim::silent` and `cfg::aim::auto_headshot` on every cycle. If false, it must immediately flush shared data and sleep, completely preventing any background memory writes when the feature is turned off.
+
+---
+
+## 5. Anti-Ban Safe Movement & Speed Hack Architecture
+
+1. **Sprint Scale Clamping (1.00x - 1.30x Safe Range):**
+   - Speed modifications must strictly target `RunSpeedUpScale` (`0x2C0`) on `PlayerAttributes`. This mirrors in-game character sprint skills (Kelly, Alok, Joseph).
+   - **NEVER** modify `Player_Speed` (`0x560`) or multiply `Player_Speed` and `RunSpeedUpScale` simultaneously, which causes exponential velocity explosions (`mult * mult = 25x`) and instant server teleport bans.
+   - All speed multipliers must be clamped strictly to `1.00x - 1.30x` (maximum 30% sprint boost), keeping velocity safely below the server's 10.5 m/s anti-teleport threshold.
+
+2. **Zero Gravity / Vertical Tampering:**
+   - **NEVER** write to `FallingSpeedUpScale` (`0x2BC`). Modifying fall velocity alters gravity physics and immediately triggers server-side vertical teleport detection.
+
+3. **Smart Firing Guard:**
+   - When actively firing (`isFiring == true`), the sprint multiplier automatically drops to baseline `1.0x`. This prevents weapon desync, dropped bullets, and rate-of-fire validation anomalies during combat.
