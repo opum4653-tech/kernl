@@ -11,12 +11,12 @@
 4. **ESP Laser Line** — এনিমির দিকে লেজার ট্রেসার লাইন [OK]
 5. **ESP Bot Tag (AI)** — সার্ভার বট প্লেয়ার আলাদা করার ট্যাগ [BOT] [OK]
 6. **Max Render Distance Slider** — ইএসপি রেন্ডার রেঞ্জ (৫০ মি. - ৫০০ মি.) [OK]
-7. **ESP Accent Color** — ইএসপি রঙের জন্য ৬টি থিম কালার প্যালেট [OK]
+7. **ESP Accent Color** — পার্পল কালার সিস্টেমে ফিক্সড (#E10098, মেনু কালার প্যালেট অপশন রিমুভড) [OK]
 
 #### Tab 1: Combat (Aimbot)
-8. **Aim Silent** — স্ক্রিন না ঘুরিয়েই সরাসরি বুলেটের ডিরেকশন হেডে নেওয়ার অপশন [READY FOR VERIFICATION]
-9. **Scope Aim (Instant Head)** — স্কোপ অন করলেই ইনস্ট্যান্ট হেড লক [READY FOR VERIFICATION]
-10. **Auto Headshot (100% Red)** — ১০০% লাল নাম্বারে ড্যামেজ লক [READY FOR VERIFICATION]
+8. **Aim Silent** — স্ক্রিন না ঘুরিয়েই সরাসরি বুলেটের ডিরেকশন হেডে নেওয়ার অপশন (Unnormalized Vector) [OK]
+9. **Scope Aim (Instant Head)** — স্কোপ অন করলেই ইনস্ট্যান্ট হেড লক [OK]
+10. **Auto Headshot (100% Red)** — ১০০% লাল নাম্বারে ড্যামেজ লক (LockedAimingCollider 0x80 সোয়াপ) [OK]
 11. **Ignore Knocked** — নকড প্লেয়ারদের এইম ফিল্টার করা [OK]
 12. **Draw FOV Circle** — স্ক্রিনের মাঝখানে কিল জোন সার্কেল আঁকা [OK]
 13. **Headshot Elevation Bias Slider** — হেডে হিট লাগার উচ্চতা অ্যাডজাস্টমেন্ট (০.১০মি. - ০.৩৫মি., ডিফল্ট ০.২২মি.) [OK]

@@ -20,8 +20,8 @@ namespace esp {
     inline std::atomic<float> tracer_thickness {1.2f};
     inline std::atomic<int>   tracer_pos       {0};     // 0 = Top, 1 = Center, 2 = Bottom
 
-    // ESP Accent Color
-    inline ImVec4 box_col                      = ImVec4(0.0f, 0.90f, 1.0f, 1.0f);
+    // ESP Accent Color (Unified Signature Purple #E10098)
+    inline ImVec4 box_col                      = ImVec4(0.882f, 0.000f, 0.596f, 1.0f);
 }
 
 namespace aim {

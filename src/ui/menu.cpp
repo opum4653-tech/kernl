@@ -589,17 +589,6 @@ void render() {
                 cfg::SliderFloat("##MaxRange", cfg::esp::max_range, 50.0f, 500.0f, "%.0f m");
                 ImGui::TextDisabled("Max Render Distance");
 
-                ImGui::Dummy(ImVec2(0, 8 * ui_scale));
-                ImGui::TextDisabled("ESP Accent Color");
-                for (int i = 0; i < 6; i++) {
-                    ImGui::PushID(900 + i);
-                    if (ImGui::ColorButton("##espcol", g_ThemeSwatches[i], 0, ImVec2(28 * ui_scale, 28 * ui_scale))) {
-                        cfg::esp::box_col = g_ThemeSwatches[i];
-                    }
-                    if (i < 5) ImGui::SameLine();
-                    ImGui::PopID();
-                }
-
                 handleTouchScroll();
             }
             ImGui::EndChild();
