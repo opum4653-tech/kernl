@@ -36,8 +36,8 @@ namespace Offsets {
         constexpr uintptr_t SpineTF              = 0x6B8;   // Spine ITransformNode (0x6B8)
         constexpr uintptr_t FootTF               = 0x6D0;   // Foot / Root ITransformNode (0x6D0 proven in STORM_MODS & pewpew)
         constexpr uintptr_t FootTF_Alt           = 0x6C8;   // Auxiliary Foot TF
-        constexpr uintptr_t HeadCollider         = 0x740;   // Head Collider (0x740 proven in STORM_MODS & pewpew)
-        constexpr uintptr_t HeadCollider_Alt     = 0x738;   // Auxiliary Head Collider (0x738)
+        constexpr uintptr_t HeadCollider         = 0x738;   // Head Collider BANPEGJEAKE (0x738 verified in IL2CPP dump)
+        constexpr uintptr_t HeadCollider_Alt     = 0x740;   // Auxiliary Head Collider (0x740)
         constexpr uintptr_t LockedAimingCollider = 0x80;    // LockedAimingCollider (0x80 in OB55)
         constexpr uintptr_t AimingTarget         = 0xE68;   // LastAimingTargetFromWeapon (0xE68 in OB55)
         constexpr uintptr_t AimingAdjusted       = 0xE60;   // LastAimingInfoFromWeaponAdjusted (0xE60 in OB55)
@@ -110,12 +110,23 @@ namespace Offsets {
         constexpr uintptr_t IntPtr_Alt           = 0x10;
     }
 
-// Aim Information (HitInfo / Trajectory)
+// Aim Information (HitInfo / Trajectory: CGKJLKPMGDJ in IL2CPP dump)
     namespace Aim {
+        constexpr uintptr_t HitObject            = 0x18;    // GameObject JHAINOBIFMA (0x18)
         constexpr uintptr_t HitCollider          = 0x20;    // Collider JINDNOFABKB (0x20)
         constexpr uintptr_t HitPoint             = 0x28;    // Vector3 HPCOJHGFEEG (0x28)
-        constexpr uintptr_t Direction            = 0x40;    // Vector3 RayDir (0x40)
-        constexpr uintptr_t StartPosition        = 0x4C;    // Vector3 (0x4C)
+        constexpr uintptr_t HitNormal            = 0x34;    // Vector3 DOJDNHCGFGK (0x34)
+        constexpr uintptr_t Direction            = 0x40;    // Vector3 RayDir HLDECMJFKJK (0x40)
+        constexpr uintptr_t StartPosition        = 0x4C;    // Vector3 EKPLMDDKOGB (0x4C)
+        constexpr uintptr_t Damage               = 0x58;    // Int32 OLGEMBBDBID (0x58)
+        constexpr uintptr_t Distance             = 0x5C;    // Single CFIPDNFBKHK (0x5C)
+        constexpr uintptr_t ActorLayer           = 0x60;    // Int32 GABPHAKNADH (0x60)
+        constexpr uintptr_t HitGroup             = 0x64;    // LKOOALMKJND DKPDBLLJEAA (0x64) (1 = Head, 2 = Body)
+        constexpr uintptr_t HitPhysicMaterial    = 0x68;    // PhysicMaterial DIDOKHNBBAD (0x68)
+        constexpr uintptr_t IgnoreHappens        = 0x70;    // Boolean EFMBNPNFGHM (0x70)
+        constexpr uintptr_t ViewBlocked          = 0x71;    // Boolean CEOKOILBODN (0x71)
+        constexpr uintptr_t OrigStartPosition    = 0x74;    // Vector3 ONMKMEGMHOL (0x74)
+        constexpr uintptr_t SpecialHitType       = 0x80;    // Int16 CLOLKHNMNEK (0x80)
     }
 
 // Skeleton Bones
@@ -184,8 +195,15 @@ namespace Offsets {
     constexpr uintptr_t Weapon_Data              = Weapon::Data;
     constexpr uintptr_t Weapon_Recoil            = 0x18;
 
+    constexpr uintptr_t AimInfo_HitCollider      = Aim::HitCollider;
+    constexpr uintptr_t AimInfo_HitPoint         = Aim::HitPoint;
+    constexpr uintptr_t AimInfo_HitNormal        = Aim::HitNormal;
     constexpr uintptr_t AimInfo_Direction        = Aim::Direction;
     constexpr uintptr_t AimInfo_StartPosition    = Aim::StartPosition;
+    constexpr uintptr_t AimInfo_HitGroup         = Aim::HitGroup;
+    constexpr uintptr_t AimInfo_ViewBlocked      = Aim::ViewBlocked;
+    constexpr uintptr_t AimInfo_OrigStartPosition = Aim::OrigStartPosition;
+    constexpr uintptr_t AimInfo_SpecialHitType   = Aim::SpecialHitType;
 
     constexpr uintptr_t Bone_Head                = Bone::Head;
     constexpr uintptr_t Bone_Hip                 = Bone::Hip;
