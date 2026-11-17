@@ -78,6 +78,7 @@ namespace aimbot {
 
     // 3D Silent bullet trajectory calculation and steering
     inline void apply_trajectory(uint64_t localPlayer, const PlayerData& target, bool lockToHead, bool isFiring) {
+        (void)lockToHead;
         if (!is_valid_ptr(localPlayer) || !is_valid_ptr(target.addr)) {
             clear_silent_data();
             return;
@@ -90,7 +91,7 @@ namespace aimbot {
         }
 
         // Primed when firing or actively acquired inside FOV
-        if (!isFiring && cfg::aim::trigger_mode == 0 && s_lockTimeoutTicks == 0) {
+        if (!isFiring && s_lockTimeoutTicks == 0) {
             clear_silent_data();
             return;
         }
@@ -126,21 +127,11 @@ namespace aimbot {
             return;
         }
 
-        // Target bone height adjustment:
-        // Offsets::Bone_Head (0x6A8) is at the neck/jaw base pivot of the character.
-        // The enemy body capsule collider extends up to ~0.08m above this pivot.
         // Elevating target3D.y by +0.22f (head_bias) centers the ray directly inside
         // the head hitbox sphere, ensuring 100% RED HEADSHOT numbers!
         float bias = cfg::aim::head_bias.load(std::memory_order_relaxed);
         if (bias < 0.05f || bias > 0.40f) bias = 0.22f;
-
-        if (lockToHead || cfg::aim::auto_headshot || cfg::aim::silent || cfg::aim::target_bone == 0) {
-            target3D.y += bias; // 100% pure headshot (hits upper head sphere collider)
-        } else if (cfg::aim::target_bone == 1) {
-            target3D.y += Offsets::Aim::HeightOffset_Neck; // Neck (-0.15f)
-        } else if (cfg::aim::target_bone == 2) {
-            target3D.y += Offsets::Aim::HeightOffset_Body; // Chest (-0.40f)
-        }
+        target3D.y += bias;
 
         // Compute delta vector towards target
         Vector3 diff = target3D - bulletOrigin;
@@ -155,6 +146,42 @@ namespace aimbot {
         if (!std::isfinite(normDir.x) || !std::isfinite(normDir.y) || !std::isfinite(normDir.z) || normDir == Vector3::Zero()) {
             clear_silent_data();
             return;
+        }
+
+        // TRADITIONAL AIM ASSIST BLEND
+        // "Enable Aim Assist" used to gate update() and then do nothing at all:
+        // only silent / auto_headshot ever reached apply_trajectory, so the
+        // toggle and the Smooth Factor slider under it were inert. Aim assist
+        // steers the same bullet vector but blends toward the target over
+        // frames so the turn reads as human drag instead of a silent snap.
+        // Silent aim and auto headshot stay instant by design.
+        const bool assistOnly = cfg::aim::enable &&
+                                !cfg::aim::silent.load(std::memory_order_relaxed) &&
+                                !cfg::aim::auto_headshot.load(std::memory_order_relaxed);
+        if (assistOnly) {
+            float smooth = cfg::aim::smooth.load(std::memory_order_relaxed);
+            if (!std::isfinite(smooth)) smooth = 5.0f;
+            smooth = std::clamp(smooth, 1.0f, 25.0f);
+
+            if (target.addr != s_smoothTargetAddr || s_smoothDir == Vector3::Zero()) {
+                // New target: seed the blend with the incoming vector so the
+                // first frame already points at the enemy. Starting from zero
+                // would sweep the bullet in from an arbitrary direction.
+                s_smoothDir = normDir;
+                s_smoothTargetAddr = target.addr;
+            } else {
+                // t is per-tick approach; higher smooth = slower approach.
+                float t = 1.0f / smooth;
+                Vector3 blended = s_smoothDir + (normDir - s_smoothDir) * t;
+                Vector3 n = blended.normalized();
+                if (std::isfinite(n.x) && std::isfinite(n.y) && std::isfinite(n.z) && n != Vector3::Zero()) {
+                    s_smoothDir = n;
+                }
+            }
+            normDir = s_smoothDir;
+        } else {
+            s_smoothDir = normDir;
+            s_smoothTargetAddr = target.addr;
         }
 
         // Steer bullet trajectory via shared writer thread

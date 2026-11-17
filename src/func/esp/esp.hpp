@@ -4,18 +4,16 @@
 #include "line.hpp"
 #include "health.hpp"
 #include "info.hpp"
-#include "weapon.hpp"
-#include "loot.hpp"
-#include "crosshair.hpp"
-#include "firing.hpp"
 
 namespace func::esp {
 
-    // MAIN ESP DRAW PIPELINE
+    // MAIN ESP DRAW PIPELINE — STRICT 16 CORE ARCHITECTURE
     inline void draw() {
         if (!is_active()) return;
 
-        ImDrawList* dl = ImGui::GetForegroundDrawList();
+        // Background draw list: rendered before every ImGui window, so the menu
+        // and the floating logo always sit above ESP.
+        ImDrawList* dl = ImGui::GetBackgroundDrawList();
 
         std::vector<PlayerData> snap;
         {
@@ -26,7 +24,6 @@ namespace func::esp {
         for (const auto& p : snap) {
             if (p.Head.z < 0.5f || p.Toe.z < 0.5f) continue;
             if (p.curHP <= 0) continue;
-            if (cfg::esp::ignore_bots && p.isBot) continue;
             if (p.distance > cfg::esp::max_range) continue;
 
             PlayerBox pb = computePlayerBox(p);
@@ -40,52 +37,28 @@ namespace func::esp {
 
             float cx = (tl.x + br.x) * 0.5f;
 
-            ImU32 colBase = p.isVisible ? toU32(cfg::esp::box_visible)
-                                        : toU32(cfg::esp::box_col);
+            ImU32 colBase = toU32(cfg::esp::box_col);
             colBase = fadeDist(colBase, p.distance, cfg::esp::max_range);
 
-            // 1. Tracer Line (Top, Center Reticle Dot, or Bottom)
+            // 1. ESP Laser Line (Tracer)
             if (cfg::esp::tracer) {
                 drawTracer(dl, p, pb, colBase);
             }
 
-            // 2. Bounding Box
+            // 2. ESP Box (Chaturbhuj)
             if (cfg::esp::box) {
-                if (cfg::esp::box_filled) {
-                    dl->AddRectFilled(tl, br, withAlpha(colBase, 0.15f), cfg::esp::box_rounding);
-                }
-                drawBox(dl, tl, br, colBase, cfg::esp::box_type);
+                drawBox(dl, tl, br, colBase, 1); // Type 1 = Full 2D Box (Chaturbhuj)
             }
 
-            // 3. Firing Warning Indicator
-            if (cfg::esp::firing_ind) {
-                drawFiring(dl, p, cx, tl.y);
+            // 3. ESP Bot Tag (AI)
+            if (cfg::esp::bot_tag && p.isBot) {
+                drawBotTag(dl, p, cx, tl.y);
             }
 
-            // 4. Player Info (Name, Distance, Bot Tag)
-            PlayerData tmp = p;
-            if (tmp.name[0] == 0) {
-                snprintf(tmp.name, sizeof(tmp.name), "%s", p.isBot ? "BOT" : "Player");
+            // 4. ESP Armor Bar
+            if (cfg::esp::armor && p.curArmor > 0) {
+                drawSideArmorBar(dl, p, tl, br);
             }
-            drawTopInfo(dl, tmp, cx, tl.y);
-
-            // 5. Right-side Vertical Health & Armor Bar (Strictly gated by cfg::esp::health)
-            drawSideHealthBar(dl, tmp, tl, br);
-
-            // 6. Weapon Type Pill (Below Feet)
-            if (cfg::esp::weapon) {
-                drawWeapon(dl, p, {cx, br.y});
-            }
-        }
-
-        // 7. World Loot Items
-        if (cfg::esp::loot) {
-            drawLoot();
-        }
-
-        // 8. Screen Crosshair & Reticle Center Dot
-        if (cfg::esp::crosshair) {
-            drawCrosshair(dl);
         }
     }
 

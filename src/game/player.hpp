@@ -1,5 +1,5 @@
 #pragma once
-#include "../other/vector3.h"   // <- TAMBAH INI
+#include "../other/vector3.h"
 #include <cstdint>
 
 struct PlayerData {
@@ -31,18 +31,4 @@ struct PlayerData {
           isFiring(false), isGrounded(true), speed(0.f),
           weaponType(-1)
     { name[0] = 0; }
-};
-
-struct LootItem {
-    uint64_t addr;
-    uint32_t guid;
-    uint32_t resID;
-    Vector3  worldPos;
-    Vector3  screenPos;
-    float    distance;
-
-    LootItem()
-        : addr(0), guid(0), resID(0),
-          worldPos(Vector3::Zero()), screenPos(Vector3::Zero()),
-          distance(0.f) {}
 };

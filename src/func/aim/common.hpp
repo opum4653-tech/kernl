@@ -64,7 +64,13 @@ namespace aimbot {
     inline uint64_t s_lockedTargetAddr = 0;
     inline int      s_lockTimeoutTicks = 0;
 
-    // Smooth direction tracking across frame updates
+    // Smooth direction tracking across frame updates. Used by traditional aim
+    // assist; silent aim and auto headshot snap instead of blending.
     inline Vector3 s_smoothDir = Vector3::Zero();
+
+    // Target the current smoothed direction was built against. A new target
+    // resets the blend so the acquisition frame snaps instead of sweeping the
+    // bullet across the screen from the previous target's vector.
+    inline uint64_t s_smoothTargetAddr = 0;
 
 } // namespace aimbot

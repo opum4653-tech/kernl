@@ -15,8 +15,6 @@ namespace data {
 
     std::vector<PlayerData>  players;
     std::mutex               players_mutex;
-    std::vector<LootItem>    loots;
-    std::mutex               loots_mutex;
     std::atomic<uint64_t>    localPlayerAddr{0};
     std::atomic<bool>        inMatch{false};
 
@@ -138,55 +136,6 @@ namespace data {
         return WorldToScreenPoint(viewMatrix, w);
     }
 
-    // SCAN LOOT
-    static void scanLoot(uint64_t BaseGame, const Vector3& localPos) {
-        std::vector<LootItem> tmp;
-
-        uint64_t match = rpm<uint64_t>(BaseGame + Offsets::BaseGame_Match);
-        if (!match) return;
-
-        uint64_t metaMgr = rpm<uint64_t>(match + Offsets::Match_MetaManager);
-        if (!metaMgr) return;
-
-        uint64_t dictPtr = rpm<uint64_t>(metaMgr + Offsets::MetaManager_DropObjects);
-        if (!dictPtr) return;
-
-        uint64_t entries = rpm<uint64_t>(dictPtr + Offsets::Dict::Entries);
-        int count = rpm<int>(dictPtr + Offsets::Dict::Count);
-        if (!entries || count <= 0 || count > 500) return;
-
-        uint64_t base = entries + Offsets::Dict::ArrayHeader;
-        for (int i = 0; i < count; i++) {
-            uint64_t e = base + i * Offsets::Dict::EntryStride;
-            uint64_t dropObj = rpm<uint64_t>(e + Offsets::Dict::EntryValue);
-            if (!dropObj || dropObj < 0x100000) continue;
-
-            bool landed = rpm<bool>(dropObj + Offsets::DropObject_Landed);
-            if (!landed) continue;
-
-            Vector3 w = rpm<Vector3>(dropObj + Offsets::DropObject_Position);
-            if (w == Vector3::Zero()) continue;
-
-            float dist = calculate_distance(localPos, w);
-            if (dist > cfg::esp::loot_range) continue;
-
-            Vector3 sc = WorldToScreenPoint(viewMatrix, w);
-            if (sc.x < 0) continue;
-
-            LootItem li;
-            li.addr      = dropObj;
-            li.guid      = rpm<uint32_t>(dropObj + Offsets::DropObject_Guid);
-            li.resID     = rpm<uint32_t>(dropObj + Offsets::DropObject_ResID);
-            li.worldPos  = w;
-            li.screenPos = sc;
-            li.distance  = dist;
-            tmp.push_back(li);
-        }
-
-        std::lock_guard<std::mutex> lk(loots_mutex);
-        loots = std::move(tmp);
-    }
-
     // UPDATE
     void update() {
         // Snapshot the pair once. During a teardown the watchdog clears lib
@@ -284,14 +233,6 @@ namespace data {
         uint64_t headNode = rpm<uint64_t>(localPlayer + Offsets::Bone_Head);
         if (headNode) localPos = GetNodePosition(headNode);
 
-// LOOT
-        if (cfg::esp::loot) {
-            scanLoot(BaseGame, localPos);
-        } else {
-            std::lock_guard<std::mutex> lk(loots_mutex);
-            loots.clear();
-        }
-
 // PLAYERS
         uint64_t dictAddr = rpm<uint64_t>(BaseGame + Offsets::Match_PlayerDict);
         if (!dictAddr) {
@@ -372,8 +313,7 @@ namespace data {
             if (headWorld.y < -150.0f || headWorld.y > 600.0f) continue;
 
             float dist = calculate_distance(localPos, headWorld);
-            float maxTrackingDist = std::max(cfg::esp::max_range.load(std::memory_order_relaxed),
-                                             cfg::aim::max_distance.load(std::memory_order_relaxed));
+            float maxTrackingDist = cfg::esp::max_range.load(std::memory_order_relaxed);
             if (maxTrackingDist < 50.0f) maxTrackingDist = 200.0f;
             if (dist < 0.8f || dist > maxTrackingDist) continue;
 

@@ -9,7 +9,9 @@ namespace aimbot {
         if (!cfg::aim::show_fov) return;
 
         if (!dl) {
-            dl = ImGui::GetForegroundDrawList();
+            // Background draw list: the FOV ring and lock marker belong under
+            // the menu and the floating logo, never on top of them.
+            dl = ImGui::GetBackgroundDrawList();
         }
 
         ImGuiIO& io = ImGui::GetIO();

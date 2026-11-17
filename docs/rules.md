@@ -46,6 +46,12 @@ This document establishes the mandatory design, architecture, and coding rules f
    - Sidebar width and header height must maintain a strict 1:1 aspect ratio (`headerH = sidebarW`) for visual symmetry.
    - Total menu window size must account for both sidebar and content areas dynamically scaled via `ui_scale`.
 
+4. **Draw-List Layer Order (menu is always on top):**
+   - The menu window and the floating logo draw with `ImGui::GetWindowDrawList()`.
+   - Every world-space overlay — ESP boxes, tracers, health bars, name pills, loot pills, crosshair, FOV ring, target lock marker — must draw on `ImGui::GetBackgroundDrawList()`.
+   - `ImGui::Render()` emits **background → all windows → foreground**. Using `GetForegroundDrawList()` for a world overlay paints it over the menu's glass cards and over the logo disc. Never do it.
+   - Both draw lists render into the same overlay surface. The game canvas is a separate surface underneath, so switching to the background list does not hide anything behind the game — it only decides ordering against ImGui windows.
+
 ---
 
 ## 3. Kernel Memory & Safety Standards

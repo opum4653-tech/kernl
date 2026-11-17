@@ -222,6 +222,28 @@ static bool DrawSegmentedButtons(const char* str_id, std::atomic<int>* selected,
     return changed;
 }
 
+// ----------------------------------------------------------------------------
+// CUSTOM WIDGET: SECTION HEADER
+// Title in the live theme accent plus a rule sized to the text that was just
+// drawn. The inline blocks this replaces hardcoded orchid and hand-picked rule
+// widths (95 / 105 / 120 / 125 / 130 px), so switching the accent swatch left
+// every section title pink and the underline wider than the words above it.
+// ----------------------------------------------------------------------------
+static void SectionHeader(const char* title, float ui_scale) {
+    ImFont* font = g_UiFont ? g_UiFont : ImGui::GetFont();
+    const float fs = 17.0f * ui_scale;
+
+    ImVec2 pos = ImGui::GetCursorScreenPos();
+    ImVec2 ts = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, title);
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->AddText(font, fs, pos, theme_orchid::ColPrimaryLight, title);
+    float ruleY = pos.y + ts.y + 3.0f * ui_scale;
+    dl->AddLine(ImVec2(pos.x, ruleY), ImVec2(pos.x + ts.x, ruleY), theme_orchid::ColPrimary, 2.0f);
+
+    ImGui::Dummy(ImVec2(0.0f, ts.y + 6.0f * ui_scale));
+}
+
 namespace ui::menu {
 
 void save_logo_pos() {
@@ -236,23 +258,16 @@ void load_logo_pos() {
 // MAIN UNIFIED RENDER ENTRY POINT
 // ----------------------------------------------------------------------------
 void render() {
-    // 1. Render pure kernel driver overlays (ESP & Aim assist FOV)
-    // Note: func::aim::update() runs dedicatedly in background aim thread (aim.hpp)
-    func::esp::draw();
-    func::aim::render_fov(ImGui::GetForegroundDrawList());
-
-    if (g_should_exit.load()) {
-        main_thread_flag = false;
-        g_ShowMenu = false;
-        return;
-    }
-
     ImGuiIO& io = ImGui::GetIO();
     float realW = (io.DisplaySize.x > 0.0f) ? io.DisplaySize.x : (float)native_window_screen_x;
     float realH = (io.DisplaySize.y > 0.0f) ? io.DisplaySize.y : (float)native_window_screen_y;
     if (realW <= 0) realW = 2400.0f;
     if (realH <= 0) realH = 1080.0f;
 
+    // Publish the viewport BEFORE any overlay draws. The ESP and FOV paths read
+    // g_sw / g_sh for their projection, and the old order ran them first, so
+    // every overlay was one frame behind after a rotation - and on the very
+    // first frame it used globals.cpp's 1920x1080 placeholder.
     g_sw = realW;
     g_sh = realH;
 
@@ -262,6 +277,20 @@ void render() {
     float ui_scale = realH / 1080.0f;
     if (ui_scale < 0.65f) ui_scale = 0.65f;
     if (ui_scale > 1.45f) ui_scale = 1.45f;
+
+    // 1. Render pure kernel driver overlays (ESP & Aim assist FOV)
+    // Note: func::aim::update() runs dedicatedly in background aim thread (aim.hpp)
+    // Both overlays draw on the background list. ImGui::Render() emits
+    // background -> all windows -> foreground, so this is what keeps the menu
+    // window and the floating logo above ESP and the FOV circle.
+    func::esp::draw();
+    func::aim::render_fov(ImGui::GetBackgroundDrawList());
+
+    if (g_should_exit.load()) {
+        main_thread_flag = false;
+        g_ShowMenu = false;
+        return;
+    }
 
     // ------------------------------------------------------------------------
     // STATE 1: FLOATING LOGO (Modularized into floating_logo.cpp)
@@ -367,7 +396,11 @@ void render() {
         const float headerH = sidebarW; // Header Height is identical to Sidebar Width
         const float bodyH = winSize.y - headerH;
         const float closeBtnSize = 36.0f * ui_scale;
-        const float xRadius = 6.0f * ui_scale;
+        // Half-extent of the X glyph. It used to be a fixed 6*ui_scale while the
+        // hit button was 36*ui_scale, so the icon read as a tiny x floating in a
+        // large invisible box. Tying it to the button size keeps the glyph and
+        // the touch target proportional at every ui_scale.
+        const float xHalf = closeBtnSize * 0.26f;
         const float badgeH = 24.0f * ui_scale;
         const float badgeW = 76.0f * ui_scale;
 
@@ -378,9 +411,23 @@ void render() {
         dl->AddRectFilled(hMin, hMax, theme_orchid::ColHeaderBg, 12.0f * ui_scale, ImDrawFlags_RoundCornersTop);
         dl->AddLine(ImVec2(hMin.x, hMax.y), ImVec2(hMax.x, hMax.y), IM_COL32(40, 30, 56, 255), 1.0f);
 
-        // Header Drag Zone (Excludes close button & status badge)
+        // Right-hand cluster is laid out first so the branding block can find
+        // out how much room is left. Close button is the outer control; the
+        // status badge sits to its left with a fixed gutter.
+        const ImVec2 cMin(winPos.x + winSize.x - closeBtnSize - 8.0f * ui_scale,
+                          winPos.y + (headerH - closeBtnSize) * 0.5f);
+        const ImVec2 bMin(cMin.x - badgeW - 12.0f * ui_scale,
+                          winPos.y + (headerH - badgeH) * 0.5f);
+        const ImVec2 bMax(bMin.x + badgeW, bMin.y + badgeH);
+
+        // Header Drag Zone (Excludes close button & status badge).
+        // Floored: on a window narrow enough that the right cluster eats the
+        // whole header, the width would go negative and InvisibleButton would
+        // resolve a negative size against the content region - a drag strip
+        // wider than the window.
+        const float dragW = std::max(32.0f * ui_scale, bMin.x - winPos.x - 10.0f * ui_scale);
         ImGui::SetCursorPos(ImVec2(0, 0));
-        ImGui::InvisibleButton("##HeaderDragZone", ImVec2(winSize.x - closeBtnSize - badgeW - 30.0f * ui_scale, headerH));
+        ImGui::InvisibleButton("##HeaderDragZone", ImVec2(dragW, headerH));
         if (ImGui::IsItemActive()) {
             s_menu_pos.x += io.MouseDelta.x;
             s_menu_pos.y += io.MouseDelta.y;
@@ -400,14 +447,19 @@ void render() {
         // Sub-label and badge draw at 12-14px; the 14px ESP face suits them.
         // Knock the 32px menu face down to 12 and the stems go muddy.
         ImFont* smallFont = g_EspFont ? g_EspFont : ImGui::GetFont();
-        dl->AddText(smallFont, 14.0f * ui_scale,
-                    ImVec2(brandPos.x + brandTextW + 8.0f * ui_scale, brandPos.y + 3.0f * ui_scale),
-                    theme_orchid::ColPrimaryLight, "KERNEL CORE");
+        // Only drawn when it still clears the badge. On a narrow window the
+        // sub-label used to run underneath the badge and the two texts stacked.
+        const float subFontSize = 14.0f * ui_scale;
+        const float subX = brandPos.x + brandTextW + 8.0f * ui_scale;
+        const float subW = smallFont->CalcTextSizeA(subFontSize, FLT_MAX, 0.0f, "KERNEL CORE").x;
+        if (subX + subW <= bMin.x - 10.0f * ui_scale) {
+            dl->AddText(smallFont, subFontSize,
+                        ImVec2(subX, brandPos.y + 3.0f * ui_scale),
+                        theme_orchid::ColPrimaryLight, "KERNEL CORE");
+        }
 
         // Live Connection Status Badge
         bool connected = (proc::pid.load(std::memory_order_relaxed) > 0 && proc::lib.load(std::memory_order_relaxed) > 0);
-        ImVec2 bMin(winPos.x + winSize.x - closeBtnSize - badgeW - 14.0f * ui_scale, winPos.y + (headerH - badgeH) * 0.5f);
-        ImVec2 bMax(bMin.x + badgeW, bMin.y + badgeH);
         ImU32 badgeBg = connected ? IM_COL32(16, 48, 32, 220) : IM_COL32(48, 20, 24, 220);
         ImU32 badgeBorder = connected ? IM_COL32(0, 230, 118, 200) : IM_COL32(255, 75, 75, 200);
         dl->AddRectFilled(bMin, bMax, badgeBg, 6.0f * ui_scale);
@@ -419,16 +471,25 @@ void render() {
         dl->AddText(smallFont, 12.0f * ui_scale, stPos, theme_orchid::ColWhite, stTxt);
 
         // Close Button (Smooth 'X')
-        ImVec2 cMin(winPos.x + winSize.x - closeBtnSize - 8.0f * ui_scale, winPos.y + (headerH - closeBtnSize) * 0.5f);
         ImGui::SetCursorScreenPos(cMin);
         if (ImGui::InvisibleButton("##CloseMenuBtn", ImVec2(closeBtnSize, closeBtnSize))) {
             g_ShowMenu = false;
         }
         bool closeHovered = ImGui::IsItemHovered();
         ImVec2 cCenter(cMin.x + closeBtnSize * 0.5f, cMin.y + closeBtnSize * 0.5f);
+        // Hover disc: the invisible button had no feedback at all, so the only
+        // cue that the corner was tappable was the tiny glyph itself.
+        if (closeHovered) {
+            dl->AddCircleFilled(cCenter, closeBtnSize * 0.5f,
+                                (theme_orchid::ColPrimary & 0x00FFFFFF) | (60u << 24), 32);
+            dl->AddCircle(cCenter, closeBtnSize * 0.5f,
+                          (theme_orchid::ColPrimary & 0x00FFFFFF) | (170u << 24), 32, 1.5f);
+        }
         ImU32 closeCol = closeHovered ? theme_orchid::ColPrimaryLight : IM_COL32(200, 195, 215, 230);
-        dl->AddLine(ImVec2(cCenter.x - xRadius, cCenter.y - xRadius), ImVec2(cCenter.x + xRadius, cCenter.y + xRadius), closeCol, 2.0f);
-        dl->AddLine(ImVec2(cCenter.x + xRadius, cCenter.y - xRadius), ImVec2(cCenter.x - xRadius, cCenter.y + xRadius), closeCol, 2.0f);
+        dl->AddLine(ImVec2(cCenter.x - xHalf, cCenter.y - xHalf),
+                    ImVec2(cCenter.x + xHalf, cCenter.y + xHalf), closeCol, 2.4f);
+        dl->AddLine(ImVec2(cCenter.x + xHalf, cCenter.y - xHalf),
+                    ImVec2(cCenter.x - xHalf, cCenter.y + xHalf), closeCol, 2.4f);
 
         // --------------------------------------------------------------------
         // 2. LEFT SIDEBAR NAVIGATION
@@ -505,67 +566,30 @@ void render() {
             // Left Column: Features
             ImGui::SetCursorPos(ImVec2(contentX, contentY));
             if (ImGui::BeginChild("##ColLeftESP", ImVec2(colW, contentH), true)) {
-                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "ESP VISUALS");
-                ImDrawList* cdl = ImGui::GetWindowDrawList();
-                ImVec2 lpos = ImGui::GetCursorScreenPos();
-                cdl->AddLine(ImVec2(lpos.x, lpos.y - 4), ImVec2(lpos.x + 95 * ui_scale, lpos.y - 4), theme_orchid::ColPrimary, 2.0f);
-                ImGui::Dummy(ImVec2(0, 4 * ui_scale));
+                SectionHeader("ESP VISUALS", ui_scale);
 
-                if (DrawToggleSwitch("Master Switch", &cfg::master_enabled, 44.0f * ui_scale, ui_scale)) {
-                    if (!cfg::master_enabled) {
-                        func::aim::motion::reset();
-                    }
-                }
+                DrawToggleSwitch("Master Switch", &cfg::master_enabled, 44.0f * ui_scale, ui_scale);
                 ImGui::Dummy(ImVec2(0, 6 * ui_scale));
 
                 cfg::Checkbox("ESP Box (Chaturbhuj)", cfg::esp::box);
-                cfg::Checkbox("ESP Health Bar (Right)", cfg::esp::health);
                 cfg::Checkbox("ESP Armor Bar", cfg::esp::armor);
                 cfg::Checkbox("ESP Laser Line", cfg::esp::tracer);
-                cfg::Checkbox("ESP Player Name", cfg::esp::name);
-                cfg::Checkbox("ESP Distance", cfg::esp::distance);
                 cfg::Checkbox("ESP Bot Tag (AI)", cfg::esp::bot_tag);
-                cfg::Checkbox("ESP Weapon Name", cfg::esp::weapon);
-                cfg::Checkbox("Firing Indicator", cfg::esp::firing_ind);
 
                 handleTouchScroll();
             }
             ImGui::EndChild();
 
-            // Right Column: Settings & Filters
+            // Right Column: Settings & Styling
             ImGui::SetCursorPos(ImVec2(contentX + colW + colGap, contentY));
             if (ImGui::BeginChild("##ColRightESP", ImVec2(colW, contentH), true)) {
-                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "SETTINGS & FILTERS");
-                ImDrawList* cdl = ImGui::GetWindowDrawList();
-                ImVec2 rpos = ImGui::GetCursorScreenPos();
-                cdl->AddLine(ImVec2(rpos.x, rpos.y - 4), ImVec2(rpos.x + 120 * ui_scale, rpos.y - 4), theme_orchid::ColPrimary, 2.0f);
-                ImGui::Dummy(ImVec2(0, 4 * ui_scale));
+                SectionHeader("SETTINGS & STYLING", ui_scale);
 
-                cfg::Checkbox("Ignore Bot Players", cfg::esp::ignore_bots);
-                cfg::Checkbox("Crosshair Center", cfg::esp::crosshair);
-                cfg::Checkbox("Loot ESP", cfg::esp::loot);
-
-                ImGui::Dummy(ImVec2(0, 4 * ui_scale));
-                static const char* const boxStyles[] = { "Corner", "Full", "Glow" };
-                ImGui::TextDisabled("Box Style Mode");
-                DrawSegmentedButtons("BoxStyle", &cfg::esp::box_type, boxStyles, 3, 30.0f * ui_scale, ui_scale);
-
-                ImGui::Dummy(ImVec2(0, 4 * ui_scale));
                 ImGui::SetNextItemWidth(-1);
                 cfg::SliderFloat("##MaxRange", cfg::esp::max_range, 50.0f, 500.0f, "%.0f m");
                 ImGui::TextDisabled("Max Render Distance");
 
-                ImGui::Dummy(ImVec2(0, 4 * ui_scale));
-                ImGui::SetNextItemWidth(-1);
-                cfg::SliderFloat("##LaserThickness", cfg::esp::tracer_thickness, 0.5f, 4.0f, "%.1f px");
-                ImGui::TextDisabled("Laser Line Width");
-
-                ImGui::Dummy(ImVec2(0, 4 * ui_scale));
-                ImGui::SetNextItemWidth(-1);
-                cfg::SliderFloat("##BoxThickness", cfg::esp::box_thickness, 1.0f, 5.0f, "%.1f px");
-                ImGui::TextDisabled("Box Border Width");
-
-                ImGui::Dummy(ImVec2(0, 6 * ui_scale));
+                ImGui::Dummy(ImVec2(0, 8 * ui_scale));
                 ImGui::TextDisabled("ESP Accent Color");
                 for (int i = 0; i < 6; i++) {
                     ImGui::PushID(900 + i);
@@ -582,140 +606,48 @@ void render() {
         }
         // TAB 1: AIMBOT & COMBAT
         else if (activeTab == 1) {
-            // Left Column: Toggles
+            // Left Column: Aimbot Engine
             ImGui::SetCursorPos(ImVec2(contentX, contentY));
             if (ImGui::BeginChild("##ColLeftAim", ImVec2(colW, contentH), true)) {
-                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "AIMBOT SETTINGS");
-                ImDrawList* cdl = ImGui::GetWindowDrawList();
-                ImVec2 lpos = ImGui::GetCursorScreenPos();
-                cdl->AddLine(ImVec2(lpos.x, lpos.y - 4), ImVec2(lpos.x + 130 * ui_scale, lpos.y - 4), theme_orchid::ColPrimary, 2.0f);
-                ImGui::Dummy(ImVec2(0, 4 * ui_scale));
+                SectionHeader("AIMBOT ENGINE", ui_scale);
 
-                if (DrawToggleSwitch("Master Switch", &cfg::master_enabled, 44.0f * ui_scale, ui_scale)) {
-                    if (!cfg::master_enabled) {
-                        func::aim::motion::reset();
-                    }
-                }
+                DrawToggleSwitch("Master Switch", &cfg::master_enabled, 44.0f * ui_scale, ui_scale);
                 ImGui::Dummy(ImVec2(0, 6 * ui_scale));
 
-                cfg::Checkbox("Auto Headshot (100% Red)", cfg::aim::auto_headshot);
                 cfg::Checkbox("Aim Silent", cfg::aim::silent);
-                cfg::Checkbox("Enable Aim Assist", cfg::aim::enable);
                 cfg::Checkbox("Scope Aim (Instant Head)", cfg::aim::scope_aim);
-                cfg::Checkbox("Sniper Headshot Lock", cfg::aim::sniper_aim);
-
-                ImGui::Dummy(ImVec2(0, 4 * ui_scale));
-                static const char* const boneLabels[] = { "Head", "Chest", "Hip" };
-                ImGui::TextDisabled("Target Aim Bone");
-                DrawSegmentedButtons("AimBone", &cfg::aim::target_bone, boneLabels, 3, 30.0f * ui_scale, ui_scale);
-
-                ImGui::Dummy(ImVec2(0, 4 * ui_scale));
-                static const char* const triggerLabels[] = { "On Firing", "In FOV" };
-                ImGui::TextDisabled("Aim Trigger Condition");
-                DrawSegmentedButtons("AimTrigger", &cfg::aim::trigger_mode, triggerLabels, 2, 30.0f * ui_scale, ui_scale);
-
-                ImGui::Dummy(ImVec2(0, 4 * ui_scale));
-                static const char* const priorityLabels[] = { "Crosshair", "Low HP", "Distance" };
-                ImGui::TextDisabled("Target Priority");
-                DrawSegmentedButtons("AimPriority", &cfg::aim::priority_mode, priorityLabels, 3, 30.0f * ui_scale, ui_scale);
-
-                ImGui::Dummy(ImVec2(0, 6 * ui_scale));
-                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "SAFETY FILTERS");
-                lpos = ImGui::GetCursorScreenPos();
-                cdl->AddLine(ImVec2(lpos.x, lpos.y - 4), ImVec2(lpos.x + 100 * ui_scale, lpos.y - 4), theme_orchid::ColPrimary, 2.0f);
-                ImGui::Dummy(ImVec2(0, 4 * ui_scale));
-
+                cfg::Checkbox("Auto Headshot (100% Red)", cfg::aim::auto_headshot);
                 cfg::Checkbox("Ignore Knocked", cfg::aim::ignore_knocked);
-                cfg::Checkbox("Ignore AI Bots", cfg::aim::ignore_bots);
-                cfg::Checkbox("Visible Check", cfg::aim::visible_check);
 
                 handleTouchScroll();
             }
             ImGui::EndChild();
 
-            // Right Column: Sliders & Modes
+            // Right Column: Trajectory & FOV
             ImGui::SetCursorPos(ImVec2(contentX + colW + colGap, contentY));
             if (ImGui::BeginChild("##ColRightAim", ImVec2(colW, contentH), true)) {
-                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "FOV & SMOOTHNESS");
-                ImDrawList* cdl = ImGui::GetWindowDrawList();
-                ImVec2 rpos = ImGui::GetCursorScreenPos();
-                cdl->AddLine(ImVec2(rpos.x, rpos.y - 4), ImVec2(rpos.x + 125 * ui_scale, rpos.y - 4), theme_orchid::ColPrimary, 2.0f);
-                ImGui::Dummy(ImVec2(0, 4 * ui_scale));
+                SectionHeader("TRAJECTORY & FOV", ui_scale);
 
                 cfg::Checkbox("Draw FOV Circle", cfg::aim::show_fov);
 
-                ImGui::Dummy(ImVec2(0, 4 * ui_scale));
-                ImGui::SetNextItemWidth(-1);
-                cfg::SliderFloat("##AimFovSlider", cfg::aim::aim_fov, 10.0f, 360.0f, "%.0f deg");
-                ImGui::TextDisabled("Aim FOV Range");
-
-                ImGui::Dummy(ImVec2(0, 4 * ui_scale));
-                ImGui::SetNextItemWidth(-1);
-                cfg::SliderFloat("##SilentRateSlider", cfg::aim::headshot_rate, 0.0f, 100.0f, "%.0f%%");
-                ImGui::TextDisabled("Silent Aim Hit Rate");
-
-                ImGui::Dummy(ImVec2(0, 4 * ui_scale));
+                ImGui::Dummy(ImVec2(0, 6 * ui_scale));
                 ImGui::SetNextItemWidth(-1);
                 cfg::SliderFloat("##HeadBiasSlider", cfg::aim::head_bias, 0.10f, 0.35f, "%.2f m");
-                ImGui::TextDisabled("Head Elevation Bias (0.22m = Pure Red)");
-
-                ImGui::Dummy(ImVec2(0, 4 * ui_scale));
-                ImGui::SetNextItemWidth(-1);
-                cfg::SliderFloat("##AimSmooth", cfg::aim::smooth, 1.0f, 25.0f, "%.1f");
-                ImGui::TextDisabled("Smooth Factor (Higher = Humanized)");
-
-                ImGui::Dummy(ImVec2(0, 4 * ui_scale));
-                ImGui::SetNextItemWidth(-1);
-                cfg::SliderFloat("##AimMaxDist", cfg::aim::max_distance, 20.0f, 300.0f, "%.0f m");
-                ImGui::TextDisabled("Max Aiming Range");
-
-                ImGui::Dummy(ImVec2(0, 8 * ui_scale));
-                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "LIVE TARGET HUD");
-                rpos = ImGui::GetCursorScreenPos();
-                cdl->AddLine(ImVec2(rpos.x, rpos.y - 4), ImVec2(rpos.x + 105 * ui_scale, rpos.y - 4), theme_orchid::ColPrimary, 2.0f);
-                ImGui::Dummy(ImVec2(0, 4 * ui_scale));
-
-                func::aim::TargetInfo ti = func::aim::snapshot_target();
-                if (ti.valid) {
-                    const char* targetName = ti.name[0] ? ti.name : "Enemy";
-                    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.4f, 1.0f), "Target: %s", targetName);
-                    ImGui::Text("Distance: %.1f m", ti.distance);
-                    ImGui::Text("Health: %d HP", ti.hp);
-                    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.6f, 1.0f), "Status: LOCKED [IN FOV]");
-                } else {
-                    ImGui::TextDisabled("Target: None (Scanning)");
-                    ImGui::TextDisabled("Distance: -- m");
-                    ImGui::TextDisabled("Health: --");
-                    ImGui::TextDisabled("Status: STANDBY");
-                }
+                ImGui::TextDisabled("Headshot Elevation Bias (0.22m = 100% Red)");
 
                 handleTouchScroll();
             }
             ImGui::EndChild();
         }
-        // TAB 2: MISC & SYSTEM SETTINGS (BALANCED DUAL COLUMNS)
+        // TAB 2: MODS & SYSTEM
         else if (activeTab == 2) {
-            // Left Column: Movement & Special Capabilities
+            // Left Column: Movement & Combat Mods
             ImGui::SetCursorPos(ImVec2(contentX, contentY));
             if (ImGui::BeginChild("##ColLeftMisc", ImVec2(colW, contentH), true)) {
-                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "MOVEMENT & VISION");
-                ImDrawList* cdl = ImGui::GetWindowDrawList();
-                ImVec2 lpos = ImGui::GetCursorScreenPos();
-                cdl->AddLine(ImVec2(lpos.x, lpos.y - 4), ImVec2(lpos.x + 130 * ui_scale, lpos.y - 4), theme_orchid::ColPrimary, 2.0f);
-                ImGui::Dummy(ImVec2(0, 4 * ui_scale));
+                SectionHeader("COMBAT & SPEED MODS", ui_scale);
 
-                if (DrawToggleSwitch("Master Switch", &cfg::master_enabled, 44.0f * ui_scale, ui_scale)) {
-                    if (!cfg::master_enabled) {
-                        func::aim::motion::reset();
-                    }
-                }
+                DrawToggleSwitch("Master Switch", &cfg::master_enabled, 44.0f * ui_scale, ui_scale);
                 ImGui::Dummy(ImVec2(0, 6 * ui_scale));
-
-                cfg::Checkbox("Wide FOV (iPad View)", cfg::motion::ipad_view);
-                if (cfg::motion::ipad_view) {
-                    ImGui::SetNextItemWidth(-1);
-                    cfg::SliderFloat("##IpadScale", cfg::motion::ipad_val, 1.0f, 2.5f, "%.1fx");
-                }
 
                 cfg::Checkbox("Speed Hack (Anti-Ban Safe)", cfg::motion::speed_hack);
                 if (cfg::motion::speed_hack) {
@@ -724,78 +656,25 @@ void render() {
                     ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.4f, 1.0f), "SAFE: 1.00x - 1.30x (Server Protected)");
                 }
 
-                cfg::Checkbox("High Jump", cfg::motion::high_jump);
-                if (cfg::motion::high_jump) {
-                    ImGui::SetNextItemWidth(-1);
-                    cfg::SliderFloat("##HighJump", cfg::motion::high_jump_val, 1.0f, 5.0f, "%.1fx");
-                }
-
-                cfg::Checkbox("Auto-Pickup Range", cfg::motion::pickup_range);
-                if (cfg::motion::pickup_range) {
-                    ImGui::SetNextItemWidth(-1);
-                    cfg::SliderFloat("##PickupRange", cfg::motion::pickup_val, 5.0f, 35.0f, "%.0f m");
-                }
-
-                cfg::Checkbox("Air Flight (Elevation)", cfg::motion::air_flight);
-                if (cfg::motion::air_flight) {
-                    ImGui::SetNextItemWidth(-1);
-                    cfg::SliderFloat("##FlightHeight", cfg::motion::flight_height, 2.0f, 15.0f, "%.1f m");
-                }
-
-                cfg::Checkbox("Ghost Hack", cfg::motion::ghost_hack);
-                cfg::Checkbox("Phantom Mode", cfg::motion::phantom_mode);
-
-                ImGui::Dummy(ImVec2(0, 6 * ui_scale));
-                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "MOVEMENT DIAGNOSTICS");
-                lpos = ImGui::GetCursorScreenPos();
-                cdl->AddLine(ImVec2(lpos.x, lpos.y - 4), ImVec2(lpos.x + 130 * ui_scale, lpos.y - 4), theme_orchid::ColPrimary, 2.0f);
                 ImGui::Dummy(ImVec2(0, 4 * ui_scale));
-
-                float statColW = std::clamp(80.0f * ui_scale, 75.0f, 96.0f);
-                ImGui::TextDisabled("POSTURE:");
-                ImGui::SameLine(statColW);
-                ImGui::Text("%s", cfg::motion::air_flight ? "AIRBORNE" : "GROUND");
-
-                ImGui::TextDisabled("SPEED:");
-                ImGui::SameLine(statColW);
-                ImGui::Text("%.1fx", cfg::motion::speed_hack ? cfg::motion::speed_mult.load(std::memory_order_relaxed) : 1.0f);
-
-                ImGui::TextDisabled("ENTITY:");
-                ImGui::SameLine(statColW);
-                ImGui::Text("%s", cfg::motion::phantom_mode ? "PHANTOM" : "NORMAL");
+                cfg::Checkbox("No Recoil", cfg::motion::no_recoil);
 
                 handleTouchScroll();
             }
             ImGui::EndChild();
 
-            // Right Column: Combat Mods & System Status
+            // Right Column: System Diagnostics & Exit
             ImGui::SetCursorPos(ImVec2(contentX + colW + colGap, contentY));
             if (ImGui::BeginChild("##ColRightMisc", ImVec2(colW, contentH), true)) {
-                ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.80f, 1.0f), "COMBAT & SYSTEM");
-                ImDrawList* cdl = ImGui::GetWindowDrawList();
-                ImVec2 rpos = ImGui::GetCursorScreenPos();
-                cdl->AddLine(ImVec2(rpos.x, rpos.y - 4), ImVec2(rpos.x + 130 * ui_scale, rpos.y - 4), theme_orchid::ColPrimary, 2.0f);
-                ImGui::Dummy(ImVec2(0, 4 * ui_scale));
-
-                cfg::Checkbox("Hitbox Scaler", cfg::motion::hitbox_scale);
-                if (cfg::motion::hitbox_scale) {
-                    ImGui::SetNextItemWidth(-1);
-                    cfg::SliderFloat("##HitboxScale", cfg::motion::hitbox_size, 1.0f, 3.0f, "%.1fx");
-                }
-
-                cfg::Checkbox("No Recoil", cfg::motion::no_recoil);
-                cfg::Checkbox("No Reload", cfg::motion::no_reload);
-
-                ImGui::Dummy(ImVec2(0, 4 * ui_scale));
-                ImGui::TextDisabled("DRIVER & SYSTEM INFO");
+                SectionHeader("SYSTEM & EXIT", ui_scale);
 
                 const char* dName = driver ? driver->get_driver_name() : "ARMED";
 
                 char pidStr[32];
-                snprintf(pidStr, sizeof(pidStr), "%d", proc::pid.load());
+                snprintf(pidStr, sizeof(pidStr), "%d", proc::pid.load(std::memory_order_relaxed));
 
                 char libStr[32];
-                snprintf(libStr, sizeof(libStr), "0x%lX", (unsigned long)proc::lib.load());
+                snprintf(libStr, sizeof(libStr), "0x%lX", (unsigned long)proc::lib.load(std::memory_order_relaxed));
 
                 float labelColW = std::clamp(80.0f * ui_scale, 75.0f, 96.0f);
 
@@ -815,32 +694,11 @@ void render() {
                 ImGui::SameLine(labelColW);
                 ImGui::Text("%.1f", io.Framerate);
 
-                ImGui::Dummy(ImVec2(0, 4 * ui_scale));
-                // Floor is 0.40, not 0.20. The slider lives inside the window
-                // it dims via ImGuiStyleVar_Alpha, so at 0.20 the control that
-                // would bring the opacity back was itself at 20% - nearly
-                // invisible and very hard to grab.
-                ImGui::SliderFloat("##Opacity", &ui_opacity, 0.40f, 1.0f, "Opacity: %.2f");
-
-                ImGui::Dummy(ImVec2(0, 4 * ui_scale));
-                ImGui::TextDisabled("Theme Accent");
-                for (int i = 0; i < 6; i++) {
-                    ImGui::PushID(800 + i);
-                    if (ImGui::ColorButton("##th", g_ThemeSwatches[i], 0, ImVec2(28 * ui_scale, 28 * ui_scale))) {
-                        g_ThemeColorArr[0] = g_ThemeSwatches[i].x;
-                        g_ThemeColorArr[1] = g_ThemeSwatches[i].y;
-                        g_ThemeColorArr[2] = g_ThemeSwatches[i].z;
-                        g_ThemeColorArr[3] = g_ThemeSwatches[i].w;
-                    }
-                    if (i < 5) ImGui::SameLine();
-                    ImGui::PopID();
-                }
-
-                ImGui::Dummy(ImVec2(0, 6 * ui_scale));
+                ImGui::Dummy(ImVec2(0, 10 * ui_scale));
                 ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(200, 40, 60, 200));
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(240, 60, 80, 240));
                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(180, 20, 40, 255));
-                if (ImGui::Button("EXIT OVERLAY", ImVec2(-1, 36.0f * ui_scale))) {
+                if (ImGui::Button("EXIT OVERLAY", ImVec2(-1, 38.0f * ui_scale))) {
                     g_should_exit = true;
                 }
                 ImGui::PopStyleColor(3);

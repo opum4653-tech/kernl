@@ -23,15 +23,14 @@ namespace aimbot {
             return result;
         }
 
-        // FIRING & SCOPING STATE
+        // Firing & Scoping state
         bool isFiring = rpm<bool>(localPlayer + Offsets::Player::IsFiring);
         if (!isFiring) {
-            isFiring = rpm<bool>(localPlayer + 0x850);
+            isFiring = rpm<bool>(localPlayer + Offsets::Player::IsFiring_Alt);
         }
         result.isFiring = isFiring;
 
-        // FollowCamera is at localPlayer + 0x690. Inside FollowCamera, FOVOffset is at 0x84!
-        // When scoping (especially sniper rifles like AWM, Kar98, M82B), FOVOffset shifts negative.
+        // FollowCamera is at localPlayer + 0x690. Inside FollowCamera, FOVOffset is at 0x84
         uint64_t followCam = rpm<uint64_t>(localPlayer + Offsets::Player::Camera);
         float camFovOffset = 0.0f;
         if (is_valid_ptr(followCam)) {
@@ -40,10 +39,10 @@ namespace aimbot {
         result.isScoping = (camFovOffset < -0.5f || camFovOffset > 0.5f);
 
         bool triggerActive = false;
-        if (cfg::aim::trigger_mode == 1 || cfg::aim::silent || cfg::aim::auto_headshot) {
-            triggerActive = true; // Continuous priming while enemy is acquired in FOV
-        } else if ((cfg::aim::scope_aim || cfg::aim::sniper_aim) && result.isScoping) {
-            triggerActive = true; // Instant activation when scoping
+        if (cfg::aim::silent || cfg::aim::auto_headshot) {
+            triggerActive = true;
+        } else if (cfg::aim::scope_aim && result.isScoping) {
+            triggerActive = true;
         } else {
             triggerActive = isFiring;
         }
@@ -71,14 +70,12 @@ namespace aimbot {
         float fovLimit = cfg::aim::get_fov_radius();
         bool foundLocked = false;
 
-        // 1. STRICT TARGET HYSTERESIS (STICK TO CURRENT TARGET INSIDE FOV CIRCLE)
+        // 1. Target Hysteresis (Sticky lock while inside FOV circle)
         if (s_lockedTargetAddr != 0) {
             for (const auto& enemy : enemies) {
                 if (enemy.addr == s_lockedTargetAddr) {
                     if (enemy.curHP > 0 && enemy.Head.z >= 0.05f &&
-                        (!cfg::aim::ignore_bots || !enemy.isBot) &&
-                        (!cfg::aim::ignore_knocked || enemy.curHP > 1) &&
-                        (!cfg::aim::visible_check || enemy.isVisible)) {
+                        (!cfg::aim::ignore_knocked || enemy.curHP > 1)) {
                         float dxHead = enemy.Head.x - screenCx;
                         float dyHead = enemy.Head.y - screenCy;
                         float distHead = sqrtf(dxHead * dxHead + dyHead * dyHead);
@@ -106,19 +103,14 @@ namespace aimbot {
             }
         }
 
-        // 2. NEW TARGET ACQUISITION (BASED ON SCREEN CENTER FOV CIRCLE — MATCHING STORM_MODS)
+        // 2. New Target Acquisition (Closest to screen center within FOV circle)
         if (!foundLocked) {
             float bestScore = 9999999.0f;
             const PlayerData* bestEnemy = nullptr;
 
             for (const auto& enemy : enemies) {
                 if (enemy.Head.z < 0.05f || enemy.curHP <= 0) continue;
-                if (cfg::aim::ignore_bots && enemy.isBot) continue;
                 if (cfg::aim::ignore_knocked && enemy.curHP <= 1) continue;
-
-                // Respect user visible_check configuration
-                if (cfg::aim::visible_check && !enemy.isVisible) continue;
-                if (enemy.distance > cfg::aim::max_distance) continue;
 
                 float dxHead = enemy.Head.x - screenCx;
                 float dyHead = enemy.Head.y - screenCy;
@@ -133,15 +125,8 @@ namespace aimbot {
                 float crosshairDist = std::min(distHead, distBody);
                 if (crosshairDist > fovLimit) continue;
 
-                float score = crosshairDist;
-                if (cfg::aim::priority_mode == 1) { // Lowest HP
-                    score = (float)enemy.curHP;
-                } else if (cfg::aim::priority_mode == 2) { // 3D Distance
-                    score = enemy.distance;
-                }
-
-                if (score < bestScore) {
-                    bestScore = score;
+                if (crosshairDist < bestScore) {
+                    bestScore = crosshairDist;
                     bestEnemy = &enemy;
                     result.bestScreenPos = enemy.Head;
                 }

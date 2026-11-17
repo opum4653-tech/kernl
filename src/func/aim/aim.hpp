@@ -4,18 +4,14 @@
 #include "headshot.hpp"
 #include "silent.hpp"
 #include "fov.hpp"
-#include "motion.hpp"
 
-// TRAJECTORY ASSIST & MOTION ENHANCEMENT ENGINE (NATURAL GAMEPLAY — ZERO CAMERA JUMPING)
+// TRAJECTORY ASSIST ENGINE (NATURAL GAMEPLAY — ZERO CAMERA JUMPING)
 // Features:
 // 1. Natural Gameplay: Camera rotation is 100% untouched. Finger aiming is free.
-// 2. Strict Target Stickiness & Hysteresis: ZERO screen shaking when multiple enemies enter FOV.
+// 2. Strict Target Stickiness: ZERO screen shaking when multiple enemies enter FOV.
 // 3. Grace-Period Burst Lock: Prevents lock resets between rapid bullet intervals.
-// 4. Trajectory Write: only the client bullet direction is steered. Recoil is
-//    never read, never scaled, never written — the game's own recoil runs as shipped.
+// 4. Trajectory Write: only the client bullet direction is steered to head sphere.
 // 5. Strict FOV Circle: Strictly respects FOV limit; never locks outside.
-// 6. Wall Filter: a target behind cover is never acquired and never held.
-// 7. Motion Modifiers: Air Flight, Sprint Boost, and Phantom Mode.
 
 namespace aimbot {
 
@@ -26,16 +22,12 @@ namespace aimbot {
 
     inline void update() {
         if (!cfg::master_enabled) {
-            motion::reset();
             publish_target_invalid();
             clear_silent_data();
             return;
         }
 
-        // Run motion enhancement updates
-        motion::update();
-
-        if (!cfg::aim::enable && !cfg::aim::silent && !cfg::aim::auto_headshot) {
+        if (!cfg::aim::silent && !cfg::aim::auto_headshot && !cfg::aim::scope_aim) {
             s_lockedTargetAddr = 0;
             s_lockTimeoutTicks = 0;
             s_smoothDir = Vector3::Zero();
@@ -71,8 +63,7 @@ namespace aimbot {
             return;
         }
 
-        // Record target diagnostic telemetry (published under lock — the render
-        // thread reads this for the menu readout and the FOV lock ring).
+        // Target telemetry for FOV indicator
         TargetInfo info;
         info.valid = true;
         snprintf(info.name, sizeof(info.name), "%s",
@@ -83,11 +74,11 @@ namespace aimbot {
         info.headWorld = acq.target.headWorld;
         publish_target(info);
 
-        // Headshot evaluation & collider mapping
+        // Headshot evaluation
         bool lockToHead = evaluate_headshot(acq.target, acq.isScoping);
 
-        // 3D Silent bullet trajectory steering (Only runs when Silent Aim or Auto Headshot is ON)
-        if (cfg::aim::silent || cfg::aim::auto_headshot) {
+        // 3D Silent bullet trajectory steering
+        if (cfg::aim::silent || cfg::aim::auto_headshot || (cfg::aim::scope_aim && acq.isScoping)) {
             apply_trajectory(localPlayer, acq.target, lockToHead, (acq.isFiring || acq.triggerActive));
         } else {
             clear_silent_data();
@@ -96,12 +87,9 @@ namespace aimbot {
 
     inline void loop() {
         while (aim_thread_running().load(std::memory_order_relaxed)) {
-            if (cfg::master_enabled && (cfg::aim::enable || cfg::aim::silent || cfg::aim::auto_headshot || cfg::motion::air_flight || cfg::motion::phantom_mode)) {
+            if (cfg::master_enabled && (cfg::aim::silent || cfg::aim::auto_headshot || cfg::aim::scope_aim)) {
                 update();
             } else {
-                // Feature off or master switch down: clear the telemetry so the
-                // menu readout and FOV lock ring do not show a stale target
-                // left over from before the toggle.
                 publish_target_invalid();
                 clear_silent_data();
             }
@@ -142,13 +130,8 @@ namespace aimbot {
             t.join();
         }
         stop_silent_writer();
-        motion::reset();
         restore_headshot_override();
         publish_target_invalid();
     }
 
 } // namespace aimbot
-
-namespace func {
-    namespace aim = ::aimbot;
-}

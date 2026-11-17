@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <cmath>
+#include <algorithm>
 #include "driver.h"
 #include "../offsets/offsets.hpp"
 #include "../other/addr.hpp"
@@ -8,48 +9,26 @@
 
 namespace speed_system {
 
-    // Advanced & simple common global structure for player speed modification
     struct SpeedConfig {
-        bool  enabled        = false;  // Speed toggle
-        float multiplier     = 4.8f;   // 1.0x to 5.0x
-        bool  last_state     = false;  // Tracking previous state for clean restore
+        bool  enabled        = false;
+        float multiplier     = 1.20f;
+        bool  last_state     = false;
         float last_mult      = 1.0f;
     };
 
     inline SpeedConfig g_config;
 
     struct ModState {
-        bool  speed_last = false;
-        float orig_time_delta = 0.033333f;
-        bool  orig_time_captured = false;
-
-        float orig_player_speed = 1.0f;
         float orig_run_scale = 1.0f;
-        float orig_fall_scale = 1.0f;
         bool  orig_player_captured = false;
 
-        bool  ipad_last = false;
-        float ipad_orig = 1.0f;
-        bool  ipad_orig_captured = false;
-
-        bool  pickup_last = false;
-        float pickup_orig = 2.0f;
-        bool  pickup_orig_captured = false;
-
-        bool  hitbox_last = false;
-        float hitbox_orig_x = 1.0f;
-        float hitbox_orig_y = 1.0f;
-        float hitbox_orig_z = 1.0f;
-        bool  hitbox_orig_captured = false;
-
-        bool  jump_last = false;
-        float jump_orig = 1.0f;
-        bool  jump_orig_captured = false;
+        bool  recoil_last = false;
+        float recoil_orig = 0.0f;
+        bool  recoil_orig_captured = false;
     };
     inline ModState g_mod_state;
 
     // Checks if the kernel driver is active and ready
-    // MANDATORY CONSTRAINT: Speed operations ONLY run through the kernel driver.
     inline bool is_driver_active() {
         return (driver != nullptr && driver->is_driver_loaded());
     }
@@ -98,49 +77,34 @@ namespace speed_system {
     // Resolves PlayerAttributes safely (0x768 Free Fire Global Primary, 0x770 Max Fallback)
     inline uintptr_t resolve_player_attributes(uintptr_t localPlayer) {
         if (!is_driver_active() || localPlayer < 0x10000) return 0;
-        uintptr_t attrs = driver_read<uintptr_t>(localPlayer + Offsets::PlayerAttributes); // 0x768 Global
+        uintptr_t attrs = driver_read<uintptr_t>(localPlayer + Offsets::PlayerAttributes);
         if (attrs < 0x10000) {
-            attrs = driver_read<uintptr_t>(localPlayer + Offsets::PlayerAttributes_Max);     // 0x770 Max
+            attrs = driver_read<uintptr_t>(localPlayer + Offsets::PlayerAttributes_Max);
         }
         return attrs;
     }
 
     // Master unblocked tick function called every frame
     inline void tick(uintptr_t libAddress) {
-        // STRICT KERNEL DRIVER ONLY:
-        // Refuses execution if kernel driver is not loaded or uninitialized.
         if (!is_driver_active() || libAddress < 0x10000) return;
 
-        // Sync with UI variables. Snapshot the knobs once: the render thread
-        // owns them and this tick must act on one coherent set of values.
         const bool  ui_speed_on = cfg::motion::speed_hack.load(std::memory_order_relaxed);
         const float ui_speed_mx = cfg::motion::speed_mult.load(std::memory_order_relaxed);
 
         bool is_enabled = cfg::master_enabled && (ui_speed_on || g_config.enabled);
         float mult = (ui_speed_on && ui_speed_mx >= 1.0f) ? ui_speed_mx : g_config.multiplier;
-        if (mult < 1.0f) mult = 1.0f;
-        if (mult > 10.0f) mult = 10.0f;
+        mult = std::clamp(mult, 1.0f, 1.30f); // Strict anti-ban clamp: 1.00x - 1.30x
 
         g_config.enabled = is_enabled;
         g_config.multiplier = mult;
 
-        // Resolve engine root pointers
         uintptr_t baseGame = resolve_base_game(libAddress);
         if (baseGame < 0x10000) return;
 
         uintptr_t localPlayer = resolve_local_player(baseGame);
 
-        // When Speed is ENABLED
+        // 1. SPEED HACK (ANTI-BAN SAFE)
         if (is_enabled) {
-            // ANTI-BAN SAFE SPEED ENGINE:
-            // 1. Modifies ONLY RunSpeedUpScale (0x2C0) on PlayerAttributes.
-            //    This is the EXACT attribute used by in-game character sprint skills (Kelly, Alok, Joseph).
-            // 2. NEVER touches Player_Speed (0x560) to avoid double-multiplication (mult * mult = 25x bug).
-            // 3. NEVER touches FallingSpeedUpScale (0x2BC) to prevent gravity / vertical anti-teleport bans.
-            // 4. Clamps strictly to 1.00x - 1.30x (up to 30% sprint boost), staying well below
-            //    the server anti-cheat 10.5 m/s speed ban threshold (max 8.5 m/s velocity).
-            // 5. Smart Firing Guard: automatically sets speed to 1.0x while shooting so weapon accuracy,
-            //    recoil, and bullet hits remain 100% stable.
             if (localPlayer >= 0x10000) {
                 uintptr_t attrs = resolve_player_attributes(localPlayer);
                 if (attrs >= 0x10000) {
@@ -150,12 +114,9 @@ namespace speed_system {
                         g_mod_state.orig_player_captured = true;
                     }
 
-                    // Strict Anti-Ban Clamp: 1.00x to 1.30x max
-                    float safeMult = std::clamp(mult, 1.0f, 1.30f);
-
-                    // During active firing: drop to 1.0x baseline for laser spray stability
+                    // Smart Firing Guard: drops to 1.0x baseline while shooting for 100% spray stability
                     bool isFiring = driver_read<bool>(localPlayer + Offsets::Player::IsFiring);
-                    float activeMult = isFiring ? 1.0f : safeMult;
+                    float activeMult = isFiring ? 1.0f : mult;
 
                     driver_write_float(attrs + Offsets::RunSpeedUpScale, activeMult);
                 }
@@ -164,7 +125,7 @@ namespace speed_system {
             g_config.last_state = true;
             g_config.last_mult = mult;
         }
-        // When Speed was active but is now DISABLED -> CLEAN RESTORE TO CAPTURED BASELINE
+        // Speed restoration to baseline
         else if (g_config.last_state) {
             if (localPlayer >= 0x10000) {
                 uintptr_t attrs = resolve_player_attributes(localPlayer);
@@ -178,127 +139,36 @@ namespace speed_system {
             g_config.last_mult = 1.0f;
         }
 
-        // Gameplay mods execution via pure kernel driver
+        // 2. NO RECOIL
         if (localPlayer >= 0x10000) {
-            if (cfg::master_enabled && cfg::motion::no_reload) {
-                uintptr_t attrs = resolve_player_attributes(localPlayer);
-                if (attrs >= 0x10000) {
-                    bool val = true;
-                    driver->write(attrs + Offsets::ShootNoReload, &val, sizeof(bool));
-                }
-            }
-
             if (cfg::master_enabled && cfg::motion::no_recoil) {
                 uintptr_t weapon = driver_read<uintptr_t>(localPlayer + Offsets::Player_Weapon);
                 if (weapon >= 0x10000) {
                     uintptr_t wdata = driver_read<uintptr_t>(weapon + Offsets::Weapon_Data);
                     if (wdata >= 0x10000) {
+                        if (!g_mod_state.recoil_orig_captured) {
+                            float curRecoil = driver_read<float>(wdata + Offsets::Weapon_Recoil);
+                            if (std::isfinite(curRecoil) && curRecoil >= 0.0f && curRecoil <= 100.0f) {
+                                g_mod_state.recoil_orig = curRecoil;
+                                g_mod_state.recoil_orig_captured = true;
+                            }
+                        }
                         float zero = 0.0f;
                         driver->write(wdata + Offsets::Weapon_Recoil, &zero, sizeof(float));
+                        g_mod_state.recoil_last = true;
                     }
                 }
-            }
-
-            if (cfg::master_enabled && cfg::motion::ghost_hack) {
-                bool val = true;
-                driver->write(localPlayer + Offsets::GhostHack, &val, sizeof(bool));
-            }
-        }
-
-        // 1. iPad View / Wide FOV
-        if (libAddress >= 0x10000) {
-            uintptr_t ipadAddr = libAddress + Offsets::iPad_FOV;
-            if (cfg::master_enabled && cfg::motion::ipad_view) {
-                if (!g_mod_state.ipad_orig_captured) {
-                    float curIpad = driver_read<float>(ipadAddr);
-                    if (curIpad >= 0.1f && curIpad <= 5.0f) g_mod_state.ipad_orig = curIpad;
-                    g_mod_state.ipad_orig_captured = true;
+            } else if (g_mod_state.recoil_last) {
+                uintptr_t weapon = driver_read<uintptr_t>(localPlayer + Offsets::Player_Weapon);
+                if (weapon >= 0x10000) {
+                    uintptr_t wdata = driver_read<uintptr_t>(weapon + Offsets::Weapon_Data);
+                    if (wdata >= 0x10000 && g_mod_state.recoil_orig_captured) {
+                        float orig = g_mod_state.recoil_orig;
+                        driver->write(wdata + Offsets::Weapon_Recoil, &orig, sizeof(float));
+                        g_mod_state.recoil_last = false;
+                        g_mod_state.recoil_orig_captured = false;
+                    }
                 }
-                float targetIpad = cfg::motion::ipad_val;
-                driver_write_float(ipadAddr, targetIpad);
-                g_mod_state.ipad_last = true;
-            } else if (g_mod_state.ipad_last) {
-                driver_write_float(ipadAddr, g_mod_state.ipad_orig);
-                g_mod_state.ipad_last = false;
-                g_mod_state.ipad_orig_captured = false;
-            }
-        }
-
-        // 2. Auto-Pickup Range
-        static constexpr uint64_t PR_OFFSETS[] = { 0x30, 0x4B8, 0x1EB4 };
-        if (cfg::master_enabled && cfg::motion::pickup_range) {
-            uint64_t prAddr = func::find_addr(Offsets::GameConfig_Base, PR_OFFSETS, 3);
-            if (prAddr >= 0x10000) {
-                if (!g_mod_state.pickup_orig_captured) {
-                    float curPr = driver_read<float>(prAddr);
-                    if (curPr >= 0.1f && curPr <= 10.0f) g_mod_state.pickup_orig = curPr;
-                    g_mod_state.pickup_orig_captured = true;
-                }
-                driver_write_float(prAddr, cfg::motion::pickup_val);
-                g_mod_state.pickup_last = true;
-            }
-        } else if (g_mod_state.pickup_last) {
-            uint64_t prAddr = func::find_addr(Offsets::GameConfig_Base, PR_OFFSETS, 3);
-            if (prAddr >= 0x10000) {
-                driver_write_float(prAddr, g_mod_state.pickup_orig);
-                g_mod_state.pickup_last = false;
-                g_mod_state.pickup_orig_captured = false;
-            }
-        }
-
-        // 3. Hitbox / Player Size Scaler
-        static constexpr uint64_t PSX_OFF[] = { 0x30, 0x4B8, 0x510, 0x1FC };
-        static constexpr uint64_t PSY_OFF[] = { 0x30, 0x4B8, 0x510, 0x200 };
-        static constexpr uint64_t PSZ_OFF[] = { 0x30, 0x4B8, 0x510, 0x204 };
-        if (cfg::master_enabled && cfg::motion::hitbox_scale) {
-            float scale = cfg::motion::hitbox_size;
-            uint64_t ax = func::find_addr(Offsets::GameConfig_Base, PSX_OFF, 4);
-            uint64_t ay = func::find_addr(Offsets::GameConfig_Base, PSY_OFF, 4);
-            uint64_t az = func::find_addr(Offsets::GameConfig_Base, PSZ_OFF, 4);
-            if (ax >= 0x10000 && ay >= 0x10000 && az >= 0x10000) {
-                if (!g_mod_state.hitbox_orig_captured) {
-                    g_mod_state.hitbox_orig_x = driver_read<float>(ax);
-                    g_mod_state.hitbox_orig_y = driver_read<float>(ay);
-                    g_mod_state.hitbox_orig_z = driver_read<float>(az);
-                    g_mod_state.hitbox_orig_captured = true;
-                }
-                driver_write_float(ax, scale);
-                driver_write_float(ay, scale);
-                driver_write_float(az, scale);
-                g_mod_state.hitbox_last = true;
-            }
-        } else if (g_mod_state.hitbox_last) {
-            uint64_t ax = func::find_addr(Offsets::GameConfig_Base, PSX_OFF, 4);
-            uint64_t ay = func::find_addr(Offsets::GameConfig_Base, PSY_OFF, 4);
-            uint64_t az = func::find_addr(Offsets::GameConfig_Base, PSZ_OFF, 4);
-            if (ax >= 0x10000 && ay >= 0x10000 && az >= 0x10000) {
-                driver_write_float(ax, g_mod_state.hitbox_orig_x);
-                driver_write_float(ay, g_mod_state.hitbox_orig_y);
-                driver_write_float(az, g_mod_state.hitbox_orig_z);
-                g_mod_state.hitbox_last = false;
-                g_mod_state.hitbox_orig_captured = false;
-            }
-        }
-
-        // 4. High Jump
-        static constexpr uint64_t HJ_OFF[] = { 0x30, 0x4B8, 0x518, 0x21C };
-        if (cfg::master_enabled && cfg::motion::high_jump) {
-            uint64_t hjAddr = func::find_addr(Offsets::GameConfig_Base, HJ_OFF, 4);
-            if (hjAddr >= 0x10000) {
-                if (!g_mod_state.jump_orig_captured) {
-                    float curJ = driver_read<float>(hjAddr);
-                    if (curJ >= 0.1f && curJ <= 5.0f) g_mod_state.jump_orig = curJ;
-                    g_mod_state.jump_orig_captured = true;
-                }
-                driver_write_float(hjAddr, cfg::motion::high_jump_val);
-                g_mod_state.jump_last = true;
-            }
-        } else if (g_mod_state.jump_last) {
-            uint64_t hjAddr = func::find_addr(Offsets::GameConfig_Base, HJ_OFF, 4);
-            if (hjAddr >= 0x10000) {
-                driver_write_float(hjAddr, g_mod_state.jump_orig);
-                g_mod_state.jump_last = false;
-                g_mod_state.jump_orig_captured = false;
             }
         }
     }

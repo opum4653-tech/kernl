@@ -18,6 +18,10 @@ static ImVec2 s_logo_pos = ImVec2(-1.0f, -1.0f);
 // can be normalized even when called from the shutdown path.
 static float s_last_view_w = 0.0f;
 static float s_last_view_h = 0.0f;
+// Geometry of the last rendered frame, cached so save_pos() can clamp against
+// the same bounds render() uses instead of against the raw viewport.
+static float s_last_radius = 0.0f;
+static float s_last_margin = 0.0f;
 
 // ----------------------------------------------------------------------------
 // POSITION PERSISTENCE
@@ -34,14 +38,23 @@ static bool pos_is_sane(float x, float y) {
 void save_pos() {
     if (!pos_is_sane(s_logo_pos.x, s_logo_pos.y)) return;
 
-    // render() already clamps to the live viewport, but the cached size here
-    // can be one frame behind right after a rotation. Clamp against it instead
-    // of rejecting, so a rotate-then-release still persists a usable position
-    // rather than silently dropping the write and snapping back on next launch.
+    // Clamp against the same bounds render() enforces. The old code clamped
+    // against the raw viewport, but s_logo_pos is a top-left, not a centre, so
+    // a legal x can be as large as realW - diameter - margin. Clamping to realW
+    // let a persisted position sit up to one diameter off-screen; the next
+    // launch then snapped it back, which read as the logo jumping on start.
     float x = s_logo_pos.x;
     float y = s_logo_pos.y;
-    if (s_last_view_w > 0.0f) x = std::min(x, s_last_view_w);
-    if (s_last_view_h > 0.0f) y = std::min(y, s_last_view_h);
+    if (s_last_view_w > 0.0f && s_last_radius > 0.0f) {
+        const float diameter = s_last_radius * 2.0f;
+        const float maxX = std::max(s_last_margin, s_last_view_w - diameter - s_last_margin);
+        const float maxY = std::max(s_last_margin, s_last_view_h - diameter - s_last_margin);
+        x = std::clamp(x, s_last_margin, maxX);
+        y = std::clamp(y, s_last_margin, maxY);
+    } else {
+        if (s_last_view_w > 0.0f) x = std::min(x, s_last_view_w);
+        if (s_last_view_h > 0.0f) y = std::min(y, s_last_view_h);
+    }
 
     FILE* fp = fopen("/dev/.nin_logo_pos.txt", "w");
     if (!fp) return;
@@ -105,6 +118,9 @@ void render(float realW, float realH, float ui_scale) {
     const float logoMargin = 16.0f * ui_scale;
     const float logoDiameter = logoRadius * 2.0f;
 
+    s_last_radius = logoRadius;
+    s_last_margin = logoMargin;
+
     // A repeated position is supplied on every launch, so no orientation
     // bookkeeping is needed here — the clamp below reels the logo back into
     // view on rotation instead of throwing the user's placement away.
@@ -156,12 +172,21 @@ void render(float realW, float realH, float ui_scale) {
         double cur_time = ImGui::GetTime();
 
         if (ImGui::IsItemActivated()) {
-            s_was_activated = true;
+            // The invisible button covers the bounding box, but the drawn logo
+            // is a disc. Without this radial test the four corners counted as
+            // taps: they opened the menu while the touch barrier (registered as
+            // a circle) let the same tap through to the game underneath.
+            // Radius matches Touch_AddUiCircle's (logoRadius + 8*ui_scale) so the
+            // ImGui hit test and the touch barrier agree on the same disc.
+            const float hitR = logoRadius + 8.0f * ui_scale;
+            float ddx = mousePos.x - center.x;
+            float ddy = mousePos.y - center.y;
+            s_was_activated = (ddx * ddx + ddy * ddy) <= (hitR * hitR);
             s_click_down_pos = mousePos;
             s_moved_drag = false;
         }
 
-        if (active) {
+        if (active && s_was_activated) {
             float dx = mousePos.x - s_click_down_pos.x;
             float dy = mousePos.y - s_click_down_pos.y;
             if (std::hypot(dx, dy) > 8.0f) {
@@ -197,9 +222,13 @@ void render(float realW, float realH, float ui_scale) {
         // Target / Game connection status dot
         bool connected = (proc::pid.load(std::memory_order_relaxed) > 0 && proc::lib.load(std::memory_order_relaxed) > 0);
         ImU32 stCol = connected ? IM_COL32(0, 240, 140, 255) : IM_COL32(255, 90, 90, 255);
-        ImVec2 stDot(center.x + logoRadius * 0.68f, center.y - logoRadius * 0.68f);
-        dl->AddCircleFilled(stDot, 6.0f * ui_scale, (stCol & 0x00FFFFFF) | (90 << 24));
-        dl->AddCircleFilled(stDot, 4.0f * ui_scale, (stCol & 0x00FFFFFF) | (180 << 24));
+        // 0.68 on both axes is a 45-degree offset, so the true distance from
+        // the logo centre is 0.68 * radius * sqrt(2) = 0.96 * radius. The 6px
+        // halo then pushed the dot past the disc edge. 0.56 lands it at ~0.79r
+        // with room for the halo inside the border.
+        ImVec2 stDot(center.x + logoRadius * 0.56f, center.y - logoRadius * 0.56f);
+        dl->AddCircleFilled(stDot, 6.0f * ui_scale, (stCol & 0x00FFFFFF) | (90u << 24));
+        dl->AddCircleFilled(stDot, 4.0f * ui_scale, (stCol & 0x00FFFFFF) | (180u << 24));
         dl->AddCircleFilled(stDot, 2.5f * ui_scale, stCol);
     }
     ImGui::End();
