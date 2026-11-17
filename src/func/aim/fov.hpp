@@ -13,8 +13,10 @@ namespace aimbot {
         }
 
         ImGuiIO& io = ImGui::GetIO();
-        float sw = (g_sw > 0.0f) ? g_sw : ((io.DisplaySize.x > 0.0f) ? io.DisplaySize.x : 2400.0f);
-        float sh = (g_sh > 0.0f) ? g_sh : ((io.DisplaySize.y > 0.0f) ? io.DisplaySize.y : 1080.0f);
+        float currentSw = g_sw.load(std::memory_order_relaxed);
+        float currentSh = g_sh.load(std::memory_order_relaxed);
+        float sw = (currentSw > 0.0f) ? currentSw : ((io.DisplaySize.x > 0.0f) ? io.DisplaySize.x : 2400.0f);
+        float sh = (currentSh > 0.0f) ? currentSh : ((io.DisplaySize.y > 0.0f) ? io.DisplaySize.y : 1080.0f);
 
         ImVec2 center(sw * 0.5f, sh * 0.5f);
         float r = cfg::aim::get_fov_radius();

@@ -69,7 +69,8 @@ namespace aim {
 
     inline float get_fov_radius() {
         ImGuiIO& io = ImGui::GetIO();
-        float sw = (g_sw > 0.0f) ? g_sw : ((io.DisplaySize.x > 0.0f) ? io.DisplaySize.x : 2400.0f);
+        float currentSw = g_sw.load(std::memory_order_relaxed);
+        float sw = (currentSw > 0.0f) ? currentSw : ((io.DisplaySize.x > 0.0f) ? io.DisplaySize.x : 2400.0f);
         if (aim_fov > 0.0f && sw > 0.0f) {
             float r = (aim_fov / 180.0f) * (sw * 0.50f);
             if (r < 30.0f) r = 30.0f;
