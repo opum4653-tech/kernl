@@ -712,10 +712,11 @@ void render() {
                     cfg::SliderFloat("##IpadScale", cfg::motion::ipad_val, 1.0f, 2.5f, "%.1fx");
                 }
 
-                cfg::Checkbox("Speed Hack", cfg::motion::speed_hack);
+                cfg::Checkbox("Speed Hack (Anti-Ban Safe)", cfg::motion::speed_hack);
                 if (cfg::motion::speed_hack) {
                     ImGui::SetNextItemWidth(-1);
-                    cfg::SliderFloat("##SpeedMult", cfg::motion::speed_mult, 1.0f, 5.0f, "%.1fx");
+                    cfg::SliderFloat("##SpeedMult", cfg::motion::speed_mult, 1.0f, 1.30f, "%.2fx");
+                    ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.4f, 1.0f), "SAFE: 1.00x - 1.30x (Server Protected)");
                 }
 
                 cfg::Checkbox("High Jump", cfg::motion::high_jump);

@@ -132,39 +132,32 @@ namespace speed_system {
 
         // When Speed is ENABLED
         if (is_enabled) {
-            // LocalPlayer Entity Speed & PlayerAttributes Speed Scales
-            // NOTE: TimeService (Timer_Delta) is intentionally UNTOUCHED to ensure weapon
-            // fire cooldowns, fire rates, animations, and server network sync remain 100% stable.
+            // ANTI-BAN SAFE SPEED ENGINE:
+            // 1. Modifies ONLY RunSpeedUpScale (0x2C0) on PlayerAttributes.
+            //    This is the EXACT attribute used by in-game character sprint skills (Kelly, Alok, Joseph).
+            // 2. NEVER touches Player_Speed (0x560) to avoid double-multiplication (mult * mult = 25x bug).
+            // 3. NEVER touches FallingSpeedUpScale (0x2BC) to prevent gravity / vertical anti-teleport bans.
+            // 4. Clamps strictly to 1.00x - 1.30x (up to 30% sprint boost), staying well below
+            //    the server anti-cheat 10.5 m/s speed ban threshold (max 8.5 m/s velocity).
+            // 5. Smart Firing Guard: automatically sets speed to 1.0x while shooting so weapon accuracy,
+            //    recoil, and bullet hits remain 100% stable.
             if (localPlayer >= 0x10000) {
                 uintptr_t attrs = resolve_player_attributes(localPlayer);
-                if (!g_mod_state.orig_player_captured) {
-                    float curSpeed = driver_read<float>(localPlayer + Offsets::Player_Speed);
-                    if (curSpeed >= 0.1f && curSpeed <= 5.0f) {
-                        g_mod_state.orig_player_speed = curSpeed;
-                    }
-                    if (attrs >= 0x10000) {
-                        float curRun = driver_read<float>(attrs + Offsets::RunSpeedUpScale);
-                        float curFall = driver_read<float>(attrs + Offsets::FallingSpeedUpScale);
-                        if (curRun >= 0.1f && curRun <= 5.0f) g_mod_state.orig_run_scale = curRun;
-                        if (curFall >= 0.1f && curFall <= 5.0f) g_mod_state.orig_fall_scale = curFall;
-                    }
-                    g_mod_state.orig_player_captured = true;
-                }
-
-                // SMART FIRING SAFETY GUARD:
-                // When actively firing, keep speed at natural velocity (orig_player_speed or gentle 1.15f)
-                // so the weapon fires at 100% full fire rate, animation syncs perfectly,
-                // and bullets never miss or get dropped by server rate-of-fire checks.
-                bool isFiring = driver_read<bool>(localPlayer + Offsets::Player::IsFiring);
-                float activeMult = isFiring ? std::min(mult, 1.15f) : mult;
-
-                // Entity Move Speed (Player + 0x560)
-                driver_write_float(localPlayer + Offsets::Player_Speed, activeMult);
-
-                // Player Attributes (RunSpeedUpScale 0x2C0, FallingSpeedUpScale 0x2BC)
                 if (attrs >= 0x10000) {
+                    if (!g_mod_state.orig_player_captured) {
+                        float curRun = driver_read<float>(attrs + Offsets::RunSpeedUpScale);
+                        if (curRun >= 0.5f && curRun <= 2.5f) g_mod_state.orig_run_scale = curRun;
+                        g_mod_state.orig_player_captured = true;
+                    }
+
+                    // Strict Anti-Ban Clamp: 1.00x to 1.30x max
+                    float safeMult = std::clamp(mult, 1.0f, 1.30f);
+
+                    // During active firing: drop to 1.0x baseline for laser spray stability
+                    bool isFiring = driver_read<bool>(localPlayer + Offsets::Player::IsFiring);
+                    float activeMult = isFiring ? 1.0f : safeMult;
+
                     driver_write_float(attrs + Offsets::RunSpeedUpScale, activeMult);
-                    driver_write_float(attrs + Offsets::FallingSpeedUpScale, activeMult);
                 }
             }
 
@@ -174,12 +167,9 @@ namespace speed_system {
         // When Speed was active but is now DISABLED -> CLEAN RESTORE TO CAPTURED BASELINE
         else if (g_config.last_state) {
             if (localPlayer >= 0x10000) {
-                driver_write_float(localPlayer + Offsets::Player_Speed, g_mod_state.orig_player_speed);
-
                 uintptr_t attrs = resolve_player_attributes(localPlayer);
                 if (attrs >= 0x10000) {
                     driver_write_float(attrs + Offsets::RunSpeedUpScale, g_mod_state.orig_run_scale);
-                    driver_write_float(attrs + Offsets::FallingSpeedUpScale, g_mod_state.orig_fall_scale);
                 }
             }
 

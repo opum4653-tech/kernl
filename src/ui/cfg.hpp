@@ -79,7 +79,7 @@ namespace motion {
     inline std::atomic<float> flight_height {4.5f};  // Elevation height in meters
     inline std::atomic<bool>  phantom_mode  {false}; // Phantom Mode entity visibility
     inline std::atomic<bool>  speed_hack    {false}; // Kernel-driven speed multiplier
-    inline std::atomic<float> speed_mult    {1.0f};  // 1.0x to 5.0x
+    inline std::atomic<float> speed_mult    {1.20f}; // 1.00x to 1.30x (Anti-Ban Safe)
     inline std::atomic<bool>  no_recoil     {false}; // Pure kernel driver recoil reduction
     inline std::atomic<bool>  no_reload     {false}; // Instant shot / zero reload wait
     inline std::atomic<bool>  ghost_hack    {false}; // Ghost mode
