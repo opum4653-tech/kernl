@@ -132,21 +132,9 @@ namespace speed_system {
 
         // When Speed is ENABLED
         if (is_enabled) {
-            // 1. TimeService Delta Speed (Engine Global Delta Scaling)
-            uintptr_t timeService = driver_read<uintptr_t>(baseGame + Offsets::Engine_TimeService);
-            if (timeService >= 0x10000) {
-                if (!g_mod_state.orig_time_captured) {
-                    float curDelta = driver_read<float>(timeService + Offsets::Engine_TimeServiceSpeed);
-                    if (curDelta >= 0.005f && curDelta <= 0.2f) {
-                        g_mod_state.orig_time_delta = curDelta;
-                    }
-                    g_mod_state.orig_time_captured = true;
-                }
-                float mappedSpeed = 0.033f + ((mult - 1.0f) / 4.0f) * 0.026f;
-                driver_write_float(timeService + Offsets::Engine_TimeServiceSpeed, mappedSpeed);
-            }
-
-            // 2. LocalPlayer Entity Speed & PlayerAttributes Speed Scales
+            // LocalPlayer Entity Speed & PlayerAttributes Speed Scales
+            // NOTE: TimeService (Timer_Delta) is intentionally UNTOUCHED to ensure weapon
+            // fire cooldowns, fire rates, animations, and server network sync remain 100% stable.
             if (localPlayer >= 0x10000) {
                 uintptr_t attrs = resolve_player_attributes(localPlayer);
                 if (!g_mod_state.orig_player_captured) {
@@ -163,13 +151,20 @@ namespace speed_system {
                     g_mod_state.orig_player_captured = true;
                 }
 
-                // Entity Move Speed (Player + 0x560)
-                driver_write_float(localPlayer + Offsets::Player_Speed, mult);
+                // SMART FIRING SAFETY GUARD:
+                // When actively firing, keep speed at natural velocity (orig_player_speed or gentle 1.15f)
+                // so the weapon fires at 100% full fire rate, animation syncs perfectly,
+                // and bullets never miss or get dropped by server rate-of-fire checks.
+                bool isFiring = driver_read<bool>(localPlayer + Offsets::Player::IsFiring);
+                float activeMult = isFiring ? std::min(mult, 1.15f) : mult;
 
-                // Player Attributes (Player + 0x768 Global / 0x770 Max)
+                // Entity Move Speed (Player + 0x560)
+                driver_write_float(localPlayer + Offsets::Player_Speed, activeMult);
+
+                // Player Attributes (RunSpeedUpScale 0x2C0, FallingSpeedUpScale 0x2BC)
                 if (attrs >= 0x10000) {
-                    driver_write_float(attrs + Offsets::RunSpeedUpScale, mult);
-                    driver_write_float(attrs + Offsets::FallingSpeedUpScale, mult);
+                    driver_write_float(attrs + Offsets::RunSpeedUpScale, activeMult);
+                    driver_write_float(attrs + Offsets::FallingSpeedUpScale, activeMult);
                 }
             }
 
@@ -178,11 +173,6 @@ namespace speed_system {
         }
         // When Speed was active but is now DISABLED -> CLEAN RESTORE TO CAPTURED BASELINE
         else if (g_config.last_state) {
-            uintptr_t timeService = driver_read<uintptr_t>(baseGame + Offsets::Engine_TimeService);
-            if (timeService >= 0x10000) {
-                driver_write_float(timeService + Offsets::Engine_TimeServiceSpeed, g_mod_state.orig_time_delta);
-            }
-
             if (localPlayer >= 0x10000) {
                 driver_write_float(localPlayer + Offsets::Player_Speed, g_mod_state.orig_player_speed);
 
@@ -193,7 +183,6 @@ namespace speed_system {
                 }
             }
 
-            g_mod_state.orig_time_captured = false;
             g_mod_state.orig_player_captured = false;
             g_config.last_state = false;
             g_config.last_mult = 1.0f;
