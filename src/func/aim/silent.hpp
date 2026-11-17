@@ -9,6 +9,11 @@ namespace aimbot {
     inline std::atomic<bool>     s_writerRunning{false};
     inline std::atomic<bool>     s_hasTarget{false};
     inline std::atomic<uint64_t> s_targetAddr{0};
+    inline std::atomic<uint64_t> s_aimInfo{0};
+    inline std::atomic<uint64_t> s_aimInfoAlt{0};
+    inline std::atomic<float>    s_dirX{0.f};
+    inline std::atomic<float>    s_dirY{0.f};
+    inline std::atomic<float>    s_dirZ{0.f};
     inline std::atomic<float>    s_targetHeadX{0.f};
     inline std::atomic<float>    s_targetHeadY{0.f};
     inline std::atomic<float>    s_targetHeadZ{0.f};
@@ -17,6 +22,11 @@ namespace aimbot {
     inline void clear_silent_data() {
         s_hasTarget.store(false, std::memory_order_relaxed);
         s_targetAddr.store(0, std::memory_order_relaxed);
+        s_aimInfo.store(0, std::memory_order_relaxed);
+        s_aimInfoAlt.store(0, std::memory_order_relaxed);
+        s_dirX.store(0.f, std::memory_order_relaxed);
+        s_dirY.store(0.f, std::memory_order_relaxed);
+        s_dirZ.store(0.f, std::memory_order_relaxed);
     }
 
     inline void set_silent_target(const PlayerData& target) {
@@ -31,9 +41,9 @@ namespace aimbot {
             return;
         }
 
-        // Apply Headshot Elevation Bias (default 0.22m into skull center)
+        // Headshot vertical trim (0.00m default = exact center of OB55 Head Bone 0x6A0)
         float bias = cfg::aim::head_bias.load(std::memory_order_relaxed);
-        if (bias < 0.05f || bias > 0.40f) bias = 0.22f;
+        if (bias < -0.30f || bias > 0.30f) bias = 0.00f;
         headPos.y += bias;
 
         s_targetHeadX.store(headPos.x, std::memory_order_relaxed);
@@ -45,10 +55,9 @@ namespace aimbot {
 
     // High-Speed Writer Thread (Hybrid pewpew + STORM_MODS architecture):
     // 1. Silent Aim: Writes unnormalized displacement vector (targetPos - startPos) to AimInfo + 0x40.
-    //    Fixes the 1-meter raycast bug caused by vector normalization.
     // 2. Auto Headshot: Swaps target's LockedAimingCollider (0x80) with HeadCollider (0x738)
-    //    from STORM_MODS, guaranteeing 100% Red damage across all hits.
-    // 3. Zero Lock Contention: Lock-free atomic synchronization eliminates thread starvation.
+    //    guaranteeing 100% Red headshot registration whenever Aim Silent or Auto Headshot is active.
+    // 3. Zero-RPM Hot Loop: Precalculated direction vector is flooded with zero kernel read overhead.
     inline void writer_loop() {
         while (s_writerRunning.load(std::memory_order_relaxed)) {
             if (!cfg::master_enabled.load(std::memory_order_relaxed) ||
@@ -86,56 +95,33 @@ namespace aimbot {
             }
 
             bool hasTarget = s_hasTarget.load(std::memory_order_acquire);
-            uint64_t targetAddr = s_targetAddr.load(std::memory_order_relaxed);
+            uint64_t hitObj = s_aimInfo.load(std::memory_order_relaxed);
 
-            if (isFiring && hasTarget && is_valid_ptr(targetAddr)) {
-                Vector3 targetHead(
-                    s_targetHeadX.load(std::memory_order_relaxed),
-                    s_targetHeadY.load(std::memory_order_relaxed),
-                    s_targetHeadZ.load(std::memory_order_relaxed)
+            if (isFiring && hasTarget && is_valid_ptr(hitObj)) {
+                Vector3 dir(
+                    s_dirX.load(std::memory_order_relaxed),
+                    s_dirY.load(std::memory_order_relaxed),
+                    s_dirZ.load(std::memory_order_relaxed)
                 );
 
-                // 1. Silent Aim Steering (AimInfo + 0x40 RayDir)
-                if (cfg::aim::silent.load(std::memory_order_relaxed) ||
-                    cfg::aim::scope_aim.load(std::memory_order_relaxed) ||
-                    cfg::aim::auto_headshot.load(std::memory_order_relaxed)) {
-
-                    uint64_t aimInfo = rpm<uint64_t>(localPlayer + Offsets::Player::AimInfo);
-                    uint64_t aimInfoAlt = rpm<uint64_t>(localPlayer + Offsets::Player::AimInfo_Alt);
-                    if (!is_valid_ptr(aimInfo)) {
-                        aimInfo = aimInfoAlt;
-                        aimInfoAlt = 0;
-                    }
-
-                    if (is_valid_ptr(aimInfo)) {
-                        Vector3 startPos = rpm<Vector3>(aimInfo + Offsets::Aim::StartPosition);
-                        if (startPos == Vector3::Zero() || !std::isfinite(startPos.x)) {
-                            uint64_t localHead = rpm<uint64_t>(localPlayer + Offsets::Bone_Head);
-                            if (localHead) startPos = GetNodePosition(localHead);
-                        }
-
-                        if (startPos != Vector3::Zero() && std::isfinite(startPos.x)) {
-                            // Full unnormalized displacement vector (pewpew & STORM_MODS standard)
-                            Vector3 dir = targetHead - startPos;
-                            if (dir.sqrMagnitude() > 0.001f) {
-                                wpm<Vector3>(aimInfo + Offsets::Aim::Direction, dir);
-                                if (is_valid_ptr(aimInfoAlt)) {
-                                    wpm<Vector3>(aimInfoAlt + Offsets::Aim::Direction, dir);
-                                }
-                            }
-                        }
+                // Zero-latency continuous memory flooding (pewpew standard)
+                if (dir.sqrMagnitude() > 0.001f) {
+                    wpm<Vector3>(hitObj + Offsets::Aim::Direction, dir);
+                    uint64_t hitObjAlt = s_aimInfoAlt.load(std::memory_order_relaxed);
+                    if (is_valid_ptr(hitObjAlt)) {
+                        wpm<Vector3>(hitObjAlt + Offsets::Aim::Direction, dir);
                     }
                 }
 
-                // 2. Auto Headshot (100% Red Hitbox Collider Swap from STORM_MODS)
-                if (cfg::aim::auto_headshot.load(std::memory_order_relaxed)) {
+                // STORM_MODS Collider Swap reinforcement while shooting
+                uint64_t targetAddr = s_targetAddr.load(std::memory_order_relaxed);
+                if (is_valid_ptr(targetAddr)) {
                     uint64_t headCollider = rpm<uint64_t>(targetAddr + Offsets::Player::HeadCollider);
                     if (is_valid_ptr(headCollider)) {
                         wpm<uint64_t>(targetAddr + Offsets::Player::LockedAimingCollider, headCollider);
                     }
                 }
 
-                // High-performance yield while shooting
                 sched_yield();
             } else {
                 std::this_thread::sleep_for(std::chrono::milliseconds(2));
@@ -173,31 +159,39 @@ namespace aimbot {
 
         set_silent_target(target);
 
-        // Immediate first-frame raycast alignment if firing
-        if (isFiring) {
-            uint64_t aimInfo = rpm<uint64_t>(localPlayer + Offsets::Player::AimInfo);
-            uint64_t aimInfoAlt = rpm<uint64_t>(localPlayer + Offsets::Player::AimInfo_Alt);
-            if (!is_valid_ptr(aimInfo)) {
-                aimInfo = aimInfoAlt;
-                aimInfoAlt = 0;
+        // Resolve Weapon AimingInfo (0xE58 primary, 0xE50 auxiliary)
+        uint64_t aimInfo = rpm<uint64_t>(localPlayer + Offsets::Player::AimInfo);
+        uint64_t aimInfoAlt = rpm<uint64_t>(localPlayer + Offsets::Player::AimInfo_Alt);
+        if (!is_valid_ptr(aimInfo)) {
+            aimInfo = aimInfoAlt;
+            aimInfoAlt = 0;
+        }
+
+        if (is_valid_ptr(aimInfo)) {
+            Vector3 startPos = rpm<Vector3>(aimInfo + Offsets::Aim::StartPosition);
+            if (startPos == Vector3::Zero() || !std::isfinite(startPos.x)) {
+                uint64_t localHead = rpm<uint64_t>(localPlayer + Offsets::Bone_Head);
+                if (localHead) startPos = GetNodePosition(localHead);
             }
 
-            if (is_valid_ptr(aimInfo)) {
-                Vector3 startPos = rpm<Vector3>(aimInfo + Offsets::Aim::StartPosition);
-                if (startPos == Vector3::Zero() || !std::isfinite(startPos.x)) {
-                    uint64_t localHead = rpm<uint64_t>(localPlayer + Offsets::Bone_Head);
-                    if (localHead) startPos = GetNodePosition(localHead);
-                }
+            Vector3 targetHead(
+                s_targetHeadX.load(std::memory_order_relaxed),
+                s_targetHeadY.load(std::memory_order_relaxed),
+                s_targetHeadZ.load(std::memory_order_relaxed)
+            );
 
-                Vector3 targetHead(
-                    s_targetHeadX.load(std::memory_order_relaxed),
-                    s_targetHeadY.load(std::memory_order_relaxed),
-                    s_targetHeadZ.load(std::memory_order_relaxed)
-                );
+            if (startPos != Vector3::Zero() && std::isfinite(startPos.x)) {
+                // Raw unnormalized displacement vector (pewpew line 149 & STORM_MODS line 460)
+                Vector3 dir = targetHead - startPos;
+                if (dir.sqrMagnitude() > 0.001f) {
+                    s_aimInfo.store(aimInfo, std::memory_order_relaxed);
+                    s_aimInfoAlt.store(aimInfoAlt, std::memory_order_relaxed);
+                    s_dirX.store(dir.x, std::memory_order_relaxed);
+                    s_dirY.store(dir.y, std::memory_order_relaxed);
+                    s_dirZ.store(dir.z, std::memory_order_relaxed);
 
-                if (startPos != Vector3::Zero() && std::isfinite(startPos.x)) {
-                    Vector3 dir = targetHead - startPos;
-                    if (dir.sqrMagnitude() > 0.001f) {
+                    // Immediate write on active firing/trigger for instant alignment
+                    if (isFiring) {
                         wpm<Vector3>(aimInfo + Offsets::Aim::Direction, dir);
                         if (is_valid_ptr(aimInfoAlt)) {
                             wpm<Vector3>(aimInfoAlt + Offsets::Aim::Direction, dir);
@@ -205,13 +199,12 @@ namespace aimbot {
                     }
                 }
             }
+        }
 
-            if (cfg::aim::auto_headshot.load(std::memory_order_relaxed)) {
-                uint64_t headCollider = rpm<uint64_t>(target.addr + Offsets::Player::HeadCollider);
-                if (is_valid_ptr(headCollider)) {
-                    wpm<uint64_t>(target.addr + Offsets::Player::LockedAimingCollider, headCollider);
-                }
-            }
+        // Automatic Head Collider Swap (Runs whenever Aim Silent, Auto Headshot, or Scope Aim is active)
+        uint64_t headCollider = rpm<uint64_t>(target.addr + Offsets::Player::HeadCollider);
+        if (is_valid_ptr(headCollider)) {
+            wpm<uint64_t>(target.addr + Offsets::Player::LockedAimingCollider, headCollider);
         }
     }
 

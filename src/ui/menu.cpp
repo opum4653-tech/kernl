@@ -627,8 +627,8 @@ void render() {
 
                 ImGui::Dummy(ImVec2(0, 6 * ui_scale));
                 ImGui::SetNextItemWidth(-1);
-                cfg::SliderFloat("##HeadBiasSlider", cfg::aim::head_bias, 0.10f, 0.35f, "%.2f m");
-                ImGui::TextDisabled("%s", "Headshot Elevation Bias (0.22m = 100% Red)");
+                cfg::SliderFloat("##HeadBiasSlider", cfg::aim::head_bias, -0.15f, 0.15f, "%.2f m");
+                ImGui::TextDisabled("%s", "Headshot Vertical Trim (0.00m = Exact Head Center)");
 
                 handleTouchScroll();
             }

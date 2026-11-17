@@ -31,7 +31,7 @@ namespace aim {
     inline std::atomic<bool>  auto_headshot    {false}; // Auto Headshot (100% Red)
     inline std::atomic<bool>  ignore_knocked   {false}; // Ignore Knocked
     inline std::atomic<bool>  show_fov         {false}; // Draw FOV Circle
-    inline std::atomic<float> head_bias        {0.22f}; // Headshot Elevation Bias Slider (0.10m - 0.35m)
+    inline std::atomic<float> head_bias        {0.00f}; // Headshot Vertical Trim (-0.15m to +0.15m, default 0.00m)
     inline std::atomic<float> aim_fov          {35.0f}; // FOV range in degrees
     inline std::atomic<float> fov_radius       {180.0f};
 
