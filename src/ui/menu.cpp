@@ -275,7 +275,7 @@ void render() {
     // STATE 2: MAIN UNIFIED ELECTRIC ORCHID GLASS MENU
     // ------------------------------------------------------------------------
     const float winW = std::max(560.0f * ui_scale, std::min(920.0f * ui_scale, realW * 0.90f));
-    const float winH = std::max(420.0f * ui_scale, std::min(580.0f * ui_scale, realH * 0.88f));
+    const float winH = std::max(460.0f * ui_scale, std::min(620.0f * ui_scale, realH * 0.90f));
 
     static ImVec2 s_menu_pos = ImVec2(-1.0f, -1.0f);
     static int last_orientation = -1;
@@ -361,9 +361,11 @@ void render() {
         ImVec2 winSize = ImGui::GetWindowSize();
 
         // --------------------------------------------------------------------
-        // 1. TOP HEADER (SCALED BY ui_scale)
+        // 1. TOP HEADER (HEIGHT MATCHES SIDEBAR WIDTH 1:1)
         // --------------------------------------------------------------------
-        const float headerH = 50.0f * ui_scale;
+        const float sidebarW = std::max(88.0f, 96.0f * ui_scale);
+        const float headerH = sidebarW; // Header Height is identical to Sidebar Width
+        const float bodyH = winSize.y - headerH;
         const float closeBtnSize = 36.0f * ui_scale;
         const float xRadius = 6.0f * ui_scale;
         const float badgeH = 24.0f * ui_scale;
@@ -431,9 +433,6 @@ void render() {
         // --------------------------------------------------------------------
         // 2. LEFT SIDEBAR NAVIGATION
         // --------------------------------------------------------------------
-        const float bodyH = winSize.y - headerH;
-        const float sidebarW = std::max(88.0f, 96.0f * ui_scale);
-
         ImGui::SetCursorPos(ImVec2(0, headerH));
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.067f, 0.055f, 0.094f, 1.0f));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
