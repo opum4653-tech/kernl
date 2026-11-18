@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include "driver.h"
 #include "../protect/oxorany.hpp"
+#include "../offsets/offsets.hpp"
 
 namespace proc {
     // Written by the render thread (process watchdog in main loop), read by the
@@ -115,7 +116,7 @@ inline bool addr_valid(uint64_t a) { return is_valid_ptr(a); }
 // STRICT KERNEL DRIVER MEMORY ACCESS ONLY
 // Zero userland syscall fallbacks.
 inline bool mem_read(uint64_t a, void* b, size_t l) {
-    if (proc::pid.load(std::memory_order_relaxed) <= 0 || a < 0x10000 || l == 0 || b == nullptr) return false;
+    if (proc::pid.load(std::memory_order_relaxed) <= 0 || a < Offsets::MinValidAddress || l == 0 || b == nullptr) return false;
     if (!driver || !driver->is_driver_loaded()) {
         memset(b, 0, l);
         return false;

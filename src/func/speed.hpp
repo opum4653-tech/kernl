@@ -35,14 +35,14 @@ namespace speed_system {
 
     // Direct kernel driver write wrappers
     inline bool driver_write_float(uintptr_t addr, float val) {
-        if (!is_driver_active() || addr < 0x10000) return false;
+        if (!is_driver_active() || addr < Offsets::MinValidAddress) return false;
         return driver->write(addr, &val, sizeof(float));
     }
 
     template<typename T>
     inline T driver_read(uintptr_t addr) {
         T data{};
-        if (is_driver_active() && addr >= 0x10000) {
+        if (is_driver_active() && addr >= Offsets::MinValidAddress) {
             driver->read(addr, &data, sizeof(T));
         }
         return data;
@@ -50,35 +50,35 @@ namespace speed_system {
 
     // Resolves BaseGame address safely from libil2cpp without blocking
     inline uintptr_t resolve_base_game(uintptr_t libAddress) {
-        if (!is_driver_active() || libAddress < 0x10000) return 0;
+        if (!is_driver_active() || libAddress < Offsets::MinValidAddress) return 0;
 
         uintptr_t gfCell = driver_read<uintptr_t>(libAddress + Offsets::GameFacade);
-        if (gfCell < 0x10000) return 0;
+        if (gfCell < Offsets::MinValidAddress) return 0;
 
         uintptr_t gfClass = driver_read<uintptr_t>(gfCell);
-        if (gfClass < 0x10000) return 0;
+        if (gfClass < Offsets::MinValidAddress) return 0;
 
         uintptr_t staticFields = driver_read<uintptr_t>(gfClass + Offsets::GameFacade_P2);
-        if (staticFields < 0x10000) return 0;
+        if (staticFields < Offsets::MinValidAddress) return 0;
 
         return driver_read<uintptr_t>(staticFields + Offsets::StaticFields_Instance);
     }
 
     // Resolves LocalPlayer pointer safely from BaseGame without blocking
     inline uintptr_t resolve_local_player(uintptr_t baseGame) {
-        if (!is_driver_active() || baseGame < 0x10000) return 0;
+        if (!is_driver_active() || baseGame < Offsets::MinValidAddress) return 0;
 
         uintptr_t match = driver_read<uintptr_t>(baseGame + Offsets::BaseGame_Match);
-        if (match < 0x10000) return 0;
+        if (match < Offsets::MinValidAddress) return 0;
 
         return driver_read<uintptr_t>(match + Offsets::Match_LocalPlayer);
     }
 
     // Resolves PlayerAttributes safely (0x768 Free Fire Global Primary, 0x770 Max Fallback)
     inline uintptr_t resolve_player_attributes(uintptr_t localPlayer) {
-        if (!is_driver_active() || localPlayer < 0x10000) return 0;
+        if (!is_driver_active() || localPlayer < Offsets::MinValidAddress) return 0;
         uintptr_t attrs = driver_read<uintptr_t>(localPlayer + Offsets::PlayerAttributes);
-        if (attrs < 0x10000) {
+        if (attrs < Offsets::MinValidAddress) {
             attrs = driver_read<uintptr_t>(localPlayer + Offsets::PlayerAttributes_Max);
         }
         return attrs;
@@ -86,7 +86,7 @@ namespace speed_system {
 
     // Master unblocked tick function called every frame
     inline void tick(uintptr_t libAddress) {
-        if (!is_driver_active() || libAddress < 0x10000) return;
+        if (!is_driver_active() || libAddress < Offsets::MinValidAddress) return;
 
         const bool  ui_speed_on = cfg::motion::speed_hack.load(std::memory_order_relaxed);
         const float ui_speed_mx = cfg::motion::speed_mult.load(std::memory_order_relaxed);
@@ -99,15 +99,15 @@ namespace speed_system {
         g_config.multiplier = mult;
 
         uintptr_t baseGame = resolve_base_game(libAddress);
-        if (baseGame < 0x10000) return;
+        if (baseGame < Offsets::MinValidAddress) return;
 
         uintptr_t localPlayer = resolve_local_player(baseGame);
 
         // 1. SPEED HACK (ANTI-BAN SAFE)
         if (is_enabled) {
-            if (localPlayer >= 0x10000) {
+            if (localPlayer >= Offsets::MinValidAddress) {
                 uintptr_t attrs = resolve_player_attributes(localPlayer);
-                if (attrs >= 0x10000) {
+                if (attrs >= Offsets::MinValidAddress) {
                     if (!g_mod_state.orig_player_captured) {
                         float curRun = driver_read<float>(attrs + Offsets::RunSpeedUpScale);
                         if (curRun >= 0.5f && curRun <= 2.5f) g_mod_state.orig_run_scale = curRun;
@@ -127,9 +127,9 @@ namespace speed_system {
         }
         // Speed restoration to baseline
         else if (g_config.last_state) {
-            if (localPlayer >= 0x10000) {
+            if (localPlayer >= Offsets::MinValidAddress) {
                 uintptr_t attrs = resolve_player_attributes(localPlayer);
-                if (attrs >= 0x10000) {
+                if (attrs >= Offsets::MinValidAddress) {
                     driver_write_float(attrs + Offsets::RunSpeedUpScale, g_mod_state.orig_run_scale);
                 }
             }
@@ -140,12 +140,12 @@ namespace speed_system {
         }
 
         // 2. NO RECOIL
-        if (localPlayer >= 0x10000) {
+        if (localPlayer >= Offsets::MinValidAddress) {
             if (cfg::master_enabled && cfg::motion::no_recoil) {
                 uintptr_t weapon = driver_read<uintptr_t>(localPlayer + Offsets::Player_Weapon);
-                if (weapon >= 0x10000) {
+                if (weapon >= Offsets::MinValidAddress) {
                     uintptr_t wdata = driver_read<uintptr_t>(weapon + Offsets::Weapon_Data);
-                    if (wdata >= 0x10000) {
+                    if (wdata >= Offsets::MinValidAddress) {
                         if (!g_mod_state.recoil_orig_captured) {
                             float curRecoil = driver_read<float>(wdata + Offsets::Weapon_Recoil);
                             if (std::isfinite(curRecoil) && curRecoil >= 0.0f && curRecoil <= 100.0f) {
@@ -160,9 +160,9 @@ namespace speed_system {
                 }
             } else if (g_mod_state.recoil_last) {
                 uintptr_t weapon = driver_read<uintptr_t>(localPlayer + Offsets::Player_Weapon);
-                if (weapon >= 0x10000) {
+                if (weapon >= Offsets::MinValidAddress) {
                     uintptr_t wdata = driver_read<uintptr_t>(weapon + Offsets::Weapon_Data);
-                    if (wdata >= 0x10000 && g_mod_state.recoil_orig_captured) {
+                    if (wdata >= Offsets::MinValidAddress && g_mod_state.recoil_orig_captured) {
                         float orig = g_mod_state.recoil_orig;
                         driver->write(wdata + Offsets::Weapon_Recoil, &orig, sizeof(float));
                         g_mod_state.recoil_last = false;

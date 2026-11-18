@@ -1,5 +1,6 @@
 #pragma once
 #include "memory.hpp"
+#include "../offsets/offsets.hpp"
 #include <cstdint>
 
 // Dictionary<Byte, Player> layout (IL2CPP 64-bit)
@@ -31,11 +32,11 @@ public:
         if (!addr_valid(addr)) return;
 
         struct { uint64_t entries; uint64_t count_and_pad; } header{};
-        if (!mem_read(addr + 0x18, &header, sizeof(header))) return;
+        if (!mem_read(addr + Offsets::Dict::Entries, &header, sizeof(header))) return;
 
         if (!addr_valid(header.entries)) return;
 
-        entries_head = header.entries + 0x20;               // skip il2cpp array header
+        entries_head = header.entries + Offsets::Dict::ArrayHeader;               // skip il2cpp array header
         count        = static_cast<int>(header.count_and_pad & 0xFFFFFFFFu);
         valid        = (count > 0 && count < 0x1000);
     }

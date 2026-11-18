@@ -54,13 +54,10 @@ namespace aimbot {
             return;
         }
 
-        // Skull Center Elevation (+0.12m from neck bone node to skull center)
-        // The head bone (COBFGNOIPMF 0x6A8 / GBKFHDFCPMD 0x6A0) sits at the neck pivot.
-        // Adding +0.12m shifts the trajectory up into the center of the head hitbox (eye/forehead level),
-        // preventing bullets from grazing the collarbone/chest.
+        // Skull Center Elevation (Offsets::Bone::SkullElevation from head bone node to skull center)
         float bias = cfg::aim::head_bias.load(std::memory_order_relaxed);
         if (bias < -0.30f || bias > 0.30f) bias = 0.00f;
-        headPos.y += (0.12f + bias);
+        headPos.y += (Offsets::Bone::SkullElevation + bias);
 
         s_targetHeadX.store(headPos.x, std::memory_order_relaxed);
         s_targetHeadY.store(headPos.y, std::memory_order_relaxed);

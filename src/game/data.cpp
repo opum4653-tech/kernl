@@ -1,5 +1,5 @@
 #include "data.hpp"
-#include "Offsets.h"
+#include "../offsets/offsets.hpp"
 #include "../other/utils.hpp"
 #include "../other/memory.hpp"
 #include "../ui/cfg.hpp"
@@ -85,16 +85,16 @@ namespace data {
 
         // 2. Live Maximum Health (Index 1 at Offsets::Player::HP_MaxEntry)
         auto elem1 = rpm<uint64_t>(datas + Offsets::Player::HP_MaxEntry);
-        if (elem1 && elem1 > 0x10000) {
+        if (elem1 && elem1 > Offsets::MinValidAddress) {
             int m = rpm<int>(elem1 + Offsets::HP_Value);
             if (m > 0 && m <= 1000) maxHP = m;
         }
-        if (maxHP <= 0) maxHP = 200; // Free Fire standard base HP fallback
+        if (maxHP <= 0) maxHP = Offsets::Player::StandardBaseHP; // Standard base HP fallback
         if (maxHP < curHP) maxHP = curHP;
 
         // 3. Live Armor Points (Index 4 at Offsets::Player::HP_ArmorEntry)
         auto elem4 = rpm<uint64_t>(datas + Offsets::Player::HP_ArmorEntry);
-        if (elem4 && elem4 > 0x10000) {
+        if (elem4 && elem4 > Offsets::MinValidAddress) {
             curArmor = rpm<int>(elem4 + Offsets::HP_Value);
         }
     }
@@ -103,7 +103,7 @@ namespace data {
     static int readName(const PlayerSpan& span, char* buf, size_t buflen) {
         buf[0] = 0;
         auto sp = span.at<uint64_t>(Offsets::Player_Name);
-        if (!sp || sp < 0x10000) return 0;
+        if (!sp || sp < Offsets::MinValidAddress) return 0;
         int len = rpm<int>(sp + Offsets::Mono::String_Length);
         if (len <= 0 || len > 64) return 0;
         uint16_t utf16[65];
@@ -329,7 +329,7 @@ namespace data {
             }
             if (toeScreen.z < 0.001f) {
                 Vector3 toeWorld = headWorld;
-                toeWorld.y -= 1.75f;
+                toeWorld.y -= Offsets::Player::ModelHeight;
                 toeScreen = WorldToScreenPoint(viewMatrix, toeWorld);
             }
             if (toeScreen.z < 0.001f) continue;

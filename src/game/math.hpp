@@ -1,31 +1,31 @@
 #pragma once
 
 #include "game.hpp"
-#include "Offsets.h"
+#include "../offsets/offsets.hpp"
 #include "../other/vector3.h"
 #include "../other/memory.hpp"
 #include "../globals.hpp"
 #include <cmath>
 
 inline Vector3 GetPosition(uint64_t Transform) {
-    auto transformObjValue = rpm<uint64_t>(Transform + 0x10);
+    auto transformObjValue = rpm<uint64_t>(Transform + Offsets::Transform::Obj);
     if (transformObjValue == 0) return Vector3::Zero();
 
     struct { uint64_t matrices; uint64_t indices; } ptrs;
-    auto matrixValue = rpm<uint64_t>(transformObjValue + 0x38);
+    auto matrixValue = rpm<uint64_t>(transformObjValue + Offsets::Transform::MatrixPtr);
     if (!matrixValue) return Vector3::Zero();
 
-    ptrs.matrices = rpm<uint64_t>(matrixValue + 0x18);
-    ptrs.indices  = rpm<uint64_t>(matrixValue + 0x20);
+    ptrs.matrices = rpm<uint64_t>(matrixValue + Offsets::Transform::Matrices);
+    ptrs.indices  = rpm<uint64_t>(matrixValue + Offsets::Transform::Indices);
     if (!ptrs.matrices || !ptrs.indices) return Vector3::Zero();
 
-    auto indexValue = rpm<uint64_t>(transformObjValue + 0x40);
+    auto indexValue = rpm<uint64_t>(transformObjValue + Offsets::Transform::Index);
 
-    auto resultValue = rpm<Vector3>(ptrs.matrices + (indexValue * 0x30));
-    auto transformIndexValue = rpm<int>(ptrs.indices + (indexValue * 4));
+    auto resultValue = rpm<Vector3>(ptrs.matrices + (indexValue * Offsets::Transform::MatrixStride));
+    auto transformIndexValue = rpm<int>(ptrs.indices + (indexValue * Offsets::Transform::IndexStride));
 
     for (int tries = 0; transformIndexValue >= 0 && tries < 50; tries++) {
-        uint64_t matAddr = ptrs.matrices + (transformIndexValue * 0x30);
+        uint64_t matAddr = ptrs.matrices + (transformIndexValue * Offsets::Transform::MatrixStride);
         auto t = rpm<TransformMatrix>(matAddr);
 
         auto rx = t.rotation.x, ry = t.rotation.y, rz = t.rotation.z, rw = t.rotation.w;
@@ -46,14 +46,14 @@ inline Vector3 GetPosition(uint64_t Transform) {
                         (sy * ((ry * rz *  2.0) - (rw * rx * -2.0))) +
                         (sz * ((rx * rx * -2.0) - (ry * ry *  2.0)));
 
-        transformIndexValue = rpm<int>(ptrs.indices + (transformIndexValue * 4));
+        transformIndexValue = rpm<int>(ptrs.indices + (transformIndexValue * Offsets::Transform::IndexStride));
     }
 
     return resultValue;
 }
 
 inline Vector3 GetNodePosition(uint64_t nodeTransform) {
-    auto transformValue = rpm<uint64_t>(nodeTransform + 0x10);
+    auto transformValue = rpm<uint64_t>(nodeTransform + Offsets::Transform::Node);
     if (transformValue == 0) return Vector3::Zero();
     return GetPosition(transformValue);
 }

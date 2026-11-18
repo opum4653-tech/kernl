@@ -28,6 +28,11 @@ namespace Offsets {
         constexpr uintptr_t EntryValue           = 0x10;
     }
 
+// Memory Safety Thresholds
+    namespace Memory {
+        constexpr uintptr_t MinValidAddress      = 0x10000; // Standard 64KB userland unmapped null-page boundary
+    }
+
 // Player Entity Fields
     namespace Player {
         constexpr uintptr_t Rotation             = 0x614;   // Vector3
@@ -64,6 +69,10 @@ namespace Offsets {
         constexpr uintptr_t Weapon               = 0x600;   // WeaponOnHand (0x600)
         constexpr uintptr_t Attributes           = 0x768;   // PlayerAttributes (0x768)
         constexpr uintptr_t Attributes_Max       = 0x770;   // PlayerAttributes Max (0x770)
+
+        // Player Physical Constraints
+        constexpr int       StandardBaseHP       = 200;     // Standard baseline HP
+        constexpr float     ModelHeight          = 1.75f;   // Standard player height (meters)
     }
 
 // Mono Internals (String)
@@ -84,6 +93,11 @@ namespace Offsets {
         constexpr uintptr_t Node                 = 0x10;
         constexpr uintptr_t Obj                  = 0x10;
         constexpr uintptr_t MatrixPtr            = 0x38;
+        constexpr uintptr_t Matrices             = 0x18;
+        constexpr uintptr_t Indices              = 0x20;
+        constexpr uintptr_t Index                = 0x40;
+        constexpr uintptr_t MatrixStride         = 0x30;
+        constexpr uintptr_t IndexStride          = 0x4;
         constexpr uintptr_t Position             = 0x90;
     }
 
@@ -144,6 +158,7 @@ namespace Offsets {
         constexpr uintptr_t Root                 = 0x6C8;   // Root / Pelvis ITransformNode (0x6C8 IIPBIDIBJDK)
         constexpr uintptr_t LeftToe              = 0x6E8;   // Foot / Left Toe ITransformNode (0x6E8 GMJLIMFHMAE)
         constexpr uintptr_t RightToe             = 0x6F0;   // Foot / Right Toe ITransformNode (0x6F0 JMHBBGIKBNO)
+        constexpr float     SkullElevation       = 0.12f;   // Cranium center elevation from neck node (meters)
     }
 
 // Flat Aliases
@@ -186,6 +201,11 @@ namespace Offsets {
     constexpr uintptr_t Transform_Node           = Transform::Node;
     constexpr uintptr_t Transform_Obj            = Transform::Obj;
     constexpr uintptr_t Transform_MatrixPtr      = Transform::MatrixPtr;
+    constexpr uintptr_t Transform_Matrices       = Transform::Matrices;
+    constexpr uintptr_t Transform_Indices        = Transform::Indices;
+    constexpr uintptr_t Transform_Index          = Transform::Index;
+    constexpr uintptr_t Transform_MatrixStride   = Transform::MatrixStride;
+    constexpr uintptr_t Transform_IndexStride    = Transform::IndexStride;
     constexpr uintptr_t Transform_Position       = Transform::Position;
 
     constexpr uintptr_t Avatar_Uma               = Avatar::Uma;
@@ -220,6 +240,9 @@ namespace Offsets {
     constexpr uintptr_t Bone_Spine               = Bone::Spine;
     constexpr uintptr_t Bone_Root                = Bone::Root;
     constexpr uintptr_t Bone_LeftToe             = Bone::LeftToe;
+    constexpr float     Bone_SkullElevation      = Bone::SkullElevation;
+    constexpr int       Player_StandardBaseHP    = Player::StandardBaseHP;
+    constexpr float     Player_ModelHeight       = Player::ModelHeight;
     constexpr uintptr_t Player_HeadCollider      = Player::HeadCollider;
     constexpr uintptr_t Player_HeadCollider_Alt  = Player::HeadCollider_Alt;
     constexpr uintptr_t Player_LockedAimingCollider = Player::LockedAimingCollider;
@@ -228,6 +251,7 @@ namespace Offsets {
     constexpr uintptr_t Player_AimingAdjusted    = Player::AimingAdjusted;
 
     constexpr uintptr_t StaticFields_Instance    = Unity::StaticFields_Instance;
+    constexpr uintptr_t MinValidAddress          = Memory::MinValidAddress;
 
     // Movement & Speed Attributes
     constexpr uintptr_t PlayerAttributes         = Player::Attributes;     // 0x768 (Global Primary)
