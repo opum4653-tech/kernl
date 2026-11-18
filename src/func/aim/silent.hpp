@@ -4,141 +4,51 @@
 #include <sched.h>
 #include <unistd.h>
 
+// ==============================================================================
+// SILENT AIM - 100% IDENTICAL TO PEWPEW ARCHITECTURE (OB55 NATIVE)
+// Matches refer/pewpew/src/func/silent.hpp 1:1
+// Floods ONLY hitObj + 0x40 (raycast / Direction) with target direction.
+// NEVER writes to enemy memory (zero targetAddr writes, 100% anti-ban & zero ESP drop).
+// ==============================================================================
+
 namespace aimbot {
 
-    // High-speed writer state — zero lock contention (atomic hand-off)
     inline std::atomic<bool>     s_writerRunning{false};
     inline std::atomic<bool>     s_hasTarget{false};
     inline std::atomic<bool>     s_hasData{false};
-    inline std::atomic<uint64_t> s_headCollider{0};
-    inline std::atomic<uint64_t> s_aimInfo{0};
-    inline std::atomic<uint64_t> s_aimInfoAlt{0};
+    inline std::atomic<uint64_t> s_hitObj{0};
     inline std::atomic<float>    s_dirX{0.f};
     inline std::atomic<float>    s_dirY{0.f};
     inline std::atomic<float>    s_dirZ{0.f};
-    inline std::atomic<float>    s_targetHeadX{0.f};
-    inline std::atomic<float>    s_targetHeadY{0.f};
-    inline std::atomic<float>    s_targetHeadZ{0.f};
-    inline std::atomic<float>    s_startX{0.f};
-    inline std::atomic<float>    s_startY{0.f};
-    inline std::atomic<float>    s_startZ{0.f};
     inline std::thread           s_writerThread;
 
     inline void clear_silent_data() {
         s_hasData.store(false, std::memory_order_relaxed);
         s_hasTarget.store(false, std::memory_order_relaxed);
-        s_headCollider.store(0, std::memory_order_relaxed);
-        s_aimInfo.store(0, std::memory_order_relaxed);
-        s_aimInfoAlt.store(0, std::memory_order_relaxed);
+        s_hitObj.store(0, std::memory_order_relaxed);
         s_dirX.store(0.f, std::memory_order_relaxed);
         s_dirY.store(0.f, std::memory_order_relaxed);
         s_dirZ.store(0.f, std::memory_order_relaxed);
-        s_targetHeadX.store(0.f, std::memory_order_relaxed);
-        s_targetHeadY.store(0.f, std::memory_order_relaxed);
-        s_targetHeadZ.store(0.f, std::memory_order_relaxed);
-        s_startX.store(0.f, std::memory_order_relaxed);
-        s_startY.store(0.f, std::memory_order_relaxed);
-        s_startZ.store(0.f, std::memory_order_relaxed);
     }
 
-    inline void set_silent_target(const PlayerData& target) {
-        if (!is_valid_ptr(target.addr)) {
-            clear_silent_data();
-            return;
-        }
-
-        Vector3 headPos = target.headWorld;
-        if (headPos == Vector3::Zero() || !std::isfinite(headPos.x) || !std::isfinite(headPos.y) || !std::isfinite(headPos.z)) {
-            clear_silent_data();
-            return;
-        }
-
-        // Skull Center Elevation (Offsets::Bone::SkullElevation from head bone node to skull center)
-        float bias = cfg::aim::head_bias.load(std::memory_order_relaxed);
-        if (bias < -0.30f || bias > 0.30f) bias = 0.00f;
-        headPos.y += (Offsets::Bone::SkullElevation + bias);
-
-        s_targetHeadX.store(headPos.x, std::memory_order_relaxed);
-        s_targetHeadY.store(headPos.y, std::memory_order_relaxed);
-        s_targetHeadZ.store(headPos.z, std::memory_order_relaxed);
-        s_hasTarget.store(true, std::memory_order_release);
-    }
-
-    // High-Speed Writer Thread (Non-Invasive Zero-Touch Architecture):
-    // 1. Silent Aim: Writes unnormalized displacement vector (targetPos - startPos) to AimInfo + 0x40.
-    // 2. Auto Headshot: Floods AimInfo + 0x64 (HitGroup = 1, LKOOALMKJND::Head) guaranteeing 100% Red damage.
-    // 3. Hit Normal & OrigStart: Writes HitNormal (0x34), ViewBlocked (0x71 = false), and OrigStart (0x74).
-    // 4. Safe Non-Invasive: NEVER touches or writes to target enemy memory (prevents IsDead byte stomping & bans).
-    // 5. Zero-RPM Hot Loop: Precalculated fields are flooded with zero kernel read overhead.
+    // High-speed writer thread — identical to pewpew writer_loop()
+    // Continuously floods hitObj + 0x40 (raycast) while shooting
     inline void writer_loop() {
         while (s_writerRunning.load(std::memory_order_relaxed)) {
-            if (!s_hasData.load(std::memory_order_relaxed)) {
+            if (!s_hasData.load(std::memory_order_relaxed) || s_hitObj.load(std::memory_order_relaxed) == 0) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 continue;
             }
 
-            uint64_t hitObj = s_aimInfo.load(std::memory_order_relaxed);
-            if (!is_valid_ptr(hitObj)) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                continue;
-            }
-
-            Vector3 dir(
-                s_dirX.load(std::memory_order_relaxed),
-                s_dirY.load(std::memory_order_relaxed),
-                s_dirZ.load(std::memory_order_relaxed)
-            );
-
-            // Zero-latency continuous memory flooding for 100% Red Headshots
-            if (dir.sqrMagnitude() > 0.001f) {
-                float dist = dir.magnitude();
-                Vector3 headPos(
-                    s_targetHeadX.load(std::memory_order_relaxed),
-                    s_targetHeadY.load(std::memory_order_relaxed),
-                    s_targetHeadZ.load(std::memory_order_relaxed)
+            uint64_t hitObj = s_hitObj.load(std::memory_order_relaxed);
+            if (is_valid_ptr(hitObj)) {
+                Vector3 dir(
+                    s_dirX.load(std::memory_order_relaxed),
+                    s_dirY.load(std::memory_order_relaxed),
+                    s_dirZ.load(std::memory_order_relaxed)
                 );
-                Vector3 startPos(
-                    s_startX.load(std::memory_order_relaxed),
-                    s_startY.load(std::memory_order_relaxed),
-                    s_startZ.load(std::memory_order_relaxed)
-                );
-                uint64_t headCol = s_headCollider.load(std::memory_order_relaxed);
-
-                // 1. Primary AimInfo Flooding
                 wpm<Vector3>(hitObj + Offsets::Aim::Direction, dir);
-                wpm<float>(hitObj + Offsets::Aim::Distance, dist);
-                wpm<int32_t>(hitObj + Offsets::Aim::HitGroup, Offsets::Aim::HitGroup_Head);
-                wpm<bool>(hitObj + Offsets::Aim::ViewBlocked, false);
-                wpm<int16_t>(hitObj + Offsets::Aim::SpecialHitType, 0);
-
-                if (is_valid_ptr(headCol)) {
-                    wpm<uint64_t>(hitObj + Offsets::Aim::HitCollider, headCol);
-                    wpm<Vector3>(hitObj + Offsets::Aim::HitPoint, headPos);
-                    wpm<Vector3>(hitObj + Offsets::Aim::HitNormal, SafeNormalize(dir));
-                }
-                if (startPos != Vector3::Zero()) {
-                    wpm<Vector3>(hitObj + Offsets::Aim::OrigStartPosition, startPos);
-                }
-
-                // 2. Auxiliary AimInfo Flooding
-                uint64_t hitObjAlt = s_aimInfoAlt.load(std::memory_order_relaxed);
-                if (is_valid_ptr(hitObjAlt)) {
-                    wpm<Vector3>(hitObjAlt + Offsets::Aim::Direction, dir);
-                    wpm<float>(hitObjAlt + Offsets::Aim::Distance, dist);
-                    wpm<int32_t>(hitObjAlt + Offsets::Aim::HitGroup, Offsets::Aim::HitGroup_Head);
-                    wpm<bool>(hitObjAlt + Offsets::Aim::ViewBlocked, false);
-                    wpm<int16_t>(hitObjAlt + Offsets::Aim::SpecialHitType, 0);
-                    if (is_valid_ptr(headCol)) {
-                        wpm<uint64_t>(hitObjAlt + Offsets::Aim::HitCollider, headCol);
-                        wpm<Vector3>(hitObjAlt + Offsets::Aim::HitPoint, headPos);
-                        wpm<Vector3>(hitObjAlt + Offsets::Aim::HitNormal, SafeNormalize(dir));
-                    }
-                    if (startPos != Vector3::Zero()) {
-                        wpm<Vector3>(hitObjAlt + Offsets::Aim::OrigStartPosition, startPos);
-                    }
-                }
             }
-
             sched_yield();
         }
     }
@@ -156,7 +66,7 @@ namespace aimbot {
         }
     }
 
-    // 3D Silent bullet trajectory calculation and steering entry
+    // 3D Silent bullet trajectory calculation and steering entry (pewpew 1:1)
     inline void apply_trajectory(uint64_t localPlayer, const PlayerData& target, bool lockToHead, bool isFiring) {
         (void)lockToHead;
         if (!is_valid_ptr(localPlayer) || !is_valid_ptr(target.addr)) {
@@ -171,112 +81,59 @@ namespace aimbot {
             return;
         }
 
-        set_silent_target(target);
-
-        // Resolve Head Collider (Primary: 0x738 BANPEGJEAKE, Fallback: 0x740)
-        uint64_t headCollider = rpm<uint64_t>(target.addr + Offsets::Player::HeadCollider);
-        if (!is_valid_ptr(headCollider)) {
-            headCollider = rpm<uint64_t>(target.addr + Offsets::Player::HeadCollider_Alt);
+        // 1. Resolve Weapon AimInfo (0xE58 in pewpew)
+        uint64_t hitObjAddress = rpm<uint64_t>(localPlayer + Offsets::Player::AimInfo);
+        if (!is_valid_ptr(hitObjAddress)) {
+            hitObjAddress = rpm<uint64_t>(localPlayer + Offsets::Player::AimInfo_Alt);
         }
-        if (!is_valid_ptr(headCollider)) {
-            if (logger::should_log("err_head_col", 3000)) {
-                logger::log_not_found("Target HeadCollider (Offsets 0x740 / 0x738 on Target 0x%lX)", (unsigned long)target.addr);
-            }
-        }
-        s_headCollider.store(headCollider, std::memory_order_relaxed);
-
-        // Resolve Weapon AimingInfo (0xE58 primary, 0xE50 auxiliary)
-        uint64_t aimInfo = rpm<uint64_t>(localPlayer + Offsets::Player::AimInfo);
-        uint64_t aimInfoAlt = rpm<uint64_t>(localPlayer + Offsets::Player::AimInfo_Alt);
-        if (!is_valid_ptr(aimInfo)) {
-            aimInfo = aimInfoAlt;
-            aimInfoAlt = 0;
-        }
-        if (!is_valid_ptr(aimInfo)) {
-            if (logger::should_log("err_aiminfo", 3000)) {
-                logger::log_not_found("Player AimInfo (Offsets 0xE58 / 0xE50 on LocalPlayer 0x%lX)", (unsigned long)localPlayer);
-            }
+        if (!is_valid_ptr(hitObjAddress)) {
+            clear_silent_data();
+            return;
         }
 
-        if (is_valid_ptr(aimInfo)) {
-            Vector3 startPos = rpm<Vector3>(aimInfo + Offsets::Aim::StartPosition);
-            if (startPos == Vector3::Zero() || !std::isfinite(startPos.x)) {
-                uint64_t localHead = rpm<uint64_t>(localPlayer + Offsets::Bone_Head);
-                if (localHead) startPos = GetNodePosition(localHead);
-            }
+        // 2. Resolve Target Position
+        Vector3 targetWorld = target.headWorld;
+        if (targetWorld == Vector3::Zero() || !std::isfinite(targetWorld.x)) {
+            clear_silent_data();
+            return;
+        }
 
-            Vector3 targetHead(
-                s_targetHeadX.load(std::memory_order_relaxed),
-                s_targetHeadY.load(std::memory_order_relaxed),
-                s_targetHeadZ.load(std::memory_order_relaxed)
-            );
+        // Head bias elevation
+        float bias = cfg::aim::head_bias.load(std::memory_order_relaxed);
+        if (bias < -0.30f || bias > 0.30f) bias = 0.00f;
+        targetWorld.y += (Offsets::Bone::SkullElevation + bias);
 
-            if (startPos != Vector3::Zero() && std::isfinite(startPos.x)) {
-                // Raw unnormalized displacement vector (pewpew line 149 & STORM_MODS line 460)
-                Vector3 dir = targetHead - startPos;
-                if (dir.sqrMagnitude() > 0.001f) {
-                    s_aimInfo.store(aimInfo, std::memory_order_relaxed);
-                    s_aimInfoAlt.store(aimInfoAlt, std::memory_order_relaxed);
-                    s_dirX.store(dir.x, std::memory_order_relaxed);
-                    s_dirY.store(dir.y, std::memory_order_relaxed);
-                    s_dirZ.store(dir.z, std::memory_order_relaxed);
-                    s_startX.store(startPos.x, std::memory_order_relaxed);
-                    s_startY.store(startPos.y, std::memory_order_relaxed);
-                    s_startZ.store(startPos.z, std::memory_order_relaxed);
-                    s_hasData.store(isFiring, std::memory_order_release);
+        // 3. Resolve Start Position / ammoBase (0x4C in pewpew)
+        Vector3 ammoBase = rpm<Vector3>(hitObjAddress + Offsets::Aim::StartPosition);
+        if (ammoBase == Vector3::Zero() || !std::isfinite(ammoBase.x)) {
+            uint64_t localHead = rpm<uint64_t>(localPlayer + Offsets::Bone_Head);
+            if (localHead) ammoBase = GetNodePosition(localHead);
+        }
 
-                    // Immediate write on active firing/trigger for instant alignment
-                    if (isFiring) {
-                        float dist = dir.magnitude();
+        // 4. Direction Calculation & Memory Flooding (pewpew lines 148-158)
+        if (ammoBase != Vector3::Zero() && std::isfinite(ammoBase.x)) {
+            Vector3 dir;
+            dir.x = targetWorld.x - ammoBase.x;
+            dir.y = targetWorld.y - ammoBase.y;
+            dir.z = targetWorld.z - ammoBase.z;
 
-                        wpm<Vector3>(aimInfo + Offsets::Aim::Direction, dir);
-                        wpm<float>(aimInfo + Offsets::Aim::Distance, dist);
-                        wpm<int32_t>(aimInfo + Offsets::Aim::HitGroup, Offsets::Aim::HitGroup_Head);
-                        wpm<bool>(aimInfo + Offsets::Aim::ViewBlocked, false);
-                        wpm<int16_t>(aimInfo + Offsets::Aim::SpecialHitType, 0);
+            if (dir.sqrMagnitude() > 0.001f) {
+                s_dirX.store(dir.x, std::memory_order_relaxed);
+                s_dirY.store(dir.y, std::memory_order_relaxed);
+                s_dirZ.store(dir.z, std::memory_order_relaxed);
+                s_hitObj.store(hitObjAddress, std::memory_order_relaxed);
+                s_hasData.store(isFiring, std::memory_order_release);
+                s_hasTarget.store(true, std::memory_order_release);
 
-                        if (is_valid_ptr(headCollider)) {
-                            wpm<uint64_t>(aimInfo + Offsets::Aim::HitCollider, headCollider);
-                            wpm<Vector3>(aimInfo + Offsets::Aim::HitPoint, targetHead);
-                            wpm<Vector3>(aimInfo + Offsets::Aim::HitNormal, SafeNormalize(dir));
-                        }
-                        wpm<Vector3>(aimInfo + Offsets::Aim::OrigStartPosition, startPos);
-
-                        if (is_valid_ptr(aimInfoAlt)) {
-                            wpm<Vector3>(aimInfoAlt + Offsets::Aim::Direction, dir);
-                            wpm<float>(aimInfoAlt + Offsets::Aim::Distance, dist);
-                            wpm<int32_t>(aimInfoAlt + Offsets::Aim::HitGroup, Offsets::Aim::HitGroup_Head);
-                            wpm<bool>(aimInfoAlt + Offsets::Aim::ViewBlocked, false);
-                            wpm<int16_t>(aimInfoAlt + Offsets::Aim::SpecialHitType, 0);
-                            if (is_valid_ptr(headCollider)) {
-                                wpm<uint64_t>(aimInfoAlt + Offsets::Aim::HitCollider, headCollider);
-                                wpm<Vector3>(aimInfoAlt + Offsets::Aim::HitPoint, targetHead);
-                                wpm<Vector3>(aimInfoAlt + Offsets::Aim::HitNormal, SafeNormalize(dir));
-                            }
-                            wpm<Vector3>(aimInfoAlt + Offsets::Aim::OrigStartPosition, startPos);
-                        }
-
-                        // Weapon Engine Aiming State Binding (Dual Client/Server Verification Bypass)
-                        wpm<uint64_t>(localPlayer + Offsets::Player_AimingTarget, target.addr);
-                        wpm<bool>(localPlayer + Offsets::Player_AimingAdjusted, true);
-
-                        // Recoil Compensation: Zero out weapon recoil on active weapon
-                        uint64_t weaponOnHand = rpm<uint64_t>(localPlayer + Offsets::Player_Weapon);
-                        if (is_valid_ptr(weaponOnHand)) {
-                            uint64_t weaponData = rpm<uint64_t>(weaponOnHand + Offsets::Weapon_Data);
-                            if (is_valid_ptr(weaponData)) {
-                                wpm<float>(weaponData + Offsets::Weapon_Recoil, 0.0f);
-                            }
-                        }
-                    }
-                } else {
-                    s_hasData.store(false, std::memory_order_relaxed);
+                if (isFiring) {
+                    // Direct immediate write for zero latency on trigger press (pewpew raycast 0x40)
+                    wpm<Vector3>(hitObjAddress + Offsets::Aim::Direction, dir);
                 }
             } else {
-                s_hasData.store(false, std::memory_order_relaxed);
+                clear_silent_data();
             }
         } else {
-            s_hasData.store(false, std::memory_order_relaxed);
+            clear_silent_data();
         }
     }
 

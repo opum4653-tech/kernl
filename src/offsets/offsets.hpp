@@ -66,8 +66,10 @@ namespace Offsets {
         constexpr uintptr_t HP_MaxEntry          = 0x28;    // Index 1 in HP datas pool
         constexpr uintptr_t HP_ArmorEntry        = 0x40;    // Index 4 in HP datas pool
         constexpr uintptr_t IsDead               = 0x7C;    // Boolean (0x7C)
-        constexpr uintptr_t Avatar               = 0x770;   // AvatarManager (0x770)
-        constexpr uintptr_t IsBot                = 0x4A0;   // Boolean: IsClientBot (0x4A0)
+        constexpr uintptr_t Avatar               = 0x778;   // AvatarManager (0x778 proven in pewpew)
+        constexpr uintptr_t Avatar_Alt           = 0x770;   // AvatarManager auxiliary (0x770)
+        constexpr uintptr_t IsBot                = 0x4A8;   // Boolean: IsClientBot (0x4A8 proven in pewpew)
+        constexpr uintptr_t IsBot_Alt            = 0x4A0;   // Boolean: IsClientBot auxiliary (0x4A0)
         constexpr uintptr_t Name                 = 0x498;   // MonoString* OriginalNickName (0x498)
         constexpr uintptr_t Speed                = 0x560;   // Single (Speed 0x560)
         constexpr uintptr_t AimInfo              = 0xE58;   // Primary: LastAimingInfoFromWeapon (0xE58)

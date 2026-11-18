@@ -327,6 +327,9 @@ namespace data {
             if (curHP <= 0) continue;
 
             auto avatarMgr = span.at<uint64_t>(Offsets::Player_Avatar);
+            if (!avatarMgr) {
+                avatarMgr = span.at<uint64_t>(Offsets::Player::Avatar_Alt);
+            }
             if (!avatarMgr) continue;
             auto uma = rpm<uint64_t>(avatarMgr + Offsets::Avatar_Uma);
             if (!uma) continue;
