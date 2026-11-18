@@ -4,6 +4,7 @@
 #endif
 #include "imgui.h"
 #include "../../game/data.hpp"
+#include "../../offsets/offsets.hpp"
 #include "../../ui/cfg.hpp"
 #include "../../globals.hpp"
 #include <cstdio>
@@ -99,13 +100,13 @@ namespace func::esp {
 
         // Align horizontally centered between head and toe (natural spine alignment)
         float midX = ok(p.Toe) ? ((p.Head.x + p.Toe.x) * 0.5f) : p.Head.x;
-        float width = height * 0.48f;
+        float width = height * Offsets::ESP::BoxWidthRatio;
         float halfW = width * 0.5f;
 
-        // Head bone is at eye level, add 12% padding above head for skull/helmet (STORM_MODS standard)
-        // Toe bone is at sole level, add 5% padding below feet for boots
-        const float padTop = height * 0.12f;
-        const float padBot = height * 0.05f;
+        // Head bone is at eye level, add helmet padding above head (Offsets::ESP::BoxPadTopPercent)
+        // Toe bone is at sole level, add boots padding below feet (Offsets::ESP::BoxPadBotPercent)
+        const float padTop = height * Offsets::ESP::BoxPadTopPercent;
+        const float padBot = height * Offsets::ESP::BoxPadBotPercent;
 
         pb.tl = ImVec2(midX - halfW, topY - padTop);
         pb.br = ImVec2(midX + halfW, botY + padBot);

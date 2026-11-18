@@ -33,6 +33,13 @@ namespace Offsets {
         constexpr uintptr_t MinValidAddress      = 0x10000; // Standard 64KB userland unmapped null-page boundary
     }
 
+// ESP Geometric Proportions
+    namespace ESP {
+        constexpr float BoxWidthRatio            = 0.48f;   // Width-to-height aspect ratio for humanoid 2D box
+        constexpr float BoxPadTopPercent         = 0.12f;   // 12% helmet/head padding above head node
+        constexpr float BoxPadBotPercent         = 0.05f;   // 5% boots padding below toe node
+    }
+
 // Player Entity Fields
     namespace Player {
         constexpr uintptr_t Rotation             = 0x614;   // Vector3
@@ -252,6 +259,10 @@ namespace Offsets {
 
     constexpr uintptr_t StaticFields_Instance    = Unity::StaticFields_Instance;
     constexpr uintptr_t MinValidAddress          = Memory::MinValidAddress;
+
+    constexpr float     ESP_BoxWidthRatio        = ESP::BoxWidthRatio;
+    constexpr float     ESP_BoxPadTopPercent     = ESP::BoxPadTopPercent;
+    constexpr float     ESP_BoxPadBotPercent     = ESP::BoxPadBotPercent;
 
     // Movement & Speed Attributes
     constexpr uintptr_t PlayerAttributes         = Player::Attributes;     // 0x768 (Global Primary)
