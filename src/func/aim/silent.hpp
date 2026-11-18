@@ -1,5 +1,6 @@
 #pragma once
 #include "common.hpp"
+#include "../../other/logger.hpp"
 #include <sched.h>
 #include <unistd.h>
 
@@ -184,6 +185,11 @@ namespace aimbot {
         if (!is_valid_ptr(headCollider)) {
             headCollider = rpm<uint64_t>(target.addr + Offsets::Player::HeadCollider_Alt);
         }
+        if (!is_valid_ptr(headCollider)) {
+            if (logger::should_log("err_head_col", 3000)) {
+                logger::log_not_found("Target HeadCollider (Offsets 0x740 / 0x738 on Target 0x%lX)", (unsigned long)target.addr);
+            }
+        }
         s_headCollider.store(headCollider, std::memory_order_relaxed);
 
         // Resolve Weapon AimingInfo (0xE58 primary, 0xE50 auxiliary)
@@ -192,6 +198,11 @@ namespace aimbot {
         if (!is_valid_ptr(aimInfo)) {
             aimInfo = aimInfoAlt;
             aimInfoAlt = 0;
+        }
+        if (!is_valid_ptr(aimInfo)) {
+            if (logger::should_log("err_aiminfo", 3000)) {
+                logger::log_not_found("Player AimInfo (Offsets 0xE58 / 0xE50 on LocalPlayer 0x%lX)", (unsigned long)localPlayer);
+            }
         }
 
         if (is_valid_ptr(aimInfo)) {
@@ -223,6 +234,9 @@ namespace aimbot {
 
                     // Immediate write on active firing/trigger for instant alignment
                     if (isFiring) {
+                        logger::log_diag("SILENT AIM ACTIVE: Target=0x%lX | AimInfo=0x%lX | HeadCol=0x%lX | Dir=(%.2f, %.2f, %.2f) -> HitGroup=1 (Head)",
+                            (unsigned long)target.addr, (unsigned long)aimInfo, (unsigned long)headCollider, dir.x, dir.y, dir.z);
+
                         wpm<Vector3>(aimInfo + Offsets::Aim::Direction, dir);
                         wpm<int32_t>(aimInfo + Offsets::Aim::HitGroup, Offsets::Aim::HitGroup_Head);
                         wpm<bool>(aimInfo + Offsets::Aim::ViewBlocked, false);

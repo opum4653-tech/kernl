@@ -2,6 +2,7 @@
 #include "../offsets/offsets.hpp"
 #include "../other/utils.hpp"
 #include "../other/memory.hpp"
+#include "../other/logger.hpp"
 #include "../ui/cfg.hpp"
 #include "../protect/oxorany.hpp"
 #include <atomic>
@@ -147,17 +148,37 @@ namespace data {
         std::vector<PlayerData> tmp;
         tmp.reserve(64);
 
-        // Base chain
+        // Base chain diagnostics & traversal
         auto GfCell = rpm<uint64_t>(snap.lib + oxorany(Offsets::GameFacade));
-        if (!GfCell) return;
+        if (!GfCell) {
+            if (logger::should_log("err_gfcell", 2500)) {
+                logger::log_not_found("GameFacade Cell (Offset +0x%lX from libil2cpp.so 0x%lX)", Offsets::GameFacade, (unsigned long)snap.lib);
+            }
+            return;
+        }
         auto GfClass = rpm<uint64_t>(GfCell);
-        if (!GfClass) return;
+        if (!GfClass) {
+            if (logger::should_log("err_gfclass", 2500)) {
+                logger::log_not_found("GameFacade Class (Dereferencing GfCell 0x%lX)", (unsigned long)GfCell);
+            }
+            return;
+        }
 
         auto StaticFields = rpm<uint64_t>(GfClass + Offsets::GameFacade_P2);
-        if (!StaticFields) return;
+        if (!StaticFields) {
+            if (logger::should_log("err_sf", 2500)) {
+                logger::log_not_found("StaticFields (Offset +0x%lX from GfClass 0x%lX)", Offsets::GameFacade_P2, (unsigned long)GfClass);
+            }
+            return;
+        }
 
         auto BaseGame = rpm<uint64_t>(StaticFields + Offsets::StaticFields_Instance);
-        if (!BaseGame) return;
+        if (!BaseGame) {
+            if (logger::should_log("err_bg", 2500)) {
+                logger::log_not_found("BaseGame Instance (Offset +0x%lX from StaticFields 0x%lX)", Offsets::StaticFields_Instance, (unsigned long)StaticFields);
+            }
+            return;
+        }
 
         auto m_Match = rpm<uint64_t>(BaseGame + Offsets::BaseGame_Match);
         auto localPlayer = m_Match ? rpm<uint64_t>(m_Match + Offsets::Match_LocalPlayer) : 0;
@@ -165,6 +186,9 @@ namespace data {
         inMatch.store(matchActive);
 
         if (!matchActive) {
+            if (logger::should_log("diag_match_idle", 3000)) {
+                logger::log_info("Match Status: Waiting for match (BaseGame=0x%lX, Match=0x%lX)", (unsigned long)BaseGame, (unsigned long)m_Match);
+            }
             localPlayerAddr.store(0);
             {
                 std::lock_guard<std::mutex> lk(players_mutex);
@@ -173,6 +197,10 @@ namespace data {
             if (!g_visStable.empty()) g_visStable.clear();
             if (!g_visCounter.empty()) g_visCounter.clear();
             return;
+        }
+
+        if (logger::should_log("diag_match_active", 3000)) {
+            logger::log_found("Match Active: BaseGame=0x%lX | Match=0x%lX | LocalPlayer=0x%lX", (unsigned long)BaseGame, (unsigned long)m_Match, (unsigned long)localPlayer);
         }
 
         // Feature-muted mode: user turned off all ESP & Aim switches in menu.
@@ -186,6 +214,9 @@ namespace data {
         }
 
         if (!m_Match) {
+            if (logger::should_log("err_match", 2500)) {
+                logger::log_not_found("Match Instance (Offset +0x%lX from BaseGame 0x%lX)", Offsets::BaseGame_Match, (unsigned long)BaseGame);
+            }
             std::lock_guard<std::mutex> lk(players_mutex);
             players.clear();
             return;
@@ -195,6 +226,9 @@ namespace data {
         localPlayerAddr.store(localPlayer ? localPlayer : 0);
 
         if (!localPlayer) {
+            if (logger::should_log("err_lp", 2500)) {
+                logger::log_not_found("LocalPlayer Entity (Offset +0x%lX from Match 0x%lX)", Offsets::Match_LocalPlayer, (unsigned long)m_Match);
+            }
             std::lock_guard<std::mutex> lk(players_mutex);
             players.clear();
             g_visStable.clear();
@@ -202,7 +236,7 @@ namespace data {
             return;
         }
 
-// Camera chain
+        // Camera chain
         uint64_t Follow = 0, Cam = 0, IntPtr = 0;
 
         Follow = rpm<uint64_t>(localPlayer + Offsets::Player_Camera);
@@ -217,6 +251,9 @@ namespace data {
         }
 
         if (!IntPtr) {
+            if (logger::should_log("err_cam", 2500)) {
+                logger::log_not_found("Camera Native IntPtr (Follow=0x%lX, Cam=0x%lX from LocalPlayer 0x%lX)", (unsigned long)Follow, (unsigned long)Cam, (unsigned long)localPlayer);
+            }
             std::lock_guard<std::mutex> lk(players_mutex);
             players.clear();
             return;
@@ -224,14 +261,26 @@ namespace data {
 
         viewMatrix = rpm<matrix>(IntPtr + Offsets::Camera_Matrix);
 
-// Local position
+        // Local position & Local Head Bone
         Vector3 localPos = Vector3::Zero();
         uint64_t headNode = rpm<uint64_t>(localPlayer + Offsets::Bone_Head);
-        if (headNode) localPos = GetNodePosition(headNode);
+        if (headNode) {
+            localPos = GetNodePosition(headNode);
+            if (localPos == Vector3::Zero() && logger::should_log("err_lhead_pos", 3000)) {
+                logger::log_not_found("Local Head Node Position (GetNodePosition returned 0,0,0 on Node 0x%lX)", (unsigned long)headNode);
+            }
+        } else {
+            if (logger::should_log("err_lhead_node", 3000)) {
+                logger::log_not_found("Local Head Node (Offset +0x%lX from LocalPlayer 0x%lX)", Offsets::Bone_Head, (unsigned long)localPlayer);
+            }
+        }
 
-// PLAYERS
+        // PLAYERS
         uint64_t dictAddr = rpm<uint64_t>(BaseGame + Offsets::Match_PlayerDict);
         if (!dictAddr) {
+            if (logger::should_log("err_dict_addr", 2500)) {
+                logger::log_not_found("Player Dictionary Address (Offset +0x%lX from BaseGame 0x%lX)", Offsets::Match_PlayerDict, (unsigned long)BaseGame);
+            }
             std::lock_guard<std::mutex> lk(players_mutex);
             players.clear();
             return;
@@ -239,6 +288,9 @@ namespace data {
 
         MonoDictionary dict(dictAddr);
         if (!dict.valid) {
+            if (logger::should_log("err_dict_valid", 2500)) {
+                logger::log_not_found("MonoDictionary Validation Failed on 0x%lX", (unsigned long)dictAddr);
+            }
             std::lock_guard<std::mutex> lk(players_mutex);
             players.clear();
             return;
@@ -304,9 +356,19 @@ namespace data {
             uint64_t hNode = span.at<uint64_t>(Offsets::Bone_Head);
             if (!hNode) hNode = span.at<uint64_t>(Offsets::Player_HeadTF);
             if (!hNode) hNode = span.at<uint64_t>(Offsets::Player::HeadTF_Alt);
-            if (!hNode) continue;
+            if (!hNode) {
+                if (logger::should_log("err_enemy_hnode", 3000)) {
+                    logger::log_not_found("Enemy Head Node (Offsets 0x6A0 / 0x6A8 on Entity 0x%lX)", (unsigned long)enemy);
+                }
+                continue;
+            }
             Vector3 headWorld = GetNodePosition(hNode);
-            if (headWorld == Vector3::Zero() || headWorld.sqrMagnitude() < 1.0f) continue;
+            if (headWorld == Vector3::Zero() || headWorld.sqrMagnitude() < 1.0f) {
+                if (logger::should_log("err_enemy_hpos", 3000)) {
+                    logger::log_not_found("Enemy Head World Position (GetNodePosition returned 0,0,0 on Node 0x%lX)", (unsigned long)hNode);
+                }
+                continue;
+            }
             if (!std::isfinite(headWorld.x) || !std::isfinite(headWorld.y) || !std::isfinite(headWorld.z)) continue;
             if (headWorld.y < -150.0f || headWorld.y > 600.0f) continue;
 
@@ -322,6 +384,9 @@ namespace data {
             uint64_t footNode = span.at<uint64_t>(Offsets::Bone_LeftToe);
             if (!footNode) footNode = span.at<uint64_t>(Offsets::Bone_Root);
             if (!footNode) footNode = span.at<uint64_t>(Offsets::Player_FootTF);
+            if (!footNode && logger::should_log("err_enemy_foot", 3000)) {
+                logger::log_not_found("Enemy Foot Node (Offsets 0x6E8 / 0x6C8 on Entity 0x%lX)", (unsigned long)enemy);
+            }
             Vector3 toeScreen = footNode ? boneScreen(footNode) : Vector3::Zero();
             if (toeScreen.z < 0.001f) {
                 uint64_t footAlt = span.at<uint64_t>(Offsets::Player::FootTF_Alt);
@@ -373,6 +438,10 @@ namespace data {
         {
             std::lock_guard<std::mutex> lk(players_mutex);
             players.swap(tmp);
+        }
+
+        if (logger::should_log("diag_players_summary", 2500)) {
+            logger::log_info("Players Parsed: %zu active enemies (Total Dict Entries: %d)", players.size(), nv);
         }
     }
 
