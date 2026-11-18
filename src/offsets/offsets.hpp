@@ -43,11 +43,13 @@ namespace Offsets {
 // Player Entity Fields
     namespace Player {
         constexpr uintptr_t Rotation             = 0x614;   // Vector3
-        constexpr uintptr_t HeadTF               = 0x6A0;   // Head ITransformNode (0x6A0 GBKFHDFCPMD)
-        constexpr uintptr_t HeadTF_Alt           = 0x6A8;   // Auxiliary Head / Hip TF
+        constexpr uintptr_t HeadTF               = 0x6A8;   // Primary Head ITransformNode (0x6A8 proven in pewpew & STORM_MODS)
+        constexpr uintptr_t HeadTF_Alt           = 0x6A0;   // Auxiliary Head TF (0x6A0)
+        constexpr uintptr_t HipTF                = 0x6B0;   // Hip / Waist ITransformNode (0x6B0)
         constexpr uintptr_t SpineTF              = 0x6B8;   // Spine ITransformNode (0x6B8 CBHHCCNKOND)
-        constexpr uintptr_t FootTF               = 0x6E8;   // Foot / Left Toe ITransformNode (0x6E8 GMJLIMFHMAE)
-        constexpr uintptr_t FootTF_Alt           = 0x6C8;   // Auxiliary Root TF (0x6C8 IIPBIDIBJDK)
+        constexpr uintptr_t RootTF               = 0x6D0;   // Root / Pelvis ITransformNode (0x6D0)
+        constexpr uintptr_t FootTF               = 0x6F0;   // Foot / Left Toe ITransformNode (0x6F0 proven in pewpew & STORM_MODS)
+        constexpr uintptr_t FootTF_Alt           = 0x6E8;   // Auxiliary Foot / Left Toe TF (0x6E8 GMJLIMFHMAE)
         constexpr uintptr_t HeadCollider         = 0x740;   // Head Collider (0x740 proven in STORM_MODS, pewpew & crack_master)
         constexpr uintptr_t HeadCollider_Alt     = 0x738;   // Auxiliary Head Collider (0x738)
         constexpr uintptr_t LockedAimingCollider = 0x80;    // Primary: Collider on AttackableEntity (0x80)
@@ -162,15 +164,18 @@ namespace Offsets {
         constexpr int32_t HitGroup_Body          = 2;
     }
 
-// Skeleton Bones (OB55 / 1.132.1 verified: GBKFHDFCPMD Head, COBFGNOIPMF Hip, GMJLIMFHMAE Toe)
+// Skeleton Bones (OB55 / 1.132.1 verified: Head 0x6A8, Hip 0x6B0, Spine 0x6B8, Root 0x6D0, LeftToe 0x6F0)
     namespace Bone {
-        constexpr uintptr_t Head                 = 0x6A0;   // Head ITransformNode (0x6A0 GBKFHDFCPMD)
-        constexpr uintptr_t Hip                  = 0x6A8;   // Hip / Waist ITransformNode (0x6A8 COBFGNOIPMF)
-        constexpr uintptr_t Breast               = 0x6B0;   // Breast / Upper Chest (0x6B0 FFFPCADFFGA)
+        constexpr uintptr_t Head                 = 0x6A8;   // Primary Head ITransformNode (0x6A8 proven in pewpew & STORM_MODS)
+        constexpr uintptr_t Head_Alt             = 0x6A0;   // Auxiliary Head TF (0x6A0)
+        constexpr uintptr_t Hip                  = 0x6B0;   // Hip / Waist ITransformNode (0x6B0)
+        constexpr uintptr_t Breast               = 0x6B0;   // Breast / Upper Chest (0x6B0)
         constexpr uintptr_t Spine                = 0x6B8;   // Spine ITransformNode (0x6B8 CBHHCCNKOND)
-        constexpr uintptr_t Root                 = 0x6C8;   // Root / Pelvis ITransformNode (0x6C8 IIPBIDIBJDK)
-        constexpr uintptr_t LeftToe              = 0x6E8;   // Foot / Left Toe ITransformNode (0x6E8 GMJLIMFHMAE)
-        constexpr uintptr_t RightToe             = 0x6F0;   // Foot / Right Toe ITransformNode (0x6F0 JMHBBGIKBNO)
+        constexpr uintptr_t Root                 = 0x6D0;   // Root / Pelvis ITransformNode (0x6D0, pewpew & STORM_MODS)
+        constexpr uintptr_t Root_Alt             = 0x6C8;   // Root Auxiliary (0x6C8 IIPBIDIBJDK)
+        constexpr uintptr_t LeftToe              = 0x6F0;   // Foot / Left Toe ITransformNode (0x6F0, pewpew & STORM_MODS)
+        constexpr uintptr_t LeftToe_Alt          = 0x6E8;   // Foot / Left Toe Auxiliary (0x6E8 GMJLIMFHMAE)
+        constexpr uintptr_t RightToe             = 0x6F8;   // Foot / Right Toe ITransformNode (0x6F8 JMHBBGIKBNO)
         constexpr float     SkullElevation       = 0.12f;   // Cranium center elevation from neck node (meters)
     }
 
@@ -241,6 +246,7 @@ namespace Offsets {
     constexpr uintptr_t AimInfo_HitNormal        = Aim::HitNormal;
     constexpr uintptr_t AimInfo_Direction        = Aim::Direction;
     constexpr uintptr_t AimInfo_StartPosition    = Aim::StartPosition;
+    constexpr uintptr_t AimInfo_Distance         = Aim::Distance;
     constexpr uintptr_t AimInfo_HitGroup         = Aim::HitGroup;
     constexpr int32_t   HitGroup_Head            = Aim::HitGroup_Head;
     constexpr uintptr_t AimInfo_ViewBlocked      = Aim::ViewBlocked;
@@ -248,11 +254,15 @@ namespace Offsets {
     constexpr uintptr_t AimInfo_SpecialHitType   = Aim::SpecialHitType;
 
     constexpr uintptr_t Bone_Head                = Bone::Head;
+    constexpr uintptr_t Bone_Head_Alt            = Bone::Head_Alt;
     constexpr uintptr_t Bone_Hip                 = Bone::Hip;
     constexpr uintptr_t Bone_Chest               = Bone::Spine;
     constexpr uintptr_t Bone_Spine               = Bone::Spine;
     constexpr uintptr_t Bone_Root                = Bone::Root;
+    constexpr uintptr_t Bone_Root_Alt            = Bone::Root_Alt;
     constexpr uintptr_t Bone_LeftToe             = Bone::LeftToe;
+    constexpr uintptr_t Bone_LeftToe_Alt         = Bone::LeftToe_Alt;
+    constexpr uintptr_t Bone_RightToe            = Bone::RightToe;
     constexpr float     Bone_SkullElevation      = Bone::SkullElevation;
     constexpr int       Player_StandardBaseHP    = Player::StandardBaseHP;
     constexpr float     Player_ModelHeight       = Player::ModelHeight;

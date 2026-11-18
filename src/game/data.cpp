@@ -261,17 +261,28 @@ namespace data {
 
         viewMatrix = rpm<matrix>(IntPtr + Offsets::Camera_Matrix);
 
-        // Local position & Local Head Bone
+        // Local position & Local Head Bone (Primary: 0x6A8, Fallback: 0x6A0)
         Vector3 localPos = Vector3::Zero();
         uint64_t headNode = rpm<uint64_t>(localPlayer + Offsets::Bone_Head);
-        if (headNode) {
-            localPos = GetNodePosition(headNode);
-            if (localPos == Vector3::Zero() && logger::should_log("err_lhead_pos", 3000)) {
-                logger::log_not_found("Local Head Node Position (GetNodePosition returned 0,0,0 on Node 0x%lX)", (unsigned long)headNode);
+        if (headNode) localPos = GetNodePosition(headNode);
+        if (localPos == Vector3::Zero() || localPos.sqrMagnitude() < 1.0f) {
+            uint64_t headNodeAlt = rpm<uint64_t>(localPlayer + Offsets::Bone_Head_Alt);
+            if (headNodeAlt) {
+                Vector3 altPos = GetNodePosition(headNodeAlt);
+                if (altPos != Vector3::Zero() && altPos.sqrMagnitude() >= 1.0f) {
+                    localPos = altPos;
+                    headNode = headNodeAlt;
+                }
+            }
+        }
+        if (localPos != Vector3::Zero()) {
+            if (logger::should_log("diag_lhead", 3000)) {
+                logger::log_found("Local Player Bones (HeadNode=0x%lX -> LocalPos=(%.2f, %.2f, %.2f))",
+                    (unsigned long)headNode, localPos.x, localPos.y, localPos.z);
             }
         } else {
             if (logger::should_log("err_lhead_node", 3000)) {
-                logger::log_not_found("Local Head Node (Offset +0x%lX from LocalPlayer 0x%lX)", Offsets::Bone_Head, (unsigned long)localPlayer);
+                logger::log_not_found("Local Head Node (Offsets 0x6A8 / 0x6A0 from LocalPlayer 0x%lX)", (unsigned long)localPlayer);
             }
         }
 
@@ -352,20 +363,22 @@ namespace data {
                 if (rpm<bool>(umaData + Offsets::Avatar::UmaData_LocalPlayer)) continue;
             }
 
-            // Head world (Primary: OB55 Bone_Head 0x6A0 GBKFHDFCPMD, fallback: HeadTF 0x6A0, HeadTF_Alt 0x6A8)
+            // Head world (Primary: 0x6A8 proven in pewpew & STORM_MODS, Fallback: 0x6A0)
             uint64_t hNode = span.at<uint64_t>(Offsets::Bone_Head);
-            if (!hNode) hNode = span.at<uint64_t>(Offsets::Player_HeadTF);
-            if (!hNode) hNode = span.at<uint64_t>(Offsets::Player::HeadTF_Alt);
-            if (!hNode) {
-                if (logger::should_log("err_enemy_hnode", 3000)) {
-                    logger::log_not_found("Enemy Head Node (Offsets 0x6A0 / 0x6A8 on Entity 0x%lX)", (unsigned long)enemy);
+            Vector3 headWorld = hNode ? GetNodePosition(hNode) : Vector3::Zero();
+            if (headWorld == Vector3::Zero() || headWorld.sqrMagnitude() < 1.0f) {
+                uint64_t hNodeAlt = span.at<uint64_t>(Offsets::Bone_Head_Alt);
+                if (hNodeAlt) {
+                    Vector3 altPos = GetNodePosition(hNodeAlt);
+                    if (altPos != Vector3::Zero() && altPos.sqrMagnitude() >= 1.0f) {
+                        headWorld = altPos;
+                        hNode = hNodeAlt;
+                    }
                 }
-                continue;
             }
-            Vector3 headWorld = GetNodePosition(hNode);
             if (headWorld == Vector3::Zero() || headWorld.sqrMagnitude() < 1.0f) {
                 if (logger::should_log("err_enemy_hpos", 3000)) {
-                    logger::log_not_found("Enemy Head World Position (GetNodePosition returned 0,0,0 on Node 0x%lX)", (unsigned long)hNode);
+                    logger::log_not_found("Enemy Head World Position (GetNodePosition returned 0,0,0 on Nodes 0x6A8/0x6A0 on Entity 0x%lX)", (unsigned long)enemy);
                 }
                 continue;
             }
@@ -380,12 +393,14 @@ namespace data {
             Vector3 headScreen = WorldToScreenPoint(viewMatrix, headWorld);
             if (headScreen.z < 0.001f) continue;
 
-            // Feet / Root world (Primary: LeftToe 0x6E8 GMJLIMFHMAE, Secondary: Root 0x6C8 IIPBIDIBJDK, FootTF 0x6E8)
+            // Feet / Root world (Primary: LeftToe 0x6F0, Secondary: 0x6E8, Tertiary: Root 0x6D0 / 0x6C8)
             uint64_t footNode = span.at<uint64_t>(Offsets::Bone_LeftToe);
+            if (!footNode) footNode = span.at<uint64_t>(Offsets::Bone::LeftToe_Alt);
             if (!footNode) footNode = span.at<uint64_t>(Offsets::Bone_Root);
+            if (!footNode) footNode = span.at<uint64_t>(Offsets::Bone::Root_Alt);
             if (!footNode) footNode = span.at<uint64_t>(Offsets::Player_FootTF);
             if (!footNode && logger::should_log("err_enemy_foot", 3000)) {
-                logger::log_not_found("Enemy Foot Node (Offsets 0x6E8 / 0x6C8 on Entity 0x%lX)", (unsigned long)enemy);
+                logger::log_not_found("Enemy Foot Node (Offsets 0x6F0 / 0x6E8 / 0x6D0 on Entity 0x%lX)", (unsigned long)enemy);
             }
             Vector3 toeScreen = footNode ? boneScreen(footNode) : Vector3::Zero();
             if (toeScreen.z < 0.001f) {

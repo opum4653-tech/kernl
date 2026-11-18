@@ -53,9 +53,14 @@ inline Vector3 GetPosition(uint64_t Transform) {
 }
 
 inline Vector3 GetNodePosition(uint64_t nodeTransform) {
+    if (!is_valid_ptr(nodeTransform)) return Vector3::Zero();
     auto transformValue = rpm<uint64_t>(nodeTransform + Offsets::Transform::Node);
-    if (transformValue == 0) return Vector3::Zero();
-    return GetPosition(transformValue);
+    if (is_valid_ptr(transformValue)) {
+        Vector3 pos = GetPosition(transformValue);
+        if (pos != Vector3::Zero()) return pos;
+    }
+    // Fallback: nodeTransform is already a direct Transform component
+    return GetPosition(nodeTransform);
 }
 
 inline Vector3 WorldToScreenPoint(const matrix& vm, const Vector3& pos) {

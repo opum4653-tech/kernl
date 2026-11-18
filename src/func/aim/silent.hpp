@@ -94,6 +94,7 @@ namespace aimbot {
 
             // Zero-latency continuous memory flooding for 100% Red Headshots
             if (dir.sqrMagnitude() > 0.001f) {
+                float dist = dir.magnitude();
                 Vector3 headPos(
                     s_targetHeadX.load(std::memory_order_relaxed),
                     s_targetHeadY.load(std::memory_order_relaxed),
@@ -109,6 +110,7 @@ namespace aimbot {
 
                 // 1. Primary AimInfo Flooding
                 wpm<Vector3>(hitObj + Offsets::Aim::Direction, dir);
+                wpm<float>(hitObj + Offsets::Aim::Distance, dist);
                 wpm<int32_t>(hitObj + Offsets::Aim::HitGroup, Offsets::Aim::HitGroup_Head);
                 wpm<bool>(hitObj + Offsets::Aim::ViewBlocked, false);
                 wpm<int16_t>(hitObj + Offsets::Aim::SpecialHitType, 0);
@@ -132,6 +134,7 @@ namespace aimbot {
                 uint64_t hitObjAlt = s_aimInfoAlt.load(std::memory_order_relaxed);
                 if (is_valid_ptr(hitObjAlt)) {
                     wpm<Vector3>(hitObjAlt + Offsets::Aim::Direction, dir);
+                    wpm<float>(hitObjAlt + Offsets::Aim::Distance, dist);
                     wpm<int32_t>(hitObjAlt + Offsets::Aim::HitGroup, Offsets::Aim::HitGroup_Head);
                     wpm<bool>(hitObjAlt + Offsets::Aim::ViewBlocked, false);
                     wpm<int16_t>(hitObjAlt + Offsets::Aim::SpecialHitType, 0);
@@ -234,10 +237,12 @@ namespace aimbot {
 
                     // Immediate write on active firing/trigger for instant alignment
                     if (isFiring) {
-                        logger::log_diag("SILENT AIM ACTIVE: Target=0x%lX | AimInfo=0x%lX | HeadCol=0x%lX | Dir=(%.2f, %.2f, %.2f) -> HitGroup=1 (Head)",
-                            (unsigned long)target.addr, (unsigned long)aimInfo, (unsigned long)headCollider, dir.x, dir.y, dir.z);
+                        float dist = dir.magnitude();
+                        logger::log_diag("SILENT AIM ACTIVE: Target=0x%lX | AimInfo=0x%lX | HeadCol=0x%lX | Dir=(%.2f, %.2f, %.2f) | Dist=%.2fm -> HitGroup=1 (Head)",
+                            (unsigned long)target.addr, (unsigned long)aimInfo, (unsigned long)headCollider, dir.x, dir.y, dir.z, dist);
 
                         wpm<Vector3>(aimInfo + Offsets::Aim::Direction, dir);
+                        wpm<float>(aimInfo + Offsets::Aim::Distance, dist);
                         wpm<int32_t>(aimInfo + Offsets::Aim::HitGroup, Offsets::Aim::HitGroup_Head);
                         wpm<bool>(aimInfo + Offsets::Aim::ViewBlocked, false);
                         wpm<int16_t>(aimInfo + Offsets::Aim::SpecialHitType, 0);
@@ -253,6 +258,7 @@ namespace aimbot {
 
                         if (is_valid_ptr(aimInfoAlt)) {
                             wpm<Vector3>(aimInfoAlt + Offsets::Aim::Direction, dir);
+                            wpm<float>(aimInfoAlt + Offsets::Aim::Distance, dist);
                             wpm<int32_t>(aimInfoAlt + Offsets::Aim::HitGroup, Offsets::Aim::HitGroup_Head);
                             wpm<bool>(aimInfoAlt + Offsets::Aim::ViewBlocked, false);
                             wpm<int16_t>(aimInfoAlt + Offsets::Aim::SpecialHitType, 0);
