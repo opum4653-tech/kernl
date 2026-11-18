@@ -118,15 +118,16 @@ namespace aimbot {
                 if (is_valid_ptr(headCol)) {
                     wpm<uint64_t>(hitObj + Offsets::Aim::HitCollider, headCol);
                     wpm<Vector3>(hitObj + Offsets::Aim::HitPoint, headPos);
-                    wpm<Vector3>(hitObj + Offsets::Aim::HitNormal, dir);
+                    wpm<Vector3>(hitObj + Offsets::Aim::HitNormal, SafeNormalize(dir));
                 }
                 if (startPos != Vector3::Zero()) {
                     wpm<Vector3>(hitObj + Offsets::Aim::OrigStartPosition, startPos);
                 }
 
-                // 2. Target Player LockedAimingCollider Override (0x80)
+                // 2. Target Player LockedAimingCollider Override (0x80 & 0x78)
                 if (is_valid_ptr(targetAddr) && is_valid_ptr(headCol)) {
                     wpm<uint64_t>(targetAddr + Offsets::Player::LockedAimingCollider, headCol);
+                    wpm<uint64_t>(targetAddr + Offsets::Player_LockedAimingCollider_Alt, headCol);
                 }
 
                 // 3. Auxiliary AimInfo Flooding
@@ -139,7 +140,7 @@ namespace aimbot {
                     if (is_valid_ptr(headCol)) {
                         wpm<uint64_t>(hitObjAlt + Offsets::Aim::HitCollider, headCol);
                         wpm<Vector3>(hitObjAlt + Offsets::Aim::HitPoint, headPos);
-                        wpm<Vector3>(hitObjAlt + Offsets::Aim::HitNormal, dir);
+                        wpm<Vector3>(hitObjAlt + Offsets::Aim::HitNormal, SafeNormalize(dir));
                     }
                     if (startPos != Vector3::Zero()) {
                         wpm<Vector3>(hitObjAlt + Offsets::Aim::OrigStartPosition, startPos);
@@ -233,8 +234,9 @@ namespace aimbot {
                         if (is_valid_ptr(headCollider)) {
                             wpm<uint64_t>(aimInfo + Offsets::Aim::HitCollider, headCollider);
                             wpm<Vector3>(aimInfo + Offsets::Aim::HitPoint, targetHead);
-                            wpm<Vector3>(aimInfo + Offsets::Aim::HitNormal, dir);
+                            wpm<Vector3>(aimInfo + Offsets::Aim::HitNormal, SafeNormalize(dir));
                             wpm<uint64_t>(target.addr + Offsets::Player::LockedAimingCollider, headCollider);
+                            wpm<uint64_t>(target.addr + Offsets::Player_LockedAimingCollider_Alt, headCollider);
                         }
                         wpm<Vector3>(aimInfo + Offsets::Aim::OrigStartPosition, startPos);
 
@@ -246,7 +248,7 @@ namespace aimbot {
                             if (is_valid_ptr(headCollider)) {
                                 wpm<uint64_t>(aimInfoAlt + Offsets::Aim::HitCollider, headCollider);
                                 wpm<Vector3>(aimInfoAlt + Offsets::Aim::HitPoint, targetHead);
-                                wpm<Vector3>(aimInfoAlt + Offsets::Aim::HitNormal, dir);
+                                wpm<Vector3>(aimInfoAlt + Offsets::Aim::HitNormal, SafeNormalize(dir));
                             }
                             wpm<Vector3>(aimInfoAlt + Offsets::Aim::OrigStartPosition, startPos);
                         }
@@ -254,6 +256,15 @@ namespace aimbot {
                         // Weapon Engine Aiming State Binding (Dual Client/Server Verification Bypass)
                         wpm<uint64_t>(localPlayer + Offsets::Player_AimingTarget, target.addr);
                         wpm<bool>(localPlayer + Offsets::Player_AimingAdjusted, true);
+
+                        // Recoil Compensation: Zero out weapon recoil on active weapon
+                        uint64_t weaponOnHand = rpm<uint64_t>(localPlayer + Offsets::Player_Weapon);
+                        if (is_valid_ptr(weaponOnHand)) {
+                            uint64_t weaponData = rpm<uint64_t>(weaponOnHand + Offsets::Weapon_Data);
+                            if (is_valid_ptr(weaponData)) {
+                                wpm<float>(weaponData + Offsets::Weapon_Recoil, 0.0f);
+                            }
+                        }
                     }
                 } else {
                     s_hasData.store(false, std::memory_order_relaxed);
