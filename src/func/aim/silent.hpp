@@ -111,7 +111,7 @@ namespace aimbot {
 
                 // 1. Primary AimInfo Flooding
                 wpm<Vector3>(hitObj + Offsets::Aim::Direction, dir);
-                wpm<int32_t>(hitObj + Offsets::Aim::HitGroup, 1); // 1 = LKOOALMKJND::Head
+                wpm<int32_t>(hitObj + Offsets::Aim::HitGroup, Offsets::Aim::HitGroup_Head);
                 wpm<bool>(hitObj + Offsets::Aim::ViewBlocked, false);
                 wpm<int16_t>(hitObj + Offsets::Aim::SpecialHitType, 0);
 
@@ -134,7 +134,7 @@ namespace aimbot {
                 uint64_t hitObjAlt = s_aimInfoAlt.load(std::memory_order_relaxed);
                 if (is_valid_ptr(hitObjAlt)) {
                     wpm<Vector3>(hitObjAlt + Offsets::Aim::Direction, dir);
-                    wpm<int32_t>(hitObjAlt + Offsets::Aim::HitGroup, 1);
+                    wpm<int32_t>(hitObjAlt + Offsets::Aim::HitGroup, Offsets::Aim::HitGroup_Head);
                     wpm<bool>(hitObjAlt + Offsets::Aim::ViewBlocked, false);
                     wpm<int16_t>(hitObjAlt + Offsets::Aim::SpecialHitType, 0);
                     if (is_valid_ptr(headCol)) {
@@ -227,7 +227,7 @@ namespace aimbot {
                     // Immediate write on active firing/trigger for instant alignment
                     if (isFiring) {
                         wpm<Vector3>(aimInfo + Offsets::Aim::Direction, dir);
-                        wpm<int32_t>(aimInfo + Offsets::Aim::HitGroup, 1); // 1 = LKOOALMKJND::Head
+                        wpm<int32_t>(aimInfo + Offsets::Aim::HitGroup, Offsets::Aim::HitGroup_Head);
                         wpm<bool>(aimInfo + Offsets::Aim::ViewBlocked, false);
                         wpm<int16_t>(aimInfo + Offsets::Aim::SpecialHitType, 0);
 
@@ -242,7 +242,7 @@ namespace aimbot {
 
                         if (is_valid_ptr(aimInfoAlt)) {
                             wpm<Vector3>(aimInfoAlt + Offsets::Aim::Direction, dir);
-                            wpm<int32_t>(aimInfoAlt + Offsets::Aim::HitGroup, 1);
+                            wpm<int32_t>(aimInfoAlt + Offsets::Aim::HitGroup, Offsets::Aim::HitGroup_Head);
                             wpm<bool>(aimInfoAlt + Offsets::Aim::ViewBlocked, false);
                             wpm<int16_t>(aimInfoAlt + Offsets::Aim::SpecialHitType, 0);
                             if (is_valid_ptr(headCollider)) {

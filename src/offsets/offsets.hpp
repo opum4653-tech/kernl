@@ -128,6 +128,11 @@ namespace Offsets {
         constexpr uintptr_t ViewBlocked          = 0x71;    // Boolean CEOKOILBODN (0x71)
         constexpr uintptr_t OrigStartPosition    = 0x74;    // Vector3 ONMKMEGMHOL (0x74)
         constexpr uintptr_t SpecialHitType       = 0x80;    // Int16 CLOLKHNMNEK (0x80)
+
+        // HitGroup Enum Values (LKOOALMKJND: Default = 0, Head = 1, Body = 2)
+        constexpr int32_t HitGroup_Default       = 0;
+        constexpr int32_t HitGroup_Head          = 1;
+        constexpr int32_t HitGroup_Body          = 2;
     }
 
 // Skeleton Bones (OB55 / 1.132.1 verified: GBKFHDFCPMD Head, COBFGNOIPMF Hip, GMJLIMFHMAE Toe)
@@ -204,6 +209,7 @@ namespace Offsets {
     constexpr uintptr_t AimInfo_Direction        = Aim::Direction;
     constexpr uintptr_t AimInfo_StartPosition    = Aim::StartPosition;
     constexpr uintptr_t AimInfo_HitGroup         = Aim::HitGroup;
+    constexpr int32_t   HitGroup_Head            = Aim::HitGroup_Head;
     constexpr uintptr_t AimInfo_ViewBlocked      = Aim::ViewBlocked;
     constexpr uintptr_t AimInfo_OrigStartPosition = Aim::OrigStartPosition;
     constexpr uintptr_t AimInfo_SpecialHitType   = Aim::SpecialHitType;

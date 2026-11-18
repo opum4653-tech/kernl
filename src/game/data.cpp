@@ -40,8 +40,8 @@ namespace data {
     // runs past its allocation and every page inside it is committed. A failed
     // read leaves ok == false and every accessor returns zero, which the callers
     // already reject — it fails closed rather than half-reading.
-    static constexpr size_t kSpanLo = 0x70;    // Offsets::Player::HP
-    static constexpr size_t kSpanHi = 0x860;   // just past Offsets::Player::IsFiring (0x848)
+    static constexpr size_t kSpanLo = Offsets::Player::HP;
+    static constexpr size_t kSpanHi = Offsets::Player::IsFiring + 0x20; // 0x850 + 0x20 = 0x870 span coverage
 
     struct PlayerSpan {
         uint8_t buf[kSpanHi - kSpanLo];
