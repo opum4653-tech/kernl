@@ -112,6 +112,12 @@ namespace Offsets {
     namespace Weapon {
         constexpr uintptr_t Data                 = 0x80;
         constexpr uintptr_t Weapon_ID            = 0x64;
+        constexpr uintptr_t Recoil               = 0x18;
+    }
+
+// Movement & Speed Attributes
+    namespace Speed {
+        constexpr uintptr_t RunSpeedUpScale      = 0x2C0;                  // Single (0x2C0)
     }
 
 // Avatar Visibility
@@ -228,7 +234,7 @@ namespace Offsets {
     constexpr uintptr_t HP_Value                 = 0x18;
 
     constexpr uintptr_t Weapon_Data              = Weapon::Data;
-    constexpr uintptr_t Weapon_Recoil            = 0x18;
+    constexpr uintptr_t Weapon_Recoil            = Weapon::Recoil;
 
     constexpr uintptr_t AimInfo_HitCollider      = Aim::HitCollider;
     constexpr uintptr_t AimInfo_HitPoint         = Aim::HitPoint;
@@ -267,6 +273,6 @@ namespace Offsets {
     // Movement & Speed Attributes
     constexpr uintptr_t PlayerAttributes         = Player::Attributes;     // 0x768 (Global Primary)
     constexpr uintptr_t PlayerAttributes_Max     = Player::Attributes_Max; // 0x770 (Max Fallback)
-    constexpr uintptr_t RunSpeedUpScale          = 0x2C0;                  // Single (0x2C0)
+    constexpr uintptr_t RunSpeedUpScale          = Speed::RunSpeedUpScale; // Single (0x2C0)
 
 } // namespace Offsets

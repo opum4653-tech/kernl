@@ -36,13 +36,4 @@ enum EIconType {
     ICON_POWER
 };
 
-static const ImVec4 g_ThemeSwatches[6] = {
-    ImVec4(0.882f, 0.000f, 0.596f, 1.00f), // Orchid
-    ImVec4(0.00f, 0.85f, 0.45f, 1.00f),    // Emerald
-    ImVec4(0.00f, 0.80f, 1.00f, 1.00f),    // Cyan
-    ImVec4(0.95f, 0.30f, 0.30f, 1.00f),    // Crimson
-    ImVec4(1.00f, 0.75f, 0.00f, 1.00f),    // Amber
-    ImVec4(0.60f, 0.40f, 1.00f, 1.00f),    // Violet
-};
-
 void DrawVectorIcon(ImDrawList* dl, EIconType type, ImVec2 center, float size, ImU32 col);
