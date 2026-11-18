@@ -16,7 +16,19 @@
 #define LOG_TAG "ninmods-kernel"
 #endif
 
+// ==============================================================================
+// MASTER DIAGNOSTIC LOGGING SWITCH (0 = Release Mode / Clean Production)
+// Set to 0: Zero file I/O, zero logcat, zero mutex locks, zero performance overhead.
+// Set to 1: Diagnostic file logging enabled to /sdcard/Download/kernel_debug.txt.
+// Can also be overridden at build time via -DNIN_ENABLE_DEBUG_LOGGING=1
+// ==============================================================================
+#ifndef NIN_ENABLE_DEBUG_LOGGING
+#define NIN_ENABLE_DEBUG_LOGGING 0
+#endif
+
 namespace logger {
+
+#if NIN_ENABLE_DEBUG_LOGGING
 
     class DiagnosticLogger {
     private:
@@ -181,9 +193,32 @@ namespace logger {
         return DiagnosticLogger::get().should_log(key, min_interval_ms);
     }
 
+#else
+
+    // ==============================================================================
+    // ZERO-COST PRODUCTION INLINE STUBS (Dead code eliminated by compiler)
+    // ==============================================================================
+    inline void init() {}
+    inline const char* get_path() { return ""; }
+    inline void log_info(const char*, ...) {}
+    inline void log_found(const char*, ...) {}
+    inline void log_not_found(const char*, ...) {}
+    inline void log_diag(const char*, ...) {}
+    inline void log_offset(bool, const char*, uintptr_t, uint64_t, uint64_t) {}
+    constexpr bool should_log(const std::string&, int = 1000) { return false; }
+
+#endif
+
 } // namespace logger
 
+#if NIN_ENABLE_DEBUG_LOGGING
 #define LOG_INFO(...)  logger::log_info(__VA_ARGS__)
 #define LOG_ERROR(...) logger::log_not_found(__VA_ARGS__)
 #define LOG_WARN(...)  logger::log_info(__VA_ARGS__)
 #define LOG_DEBUG(...) logger::log_diag(__VA_ARGS__)
+#else
+#define LOG_INFO(...)  do {} while(0)
+#define LOG_ERROR(...) do {} while(0)
+#define LOG_WARN(...)  do {} while(0)
+#define LOG_DEBUG(...) do {} while(0)
+#endif

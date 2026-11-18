@@ -10,7 +10,6 @@ namespace aimbot {
     inline std::atomic<bool>     s_writerRunning{false};
     inline std::atomic<bool>     s_hasTarget{false};
     inline std::atomic<bool>     s_hasData{false};
-    inline std::atomic<uint64_t> s_targetAddr{0};
     inline std::atomic<uint64_t> s_headCollider{0};
     inline std::atomic<uint64_t> s_aimInfo{0};
     inline std::atomic<uint64_t> s_aimInfoAlt{0};
@@ -28,7 +27,6 @@ namespace aimbot {
     inline void clear_silent_data() {
         s_hasData.store(false, std::memory_order_relaxed);
         s_hasTarget.store(false, std::memory_order_relaxed);
-        s_targetAddr.store(0, std::memory_order_relaxed);
         s_headCollider.store(0, std::memory_order_relaxed);
         s_aimInfo.store(0, std::memory_order_relaxed);
         s_aimInfoAlt.store(0, std::memory_order_relaxed);
@@ -63,15 +61,14 @@ namespace aimbot {
         s_targetHeadX.store(headPos.x, std::memory_order_relaxed);
         s_targetHeadY.store(headPos.y, std::memory_order_relaxed);
         s_targetHeadZ.store(headPos.z, std::memory_order_relaxed);
-        s_targetAddr.store(target.addr, std::memory_order_relaxed);
         s_hasTarget.store(true, std::memory_order_release);
     }
 
-    // High-Speed Writer Thread (Hybrid pewpew + STORM_MODS + NINMODS architecture):
+    // High-Speed Writer Thread (Non-Invasive Zero-Touch Architecture):
     // 1. Silent Aim: Writes unnormalized displacement vector (targetPos - startPos) to AimInfo + 0x40.
     // 2. Auto Headshot: Floods AimInfo + 0x64 (HitGroup = 1, LKOOALMKJND::Head) guaranteeing 100% Red damage.
-    // 3. Collider Swap: Swaps target's LockedAimingCollider (0x80) with HeadCollider (0x738 BANPEGJEAKE).
-    // 4. Hit Normal & OrigStart: Writes HitNormal (0x34), ViewBlocked (0x71 = false), and OrigStart (0x74).
+    // 3. Hit Normal & OrigStart: Writes HitNormal (0x34), ViewBlocked (0x71 = false), and OrigStart (0x74).
+    // 4. Safe Non-Invasive: NEVER touches or writes to target enemy memory (prevents IsDead byte stomping & bans).
     // 5. Zero-RPM Hot Loop: Precalculated fields are flooded with zero kernel read overhead.
     inline void writer_loop() {
         while (s_writerRunning.load(std::memory_order_relaxed)) {
@@ -106,7 +103,6 @@ namespace aimbot {
                     s_startZ.load(std::memory_order_relaxed)
                 );
                 uint64_t headCol = s_headCollider.load(std::memory_order_relaxed);
-                uint64_t targetAddr = s_targetAddr.load(std::memory_order_relaxed);
 
                 // 1. Primary AimInfo Flooding
                 wpm<Vector3>(hitObj + Offsets::Aim::Direction, dir);
@@ -124,13 +120,7 @@ namespace aimbot {
                     wpm<Vector3>(hitObj + Offsets::Aim::OrigStartPosition, startPos);
                 }
 
-                // 2. Target Player LockedAimingCollider Override (0x80 & 0x78)
-                if (is_valid_ptr(targetAddr) && is_valid_ptr(headCol)) {
-                    wpm<uint64_t>(targetAddr + Offsets::Player::LockedAimingCollider, headCol);
-                    wpm<uint64_t>(targetAddr + Offsets::Player_LockedAimingCollider_Alt, headCol);
-                }
-
-                // 3. Auxiliary AimInfo Flooding
+                // 2. Auxiliary AimInfo Flooding
                 uint64_t hitObjAlt = s_aimInfoAlt.load(std::memory_order_relaxed);
                 if (is_valid_ptr(hitObjAlt)) {
                     wpm<Vector3>(hitObjAlt + Offsets::Aim::Direction, dir);
@@ -238,8 +228,6 @@ namespace aimbot {
                     // Immediate write on active firing/trigger for instant alignment
                     if (isFiring) {
                         float dist = dir.magnitude();
-                        logger::log_diag("SILENT AIM ACTIVE: Target=0x%lX | AimInfo=0x%lX | HeadCol=0x%lX | Dir=(%.2f, %.2f, %.2f) | Dist=%.2fm -> HitGroup=1 (Head)",
-                            (unsigned long)target.addr, (unsigned long)aimInfo, (unsigned long)headCollider, dir.x, dir.y, dir.z, dist);
 
                         wpm<Vector3>(aimInfo + Offsets::Aim::Direction, dir);
                         wpm<float>(aimInfo + Offsets::Aim::Distance, dist);
@@ -251,8 +239,6 @@ namespace aimbot {
                             wpm<uint64_t>(aimInfo + Offsets::Aim::HitCollider, headCollider);
                             wpm<Vector3>(aimInfo + Offsets::Aim::HitPoint, targetHead);
                             wpm<Vector3>(aimInfo + Offsets::Aim::HitNormal, SafeNormalize(dir));
-                            wpm<uint64_t>(target.addr + Offsets::Player::LockedAimingCollider, headCollider);
-                            wpm<uint64_t>(target.addr + Offsets::Player_LockedAimingCollider_Alt, headCollider);
                         }
                         wpm<Vector3>(aimInfo + Offsets::Aim::OrigStartPosition, startPos);
 

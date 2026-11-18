@@ -186,11 +186,15 @@ static int start_overlay() {
     ui::menu::load_logo_pos();
 
     logger::init();
+#if NIN_ENABLE_DEBUG_LOGGING
     logger::log_info("Kernel Overlay Engine started. Diagnostic log file: %s", logger::get_path());
+#endif
 
     printf("[+] Overlay engine started successfully.\n");
     printf("[*] Running interactive render loop...\n");
+#if NIN_ENABLE_DEBUG_LOGGING
     printf("[*] Diagnostic log file: %s\n", logger::get_path());
+#endif
     fflush(stdout);
 
     while (main_thread_flag) {
