@@ -53,9 +53,6 @@ jobs:
             "$STRIP_BIN" --strip-all --strip-debug --strip-unneeded libs/arm64-v8a/ninmods-kernel || true
           fi
           ls -lh libs/arm64-v8a/
-          echo "Packaging native ninmods-kernel into ninmods-kernel.zip..."
-          (cd libs/arm64-v8a && zip -9 ninmods-kernel.zip ninmods-kernel)
-          ls -lh libs/arm64-v8a/
 
       - name: Upload build log
         if: always()
@@ -69,6 +66,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: ninmods-kernel.zip
-          path: libs/arm64-v8a/ninmods-kernel.zip
+          name: ninmods-kernel
+          path: libs/arm64-v8a/ninmods-kernel
           if-no-files-found: error
