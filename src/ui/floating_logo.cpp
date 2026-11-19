@@ -114,7 +114,7 @@ void render(float realW, float realH, float ui_scale) {
     s_last_view_w = realW;
     s_last_view_h = realH;
 
-    const float logoRadius = 48.0f * ui_scale;
+    const float logoRadius = 64.0f * ui_scale;
     const float logoMargin = 16.0f * ui_scale;
     const float logoDiameter = logoRadius * 2.0f;
 
@@ -133,11 +133,8 @@ void render(float realW, float realH, float ui_scale) {
     s_logo_pos.x = std::clamp(s_logo_pos.x, logoMargin, maxX);
     s_logo_pos.y = std::clamp(s_logo_pos.y, logoMargin, maxY);
 
-    // Register the logo's touch zone as a circle, not its bounding box: the
-    // four corners of the box are outside the drawn disc and used to eat game
-    // taps. Appending rather than replacing means the menu rect (registered
-    // later in the same frame) coexists with this one.
-    Touch_AddUiCircle(s_logo_pos.x + logoRadius, s_logo_pos.y + logoRadius, logoRadius + 8.0f);
+    // Register the logo's touch zone as a circle matching the enlarged disc
+    Touch_AddUiCircle(s_logo_pos.x + logoRadius, s_logo_pos.y + logoRadius, logoRadius + 10.0f * ui_scale);
 
     ImGui::SetNextWindowPos(s_logo_pos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(logoDiameter, logoDiameter), ImGuiCond_Always);
@@ -172,13 +169,7 @@ void render(float realW, float realH, float ui_scale) {
         double cur_time = ImGui::GetTime();
 
         if (ImGui::IsItemActivated()) {
-            // The invisible button covers the bounding box, but the drawn logo
-            // is a disc. Without this radial test the four corners counted as
-            // taps: they opened the menu while the touch barrier (registered as
-            // a circle) let the same tap through to the game underneath.
-            // Radius matches Touch_AddUiCircle's (logoRadius + 8*ui_scale) so the
-            // ImGui hit test and the touch barrier agree on the same disc.
-            const float hitR = logoRadius + 8.0f * ui_scale;
+            const float hitR = logoRadius + 10.0f * ui_scale;
             float ddx = mousePos.x - center.x;
             float ddy = mousePos.y - center.y;
             s_was_activated = (ddx * ddx + ddy * ddy) <= (hitR * hitR);
@@ -189,7 +180,9 @@ void render(float realW, float realH, float ui_scale) {
         if (active && s_was_activated) {
             float dx = mousePos.x - s_click_down_pos.x;
             float dy = mousePos.y - s_click_down_pos.y;
-            if (std::hypot(dx, dy) > 8.0f) {
+            // High-tolerance drag slop: prevents finger micro-jitter from swallowing single taps
+            const float dragSlop = 22.0f * ui_scale;
+            if (s_moved_drag || std::hypot(dx, dy) > dragSlop) {
                 s_moved_drag = true;
                 s_logo_pos = ImVec2(
                     std::clamp(mousePos.x - logoRadius, logoMargin, maxX),
@@ -198,11 +191,9 @@ void render(float realW, float realH, float ui_scale) {
             }
         }
 
-        // Tap opens the menu. The logo is not drawn while the menu is open, so
-        // the toggle below only ever fires from the closed state — closing goes
-        // through the X button or the EXIT control.
+        // Tap reliably opens the menu (immediate responsive trigger)
         if (s_was_activated && deactivated && !s_moved_drag) {
-            if (s_last_toggle_time < 0.0 || (cur_time - s_last_toggle_time > 0.25)) {
+            if (s_last_toggle_time < 0.0 || (cur_time - s_last_toggle_time > 0.15)) {
                 g_ShowMenu = true;
                 s_last_toggle_time = cur_time;
             }

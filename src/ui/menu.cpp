@@ -43,7 +43,7 @@
 //        Auto Headshot (100% Red), Ignore Knocked, Draw FOV Circle, Headshot Elevation Bias.
 //    - Tab 2 (Mods & System):
 //      * Master Switch, Speed Hack (1.00x - 1.30x safe clamp), No Recoil (0.0f recoil),
-//        Diagnostic Telemetry (PID, LibBase, Driver Mode, FPS), and EXIT OVERLAY Button.
+//        Diagnostic Telemetry (PID, LibBase, Driver Mode), and EXIT OVERLAY Button.
 //
 // 4. CROSS-FILE RENDER PIPELINE:
 //    - Calls func::esp::draw() (in src/func/esp/esp.hpp) to draw world ESP on background draw list.
@@ -715,10 +715,6 @@ void render() {
                 ImGui::TextDisabled("DRIVER:");
                 ImGui::SameLine(labelColW);
                 ImGui::TextColored(ImVec4(0, 0.85f, 0.9f, 1), "%s", dName);
-
-                ImGui::TextDisabled("FPS:");
-                ImGui::SameLine(labelColW);
-                ImGui::Text("%.1f", io.Framerate);
 
                 ImGui::Dummy(ImVec2(0, 10 * ui_scale));
                 ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(200, 40, 60, 200));

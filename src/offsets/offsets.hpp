@@ -73,13 +73,13 @@ namespace Offsets {
 // ----------------------------------------------------------------------------------------------
     namespace Player {
         constexpr uintptr_t Rotation             = 0x614;     // Entity rotation Vector3
-        constexpr uintptr_t HeadTF               = 0x6A8;     // Primary Head ITransformNode (proven in pewpew)
-        constexpr uintptr_t HeadTF_Alt           = 0x6A0;     // Auxiliary Head TF
-        constexpr uintptr_t HipTF                = 0x6B0;     // Hip / Waist ITransformNode
+        constexpr uintptr_t HeadTF               = 0x6A0;     // Primary Head ITransformNode (OB55 / 1.132.1 verified)
+        constexpr uintptr_t HeadTF_Alt           = 0;         // Guarded against false hip-latching
+        constexpr uintptr_t HipTF                = 0x6A8;     // Hip / Waist ITransformNode
         constexpr uintptr_t SpineTF              = 0x6B8;     // Spine ITransformNode
-        constexpr uintptr_t RootTF               = 0x6D0;     // Root / Pelvis ITransformNode
-        constexpr uintptr_t FootTF               = 0x6F0;     // Foot / Left Toe ITransformNode
-        constexpr uintptr_t FootTF_Alt           = 0x6E8;     // Auxiliary Foot TF
+        constexpr uintptr_t RootTF               = 0x6C8;     // Root / Pelvis ITransformNode
+        constexpr uintptr_t FootTF               = 0x6E8;     // Foot / Left Toe ITransformNode
+        constexpr uintptr_t FootTF_Alt           = 0x6F0;     // Auxiliary Foot / Right Toe TF
         constexpr uintptr_t HeadCollider         = 0x740;     // Head Collider pointer
         constexpr uintptr_t HeadCollider_Alt     = 0x738;     // Auxiliary Head Collider pointer
         constexpr uintptr_t LockedAimingCollider = 0x80;      // Primary collider on AttackableEntity
@@ -209,16 +209,24 @@ namespace Offsets {
 // 12. SKELETON BONES (ITransformNode Pointers)
 // ----------------------------------------------------------------------------------------------
     namespace Bone {
-        constexpr uintptr_t Head                 = 0x6A8;     // Head node (Primary)
-        constexpr uintptr_t Head_Alt             = 0x6A0;     // Head node (Fallback)
-        constexpr uintptr_t Hip                  = 0x6B0;     // Hip / Waist node
+        constexpr uintptr_t Head                 = 0x6A0;     // Head node (Primary OB55 verified)
+        constexpr uintptr_t Head_Alt             = 0;         // Fallback disabled to prevent false waist latching
+        constexpr uintptr_t Hip                  = 0x6A8;     // Hip / Waist node
         constexpr uintptr_t Breast               = 0x6B0;     // Upper chest
         constexpr uintptr_t Spine                = 0x6B8;     // Spine node
-        constexpr uintptr_t Root                 = 0x6D0;     // Root / Pelvis node
-        constexpr uintptr_t Root_Alt             = 0x6C8;     // Root fallback
-        constexpr uintptr_t LeftToe              = 0x6F0;     // Left toe sole node
-        constexpr uintptr_t LeftToe_Alt          = 0x6E8;     // Left toe fallback
-        constexpr uintptr_t RightToe             = 0x6F8;     // Right toe sole node
+        constexpr uintptr_t Root                 = 0x6C8;     // Root / Pelvis node
+        constexpr uintptr_t Root_Alt             = 0x6D0;     // Root fallback
+        constexpr uintptr_t LeftAnkle            = 0x6D8;     // Left ankle
+        constexpr uintptr_t RightAnkle           = 0x6E0;     // Right ankle
+        constexpr uintptr_t LeftToe              = 0x6E8;     // Left toe sole node (Primary)
+        constexpr uintptr_t LeftToe_Alt          = 0x6F0;     // Left toe fallback / RightToe
+        constexpr uintptr_t RightToe             = 0x6F0;     // Right toe sole node
+        constexpr uintptr_t LeftShoulder         = 0x708;     // Left shoulder
+        constexpr uintptr_t RightShoulder        = 0x710;     // Right shoulder
+        constexpr uintptr_t RightHand            = 0x718;     // Right hand
+        constexpr uintptr_t LeftHand             = 0x720;     // Left hand
+        constexpr uintptr_t RightForeArm         = 0x728;     // Right forearm
+        constexpr uintptr_t LeftForeArm          = 0x730;     // Left forearm
         constexpr float     SkullElevation       = 0.12f;     // Head center elevation (meters)
     }
 
@@ -301,13 +309,22 @@ namespace Offsets {
     constexpr uintptr_t Bone_Head                = Bone::Head;
     constexpr uintptr_t Bone_Head_Alt            = Bone::Head_Alt;
     constexpr uintptr_t Bone_Hip                 = Bone::Hip;
+    constexpr uintptr_t Bone_Breast              = Bone::Breast;
     constexpr uintptr_t Bone_Chest               = Bone::Spine;
     constexpr uintptr_t Bone_Spine               = Bone::Spine;
     constexpr uintptr_t Bone_Root                = Bone::Root;
     constexpr uintptr_t Bone_Root_Alt            = Bone::Root_Alt;
+    constexpr uintptr_t Bone_LeftAnkle           = Bone::LeftAnkle;
+    constexpr uintptr_t Bone_RightAnkle          = Bone::RightAnkle;
     constexpr uintptr_t Bone_LeftToe             = Bone::LeftToe;
     constexpr uintptr_t Bone_LeftToe_Alt         = Bone::LeftToe_Alt;
     constexpr uintptr_t Bone_RightToe            = Bone::RightToe;
+    constexpr uintptr_t Bone_LeftShoulder        = Bone::LeftShoulder;
+    constexpr uintptr_t Bone_RightShoulder       = Bone::RightShoulder;
+    constexpr uintptr_t Bone_RightHand           = Bone::RightHand;
+    constexpr uintptr_t Bone_LeftHand            = Bone::LeftHand;
+    constexpr uintptr_t Bone_RightForeArm        = Bone::RightForeArm;
+    constexpr uintptr_t Bone_LeftForeArm         = Bone::LeftForeArm;
     constexpr float     Bone_SkullElevation      = Bone::SkullElevation;
     constexpr int       Player_StandardBaseHP    = Player::StandardBaseHP;
     constexpr float     Player_ModelHeight       = Player::ModelHeight;

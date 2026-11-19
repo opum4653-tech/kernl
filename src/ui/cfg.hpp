@@ -60,7 +60,7 @@ namespace esp {
 // TAB 1: COMBAT (AIMBOT) CONFIGURATION
 // ----------------------------------------------------------------------------------------------
 namespace aim {
-    inline std::atomic<int>   read_interval_ms {16};    // Syscall polling cadence (ms)
+    inline std::atomic<int>   read_interval_ms {4};     // Real-time high-refresh polling cadence (4ms = 120Hz+)
     inline std::atomic<bool>  silent           {false}; // Feature 8: Aim Silent (Unnormalized Vector)
     inline std::atomic<bool>  scope_aim        {false}; // Feature 9: Scope Aim (Instant Head)
     inline std::atomic<bool>  auto_headshot    {false}; // Feature 10: Auto Headshot (100% Red)

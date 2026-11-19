@@ -93,7 +93,7 @@ inline Vector3 GetPosition(uint64_t Transform) {
     return resultValue;
 }
 
-// Resolves a game-level ITransformNode pointer (e.g., HeadTF 0x6A8) to its world 3D position
+// Resolves a game-level ITransformNode pointer (e.g., HeadTF 0x6A0) to its world 3D position
 inline Vector3 GetNodePosition(uint64_t nodeTransform) {
     if (!is_valid_ptr(nodeTransform)) return Vector3::Zero();
 

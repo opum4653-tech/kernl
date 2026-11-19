@@ -111,7 +111,7 @@ namespace data {
             int m = rpm<int>(elem1 + Offsets::HP_Value);
             if (m > 0 && m <= 1000) maxHP = m;
         }
-        if (maxHP <= 0) maxHP = Offsets::Player::StandardBaseHP; // Fallback baseline (200 HP)
+        if (maxHP <= 0 && curHP > 0) maxHP = curHP;
         if (maxHP < curHP) maxHP = curHP;
 
         // 3. Live Armor Points (Index 4 at Offsets::Player::HP_ArmorEntry = 0x40)
@@ -264,11 +264,11 @@ namespace data {
         // Read 4x4 ViewMatrix from Camera native instance
         viewMatrix = rpm<matrix>(IntPtr + Offsets::Camera_Matrix);
 
-        // 4. Resolve Local Player Head Bone Position (Primary 0x6A8, Fallback 0x6A0)
+        // 4. Resolve Local Player Head Bone Position (Primary 0x6A0)
         Vector3 localPos = Vector3::Zero();
         uint64_t headNode = rpm<uint64_t>(localPlayer + Offsets::Bone_Head);
         if (headNode) localPos = GetNodePosition(headNode);
-        if (localPos == Vector3::Zero() || localPos.sqrMagnitude() < 1.0f) {
+        if (Offsets::Bone_Head_Alt && (localPos == Vector3::Zero() || localPos.sqrMagnitude() < 1.0f)) {
             uint64_t headNodeAlt = rpm<uint64_t>(localPlayer + Offsets::Bone_Head_Alt);
             if (headNodeAlt) {
                 Vector3 altPos = GetNodePosition(headNodeAlt);
@@ -320,13 +320,10 @@ namespace data {
             if (span.at<bool>(Offsets::Player_IsDead)) continue;
             bool isBot = span.at<bool>(Offsets::Player_IsBot);
 
-            // Health & armor validation with baseline fallback
+            // Health & armor validation: strictly reject dead, knocked-out or corrupted entities
             int curHP = 0, maxHP = 0, curArmor = 0;
             readHealthAndArmor(span.at<uint64_t>(Offsets::Player_HP), curHP, maxHP, curArmor);
-            if (curHP <= 0) {
-                curHP = Offsets::Player::StandardBaseHP;
-                maxHP = Offsets::Player::StandardBaseHP;
-            }
+            if (curHP <= 0 || curHP > 1000) continue;
 
             // Teammate & Self filter via AvatarManager UMAData
             auto avatarMgr = span.at<uint64_t>(Offsets::Player_Avatar);
@@ -338,15 +335,14 @@ namespace data {
             if (!uma) continue;
 
             auto umaData = rpm<uint64_t>(uma + Offsets::Uma_Data);
-            if (umaData) {
-                if (rpm<bool>(umaData + Offsets::Avatar::UmaData_Teammate)) continue;
-                if (rpm<bool>(umaData + Offsets::Avatar::UmaData_LocalPlayer)) continue;
-            }
+            if (!umaData) continue;
+            if (rpm<bool>(umaData + Offsets::Avatar::UmaData_Teammate)) continue;
+            if (rpm<bool>(umaData + Offsets::Avatar::UmaData_LocalPlayer)) continue;
 
-            // 7. Resolve Head World Position (Primary 0x6A8, Fallback 0x6A0)
+            // 7. Resolve Head World Position (Primary 0x6A0)
             uint64_t hNode = span.at<uint64_t>(Offsets::Bone_Head);
             Vector3 headWorld = hNode ? GetNodePosition(hNode) : Vector3::Zero();
-            if (headWorld == Vector3::Zero() || headWorld.sqrMagnitude() < 1.0f) {
+            if (Offsets::Bone_Head_Alt && (headWorld == Vector3::Zero() || headWorld.sqrMagnitude() < 1.0f)) {
                 uint64_t hNodeAlt = span.at<uint64_t>(Offsets::Bone_Head_Alt);
                 if (hNodeAlt) {
                     Vector3 altPos = GetNodePosition(hNodeAlt);
@@ -363,32 +359,23 @@ namespace data {
             // Distance filter against user-configured Max Range slider
             float dist = calculate_distance(localPos, headWorld);
             float maxTrackingDist = cfg::esp::max_range.load(std::memory_order_relaxed);
-            if (maxTrackingDist < 50.0f) maxTrackingDist = 200.0f;
-            if (dist < 0.8f || dist > maxTrackingDist) continue;
+            if (dist < 0.5f || dist > maxTrackingDist) continue;
 
             // Project Head to screen coordinates
             Vector3 headScreen = WorldToScreenPoint(viewMatrix, headWorld);
             if (headScreen.z < 0.001f) continue;
 
-            // 8. Resolve Foot / Toe Node (Primary LeftToe 0x6F0, Fallbacks 0x6E8, 0x6D0)
+            // 8. Resolve Foot / Toe Node strictly from real memory transforms
             uint64_t footNode = span.at<uint64_t>(Offsets::Bone_LeftToe);
             if (!footNode) footNode = span.at<uint64_t>(Offsets::Bone::LeftToe_Alt);
             if (!footNode) footNode = span.at<uint64_t>(Offsets::Bone_Root);
             if (!footNode) footNode = span.at<uint64_t>(Offsets::Bone::Root_Alt);
-            if (!footNode) footNode = span.at<uint64_t>(Offsets::Player_FootTF);
 
             Vector3 toeScreen = footNode ? boneScreen(footNode) : Vector3::Zero();
-            if (toeScreen.z < 0.001f) {
-                uint64_t footAlt = span.at<uint64_t>(Offsets::Player::FootTF_Alt);
-                if (footAlt) toeScreen = boneScreen(footAlt);
+            if (toeScreen.z < 0.001f && footNode != span.at<uint64_t>(Offsets::Bone_RightToe)) {
+                uint64_t rightToe = span.at<uint64_t>(Offsets::Bone_RightToe);
+                if (rightToe) toeScreen = boneScreen(rightToe);
             }
-            if (toeScreen.z < 0.001f) {
-                // Synthetic foot projection based on human standard height (1.75m)
-                Vector3 toeWorld = headWorld;
-                toeWorld.y -= Offsets::Player::ModelHeight;
-                toeScreen = WorldToScreenPoint(viewMatrix, toeWorld);
-            }
-            if (toeScreen.z < 0.001f) continue;
 
             // 9. Construct clean 64-byte PlayerData record
             PlayerData pd;
@@ -416,13 +403,13 @@ namespace data {
         }
     }
 
-    // Background worker loop running data::update() with adaptive throttling
+    // Background worker loop running data::update() with high-refresh real-time cadence
     static void loop() {
         while (g_run.load(std::memory_order_relaxed)) {
             update();
-            int iv = cfg::aim::read_interval_ms;
-            if (iv < 8) iv = 8;
-            if (iv > 100) iv = 100;
+            int iv = cfg::aim::read_interval_ms.load(std::memory_order_relaxed);
+            if (iv < 2) iv = 2;
+            if (iv > 50) iv = 50;
 
             // Throttle politely to 100ms when idle in lobby to conserve CPU & battery
             if (!inMatch.load(std::memory_order_relaxed)) {

@@ -88,10 +88,10 @@ public:
             return false;
         }
 
-        // Filter valid entries (hashCode >= 0 indicates active, non-empty slot)
+        // Filter valid entries (hashCode >= 0 and non-zero key indicate active, occupied slot)
         for (size_t b = 0; b < kBlockSize; ++b) {
             if (b < to_read) {
-                if (raw[b].hashCode >= 0 && is_valid_ptr(raw[b].value)) {
+                if (raw[b].hashCode >= 0 && raw[b].key != 0 && is_valid_ptr(raw[b].value)) {
                     out_blk.value[b] = raw[b].value;
                 } else {
                     out_blk.value[b] = 0;

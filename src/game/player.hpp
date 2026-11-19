@@ -47,8 +47,8 @@ struct PlayerData {
     uint64_t addr;
 
     // 2D Viewport Screen Projections (derived via WorldToScreenPoint in math.hpp)
-    Vector3  Head;      // Screen position of skull top (Head node 0x6A8 / 0x6A0)
-    Vector3  Toe;       // Screen position of feet/ground (LeftToe 0x6F0 / Root 0x6D0)
+    Vector3  Head;      // Screen position of skull top (Head node 0x6A0)
+    Vector3  Toe;       // Screen position of feet/ground (LeftToe 0x6E8 / Root 0x6C8)
 
     // 3D Engine World Coordinates (extracted from Unity ITransformNode)
     Vector3  headWorld; // True 3D coordinate used for bullet trajectory calculations
