@@ -141,7 +141,7 @@ inline bool addr_valid(uint64_t a) { return is_valid_ptr(a); }
 
 // STRICT KERNEL DRIVER READ (RPM): Dispatched to active kernel driver module
 inline bool mem_read(uint64_t a, void* b, size_t l) {
-    if (proc::pid.load(std::memory_order_relaxed) <= 0 || a < Offsets::MinValidAddress || l == 0 || b == nullptr) return false;
+    if (proc::pid.load(std::memory_order_relaxed) <= 0 || !is_valid_ptr(a) || l == 0 || b == nullptr) return false;
     if (!driver || !driver->is_driver_loaded()) {
         memset(b, 0, l);
         return false;

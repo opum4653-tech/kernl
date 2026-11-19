@@ -21,7 +21,7 @@
 //      * Calls speed_system::shutdown() during overlay exit to restore original game memory.
 //
 // 2. TARGET STRUCTURES IN GAME HEAP (Il2Cpp):
-//    - Speed Hack: LocalPlayer (0xD8) -> PlayerAttributes (0x768 / 0x770) -> RunSpeedUpScale (0x1C).
+//    - Speed Hack: LocalPlayer (0xD8) -> PlayerAttributes (0x768 / 0x770) -> RunSpeedUpScale (0x2C0).
 //    - No Recoil: LocalPlayer -> WeaponOnHand (0x600) -> Weapon_Data (0x18) -> Weapon_Recoil (0x80).
 //
 // 3. ANTI-BAN SAFETY PROTOCOLS & SYMMETRICAL REVERSE PATHS:
@@ -82,13 +82,11 @@ namespace speed_system {
         uintptr_t gfCell = driver_read<uintptr_t>(libAddress + Offsets::GameFacade);
         if (gfCell < Offsets::MinValidAddress) return 0;
 
-        // Path A: gfCell is directly GameFacade Il2CppClass (pewpew style)
+        // Path A: gfCell is directly GameFacade Il2CppClass
         uintptr_t sf1 = driver_read<uintptr_t>(gfCell + Offsets::GameFacade_P2);
         if (sf1 >= Offsets::MinValidAddress) {
-            uintptr_t cg1 = driver_read<uintptr_t>(sf1 + 0x0);
-            uintptr_t cm1 = driver_read<uintptr_t>(sf1 + 0x8);
-            if (cg1 >= Offsets::MinValidAddress) return cg1;
-            if (cm1 >= Offsets::MinValidAddress) return cm1;
+            uintptr_t bg1 = driver_read<uintptr_t>(sf1 + Offsets::BaseGame_Match);
+            if (bg1 >= Offsets::MinValidAddress) return bg1;
         }
 
         // Path B: gfCell is a pointer to GameFacade Il2CppClass
@@ -96,10 +94,8 @@ namespace speed_system {
         if (gfClass >= Offsets::MinValidAddress) {
             uintptr_t sf2 = driver_read<uintptr_t>(gfClass + Offsets::GameFacade_P2);
             if (sf2 >= Offsets::MinValidAddress) {
-                uintptr_t cg2 = driver_read<uintptr_t>(sf2 + 0x0);
-                uintptr_t cm2 = driver_read<uintptr_t>(sf2 + 0x8);
-                if (cg2 >= Offsets::MinValidAddress) return cg2;
-                if (cm2 >= Offsets::MinValidAddress) return cm2;
+                uintptr_t bg2 = driver_read<uintptr_t>(sf2 + Offsets::BaseGame_Match);
+                if (bg2 >= Offsets::MinValidAddress) return bg2;
             }
         }
 
@@ -109,11 +105,7 @@ namespace speed_system {
     // Resolves LocalPlayer pointer safely from BaseGame without blocking
     inline uintptr_t resolve_local_player(uintptr_t baseGame) {
         if (!is_driver_active() || baseGame < Offsets::MinValidAddress) return 0;
-
-        uintptr_t match = driver_read<uintptr_t>(baseGame + Offsets::BaseGame_Match);
-        if (match < Offsets::MinValidAddress) return 0;
-
-        return driver_read<uintptr_t>(match + Offsets::Match_LocalPlayer);
+        return driver_read<uintptr_t>(baseGame + Offsets::Match_LocalPlayer);
     }
 
     // Resolves PlayerAttributes safely (0x768 Free Fire Global Primary, 0x770 Max Fallback)
@@ -178,7 +170,7 @@ namespace speed_system {
                 if (fireVal <= 0) fireVal = driver_read<int>(localPlayer + Offsets::Player::IsFiring_Alt);
                 float activeMult = (fireVal > 0) ? 1.0f : mult;
 
-                // Write speed multiplier to PlayerAttributes + 0x1C
+                // Write speed multiplier to PlayerAttributes + 0x2C0 (Offsets::RunSpeedUpScale)
                 driver_write_float(attrs + Offsets::RunSpeedUpScale, activeMult);
             }
 

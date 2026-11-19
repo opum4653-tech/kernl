@@ -155,7 +155,7 @@ namespace Offsets {
     }
 
     namespace Speed {
-        constexpr uintptr_t RunSpeedUpScale      = 0x1C;      // RunSpeedUpScale float on PlayerAttributes
+        constexpr uintptr_t RunSpeedUpScale      = 0x2C0;     // RunSpeedUpScale float on PlayerAttributes (0x2C0 verified in ninmods_real_offsets.h)
     }
 
 // ----------------------------------------------------------------------------------------------
@@ -345,6 +345,6 @@ namespace Offsets {
     // Movement & Speed Attributes
     constexpr uintptr_t PlayerAttributes         = Player::Attributes;     // 0x768 (Global Primary)
     constexpr uintptr_t PlayerAttributes_Max     = Player::Attributes_Max; // 0x770 (Max Fallback)
-    constexpr uintptr_t RunSpeedUpScale          = Speed::RunSpeedUpScale; // 0x1C on PlayerAttributes
+    constexpr uintptr_t RunSpeedUpScale          = Speed::RunSpeedUpScale; // 0x2C0 on PlayerAttributes (ninmods_real_offsets.h)
 
 } // namespace Offsets
