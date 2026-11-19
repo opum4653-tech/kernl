@@ -8,38 +8,64 @@
 #include "../ui/cfg.hpp"
 #include "../game/data.hpp"
 
+// ==============================================================================================
+// FILE: src/func/speed.hpp
+// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
+// PURPOSE: Memory controller for Combat & Movement modifications (Speed Hack & No Recoil).
+//
+// CROSS-FILE CALL GRAPH & LIFECYCLE:
+// ----------------------------------------------------------------------------------------------
+// 1. CALLERS:
+//    - src/main.cpp -> start_overlay():
+//      * Calls speed_system::tick(libBase) every frame inside the main thread render loop.
+//      * Calls speed_system::shutdown() during overlay exit to restore original game memory.
+//
+// 2. TARGET STRUCTURES IN GAME HEAP (Il2Cpp):
+//    - Speed Hack: LocalPlayer (0xD8) -> PlayerAttributes (0x768 / 0x770) -> RunSpeedUpScale (0x1C).
+//    - No Recoil: LocalPlayer -> WeaponOnHand (0x600) -> Weapon_Data (0x18) -> Weapon_Recoil (0x80).
+//
+// 3. ANTI-BAN SAFETY PROTOCOLS & SYMMETRICAL REVERSE PATHS:
+//    - Strict Speed Clamp: Multiplier is mathematically clamped to 1.00x - 1.30x (server-safe boundary).
+//    - Smart Firing Guard: Automatically drops sprint speed to 1.00x baseline while shooting
+//      to prevent server movement displacement telemetry anomalies during bullet firing.
+//    - Symmetrical Memory Restoration: Captures original game float values prior to patching;
+//      completely restores baseline values when toggled off in the menu or on engine exit.
+// ==============================================================================================
+
 namespace speed_system {
 
+    // Internal speed runtime configuration
     struct SpeedConfig {
         bool  enabled        = false;
         float multiplier     = 1.20f;
         bool  last_state     = false;
         float last_mult      = 1.0f;
     };
-
     inline SpeedConfig g_config;
 
+    // Symmetrical memory restore state tracking
     struct ModState {
-        float orig_run_scale = 1.0f;
-        bool  orig_player_captured = false;
+        float orig_run_scale = 1.0f;        // Original captured player sprint multiplier
+        bool  orig_player_captured = false; // True once baseline has been backed up
 
-        bool  recoil_last = false;
-        float recoil_orig = 0.0f;
-        bool  recoil_orig_captured = false;
+        bool  recoil_last = false;          // True while recoil patch is currently applied
+        float recoil_orig = 0.0f;           // Original captured weapon recoil float
+        bool  recoil_orig_captured = false; // True once baseline recoil has been backed up
     };
     inline ModState g_mod_state;
 
-    // Checks if the kernel driver is active and ready
+    // Checks if the kernel driver backend is initialized and connected
     inline bool is_driver_active() {
         return (driver != nullptr && driver->is_driver_loaded());
     }
 
-    // Direct kernel driver write wrappers
+    // Direct kernel driver write wrapper for 32-bit IEEE-754 floats
     inline bool driver_write_float(uintptr_t addr, float val) {
         if (!is_driver_active() || addr < Offsets::MinValidAddress) return false;
         return driver->write(addr, &val, sizeof(float));
     }
 
+    // Direct kernel driver read wrapper
     template<typename T>
     inline T driver_read(uintptr_t addr) {
         T data{};
@@ -100,7 +126,7 @@ namespace speed_system {
         return attrs;
     }
 
-    // Master unblocked tick function called every frame
+    // Master unblocked tick function called every frame from main render loop
     inline void tick(uintptr_t libAddress) {
         if (!is_driver_active()) return;
 
@@ -116,8 +142,9 @@ namespace speed_system {
             return;
         }
 
+        // Strict anti-ban clamp: 1.00x - 1.30x
         float mult = (ui_speed_on && ui_speed_mx >= 1.0f) ? ui_speed_mx : g_config.multiplier;
-        mult = std::clamp(mult, 1.0f, 1.30f); // Strict anti-ban clamp: 1.00x - 1.30x
+        mult = std::clamp(mult, 1.0f, 1.30f);
 
         g_config.enabled = is_speed_enabled;
         g_config.multiplier = mult;
@@ -135,10 +162,11 @@ namespace speed_system {
             return;
         }
 
-        // 1. SPEED HACK (ANTI-BAN SAFE)
+        // 1. SPEED HACK (ANTI-BAN SAFE WITH SMART FIRING GUARD)
         if (is_speed_enabled) {
             uintptr_t attrs = resolve_player_attributes(localPlayer);
             if (attrs >= Offsets::MinValidAddress) {
+                // Backup original game sprint scale on first activation
                 if (!g_mod_state.orig_player_captured) {
                     float curRun = driver_read<float>(attrs + Offsets::RunSpeedUpScale);
                     if (curRun >= 0.5f && curRun <= 2.5f) g_mod_state.orig_run_scale = curRun;
@@ -150,13 +178,14 @@ namespace speed_system {
                 if (fireVal <= 0) fireVal = driver_read<int>(localPlayer + Offsets::Player::IsFiring_Alt);
                 float activeMult = (fireVal > 0) ? 1.0f : mult;
 
+                // Write speed multiplier to PlayerAttributes + 0x1C
                 driver_write_float(attrs + Offsets::RunSpeedUpScale, activeMult);
             }
 
             g_config.last_state = true;
             g_config.last_mult = mult;
         }
-        // Speed restoration to baseline
+        // Speed restoration to baseline upon toggle off
         else if (g_config.last_state) {
             uintptr_t attrs = resolve_player_attributes(localPlayer);
             if (attrs >= Offsets::MinValidAddress) {
@@ -168,12 +197,13 @@ namespace speed_system {
             g_config.last_mult = 1.0f;
         }
 
-        // 2. NO RECOIL
+        // 2. NO RECOIL (ZERO BULLET RECOIL / WEAPON STABILIZATION)
         if (is_recoil_enabled) {
             uintptr_t weapon = driver_read<uintptr_t>(localPlayer + Offsets::Player_Weapon);
             if (weapon >= Offsets::MinValidAddress) {
                 uintptr_t wdata = driver_read<uintptr_t>(weapon + Offsets::Weapon_Data);
                 if (wdata >= Offsets::MinValidAddress) {
+                    // Backup original weapon recoil float
                     if (!g_mod_state.recoil_orig_captured) {
                         float curRecoil = driver_read<float>(wdata + Offsets::Weapon_Recoil);
                         if (std::isfinite(curRecoil) && curRecoil >= 0.0f && curRecoil <= 100.0f) {
@@ -181,11 +211,14 @@ namespace speed_system {
                             g_mod_state.recoil_orig_captured = true;
                         }
                     }
+                    // Write 0.0f recoil to Weapon_Data + 0x80
                     driver_write_float(wdata + Offsets::Weapon_Recoil, 0.0f);
                     g_mod_state.recoil_last = true;
                 }
             }
-        } else if (g_mod_state.recoil_last) {
+        }
+        // Recoil restoration to baseline upon toggle off
+        else if (g_mod_state.recoil_last) {
             uintptr_t weapon = driver_read<uintptr_t>(localPlayer + Offsets::Player_Weapon);
             if (weapon >= Offsets::MinValidAddress) {
                 uintptr_t wdata = driver_read<uintptr_t>(weapon + Offsets::Weapon_Data);

@@ -27,10 +27,48 @@
 #include <string>
 #include <atomic>
 
+// ==============================================================================================
+// FILE: src/main.cpp
+// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
+// PURPOSE: Engine lifecycle entry point, process masquerade, watchdog coordinator, and render tick.
+//
+// SYSTEM LIFECYCLE & WORKFLOW OVERVIEW:
+// ----------------------------------------------------------------------------------------------
+// 1. ENTRY (main()):
+//    - Disguises process comm name to "kworker/u16:1" via prctl(PR_SET_NAME) to bypass basic ps scans.
+//    - Validates access credentials through check_license_gate() in src/protect/license.hpp.
+//    - Enters start_overlay().
+//
+// 2. OVERLAY INITIALIZATION:
+//    - Resolves display resolution & orientation via display_manager.cpp.
+//    - Creates native SurfaceFlinger overlay window via initGUI_draw() (includes/draw/Android_draw).
+//    - Initializes multi-touch event capture thread via Touch_Init() (includes/internal/Android_touch).
+//    - Builds ImGui font atlas with Roboto and Inter Bold/Medium TTF fonts.
+//
+// 3. TARGET PROCESS WATCHDOG (1000ms periodic tick):
+//    - Invokes get_pid() (in memory.hpp) using raw direct assembly syscalls (/proc scan).
+//    - Attaches kernel driver module (c_driver in driver.h) to target game PID.
+//    - Resolves libil2cpp.so module base address via get_lib().
+//    - Launches data::thread_start() (in data.cpp) and aimbot::thread_start() (in aim.hpp).
+//    - Detects game exit/crash via /proc/<pid> access test; cleans up and halts workers gracefully.
+//
+// 4. MAIN RENDER LOOP (~60 FPS / 16ms sleep):
+//    - Rebuilds touchable UI rectangle hit-boxes (Touch_ClearUiRects / Touch_CommitUiRects).
+//    - Calls ui::menu::render() (in menu.cpp) which renders ESP visuals and ImGui interactive menus.
+//    - Calls speed_system::tick(libBase) (in speed.hpp) for Speed Hack and No Recoil patches.
+//
+// 5. CLEAN REVERSE SHUTDOWN:
+//    - Restores patched game memory via speed_system::shutdown().
+//    - Halts and joins background worker threads (data::thread_stop(), aimbot::thread_stop()).
+//    - Closes touch device handles and native surface window.
+// ==============================================================================================
+
 #define LOGI(...) do {} while(0)
 
+// Global font handle for high-contrast bold typography
 ImFont* g_BoldFont = nullptr;
 
+// Loads custom TrueType vector fonts into ImGui's font atlas
 static void LoadCustomFonts(ImGuiIO& io) {
     // initGUI_draw() already pushed Roboto @32px first, so it stays Fonts[0] and
     // ImGui::GetFont() keeps returning it - the menu layout was tuned against
@@ -40,7 +78,7 @@ static void LoadCustomFonts(ImGuiIO& io) {
     // heap and owns the copy. inter_medium/inter_bold live in MAIN_FONT.h as
     // static arrays in .rodata; with the default flag (true) the atlas keeps
     // that .rodata pointer and ~ImFontAtlas later IM_FREE()s it — a free() on a
-    // non-heap address. See the same note in draw.cpp initGUI_draw().
+    // non-heap address.
     ImFontConfig cfg;
     cfg.FontDataOwnedByAtlas = false;
 
@@ -53,6 +91,7 @@ static void LoadCustomFonts(ImGuiIO& io) {
     io.Fonts->Build();
 }
 
+// Prints console dashboard telemetry detailing driver, license, and runtime status
 static void print_dashboard() {
     time_t exp = lic::expiry_date();
     struct tm* tm_info = (exp > 0) ? gmtime(&exp) : nullptr;
@@ -63,10 +102,6 @@ static void print_dashboard() {
         snprintf(exp_buf, sizeof(exp_buf), "Active / Dynamic Subscription");
     }
 
-    // Driver name is owned by c_driver; reading a separate global here meant
-    // the dashboard printed ARMED even when a backend was loaded. The name is
-    // reported even while the node is still unloaded — status is a separate
-    // line — so a selected-but-not-yet-connected backend is visible.
     const char* dName = driver ? driver->get_driver_name() : "ARMED";
     const int   dOpt  = driver ? driver->getDriverSelectionCached() : 0;
 
@@ -83,6 +118,7 @@ static void print_dashboard() {
     fflush(stdout);
 }
 
+// Security gate: authenticates runtime authorization keys via CLI args, environment variables, or stdin
 static bool check_license_gate(int argc, char** argv) {
     lic::init();
 
@@ -90,6 +126,7 @@ static bool check_license_gate(int argc, char** argv) {
     printf("[*] Verifying authorization...\n");
     fflush(stdout);
 
+    // 1. Scan command-line arguments for pre-passed license key
     for (int i = 1; i < argc; i++) {
         if (argv[i] && strlen(argv[i]) >= 8 && strcmp(argv[i], "ffmax") != 0 && strcmp(argv[i], "START") != 0) {
             if (lic::set_key(argv[i]) && lic::is_valid()) {
@@ -102,6 +139,7 @@ static bool check_license_gate(int argc, char** argv) {
         }
     }
 
+    // 2. Scan environment session variables
     const char* env_key = getenv("NIN_LICENSE_KEY");
     if (env_key && strlen(env_key) > 0) {
         if (lic::set_key(env_key) && lic::is_valid()) {
@@ -116,6 +154,7 @@ static bool check_license_gate(int argc, char** argv) {
         }
     }
 
+    // 3. Interactive prompt fallback via standard input
     printf("[?] Enter License / Access Key: ");
     fflush(stdout);
 
@@ -154,8 +193,7 @@ static bool check_license_gate(int argc, char** argv) {
     printf("[?] Ready to load into memory. Awaiting START signal...\n");
     fflush(stdout);
 
-    // Daemon mode: block until the launcher writes a line. Anything typed is
-    // ignored; the newline itself is the go-ahead.
+    // Daemon mode: block until the launcher writes a line (newline is go-ahead)
     char start_input[64] = {0};
     (void)fgets(start_input, sizeof(start_input), stdin);
 
@@ -164,7 +202,9 @@ static bool check_license_gate(int argc, char** argv) {
     return true;
 }
 
+// Master overlay coordinator routine
 static int start_overlay() {
+    // 1. Query display geometry and orientation from display_manager
     screen_config();
 
     ::native_window_screen_x = (displayInfo.height > displayInfo.width ? displayInfo.height : displayInfo.width);
@@ -174,6 +214,7 @@ static int start_overlay() {
     ::g_sw = (float)::native_window_screen_x;
     ::g_sh = (float)::native_window_screen_y;
 
+    // 2. Initialize native SurfaceFlinger overlay window
     if (!initGUI_draw(native_window_screen_x, native_window_screen_y, true, false)) {
         printf("[-] Failed to initialize native surface overlay.\n");
         return -1;
@@ -182,6 +223,7 @@ static int start_overlay() {
     ImGuiIO& io = ImGui::GetIO();
     LoadCustomFonts(io);
 
+    // 3. Initialize low-level touch event interception pump
     Touch_Init(displayInfo.width, displayInfo.height, displayInfo.orientation, false);
     ui::menu::load_logo_pos();
 
@@ -197,13 +239,17 @@ static int start_overlay() {
 #endif
     fflush(stdout);
 
+    // 4. MAIN RENDER LOOP (~60 FPS)
     while (main_thread_flag) {
         static auto lastProcessCheck = std::chrono::steady_clock::now();
         auto currentCheckTime = std::chrono::steady_clock::now();
 
+        // Target Process Watchdog Tick (Executes once per second)
         if (std::chrono::duration_cast<std::chrono::milliseconds>(currentCheckTime - lastProcessCheck).count() >= 1000) {
             lastProcessCheck = currentCheckTime;
             int curPid = proc::pid.load(std::memory_order_acquire);
+
+            // Phase A: Search for Game Process PID if not currently attached
             if (curPid <= 0) {
                 curPid = get_pid();
                 if (curPid > 0) {
@@ -221,13 +267,14 @@ static int start_overlay() {
                         logger::log_not_found("Game Process PID (com.dts.freefireth / com.dts.freefiremax not running)");
                     }
                 }
-            } else {
+            }
+            // Phase B: Watchdog check: verify process remains alive
+            else {
                 char pPath[64];
                 snprintf(pPath, sizeof(pPath), "/proc/%d", curPid);
                 if (access(pPath, F_OK) != 0) {
                     logger::log_not_found("Game Process PID %d exited (Process terminated)", curPid);
-                    // Clear lib before pid so a worker never pairs a live pid
-                    // with the previous module base.
+                    // Clear lib before pid so worker threads never pair live pid with dead base
                     proc::lib.store(0, std::memory_order_release);
                     proc::pid.store(0, std::memory_order_release);
                     data::thread_stop();
@@ -236,6 +283,7 @@ static int start_overlay() {
                 }
             }
 
+            // Phase C: Resolve libil2cpp.so base address and spawn worker threads
             if (curPid > 0 && proc::lib.load(std::memory_order_acquire) == 0) {
                 uint64_t base = get_lib("libil2cpp.so");
                 if (base > 0) {
@@ -251,23 +299,25 @@ static int start_overlay() {
             }
         }
 
+        // Frame rendering cycle
         drawBegin();
         {
-            // UI touch regions are rebuilt from scratch each frame: clear the
-            // staged list, let each panel append its own rect, then publish.
+            // UI touch regions are rebuilt from scratch each frame
             Touch_ClearUiRects();
-            ui::menu::render();
+            ui::menu::render(); // Renders ESP drawings, floating logo, and ImGui menu
             Touch_CommitUiRects();
 
+            // Execute Speed Hack and No Recoil memory patches
             uint64_t libBase = proc::lib.load(std::memory_order_acquire);
             if (proc::pid.load(std::memory_order_acquire) > 0 && libBase > 0) {
                 speed_system::tick(libBase);
             }
         }
         drawEnd();
-        usleep(16000);
+        usleep(16000); // Frame cadence sleep (~60 FPS)
     }
 
+    // 5. Clean symmetrical shutdown sequence
     speed_system::shutdown();
     data::thread_stop();
     aimbot::thread_stop();
@@ -277,13 +327,16 @@ static int start_overlay() {
     return 0;
 }
 
+// Executable entry point
 int main(int argc, char* argv[]) {
-    // Mask process name to mimic standard kernel worker to avoid userland process enumeration detection
+    // Mask process name to mimic standard Linux kernel worker thread to avoid userland process enumeration detection
     prctl(PR_SET_NAME, "kworker/u16:1", 0, 0, 0);
 
+    // Verify license credentials before proceeding
     if (!check_license_gate(argc, argv)) {
         return 1;
     }
 
+    // Launch overlay engine
     return start_overlay();
 }

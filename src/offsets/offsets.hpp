@@ -2,186 +2,229 @@
 
 #include <cstdint>
 
-// CENTRALIZED OFFSETS MODULE — STRICT CORE ARCHITECTURE
-// Target game build: OB55 / 1.132.1
+// ==============================================================================================
+// FILE: src/offsets/offsets.hpp
+// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
+// TARGET BUILD: Free Fire OB55 / Version 1.132.1 (ARM64 Il2Cpp)
+// PURPOSE: Central verified offset registry. Encapsulates all object graph traversal displacements,
+//          Unity transform internal layouts, and Il2Cpp structure field offsets.
+//
+// CROSS-FILE CONSUMPTION GRAPH:
+// ----------------------------------------------------------------------------------------------
+// 1. DATA EXTRACTION ENGINE (src/game/data.cpp):
+//    - Uses Base::GameFacade, BaseGame_Match, Match_PlayerDict, Match_LocalPlayer.
+//    - Uses Player::HP, Player::Avatar, Player::Bone_Head, Player::Bone_LeftToe.
+//    - Uses Avatar::Uma, Avatar::Uma_Data, Avatar::UmaData_Teammate.
+// 2. COMBAT & AIMBOT (src/func/aim/):
+//    - Uses Aim::Direction (0x40), Aim::StartPosition (0x4C) in silent.hpp.
+//    - Uses Player::AimInfo (0xE58), Player::IsFiring (0x850), Player::Camera (0x690) in target.hpp.
+// 3. MOTION & COMBAT MODS (src/func/speed.hpp):
+//    - Uses Player::Attributes (0x768), Speed::RunSpeedUpScale (0x2C0).
+//    - Uses Player::Weapon (0x600), Weapon::Data (0x18), Weapon::Recoil (0x80).
+// 4. MATH & ENGINE TRANSFORMS (src/game/math.hpp):
+//    - Uses Transform::Obj (0x10), Transform::MatrixPtr (0x38), Matrices (0x18), Indices (0x20).
+// ==============================================================================================
 
 namespace Offsets {
 
-// Base Chain (GameFacade → BaseGame → Match)
+// ----------------------------------------------------------------------------------------------
+// 1. BASE CHAIN RESOLUTION: libil2cpp.so -> GameFacade -> BaseGame -> Match
+// ----------------------------------------------------------------------------------------------
     namespace Base {
-        constexpr uintptr_t GameFacade           = 0xA72E4E0;
-        constexpr uintptr_t GameFacade_P2        = 0xB8;
-        constexpr uintptr_t BaseGame_Match       = 0x90;
-        constexpr uintptr_t BaseGame_Timer       = 0x20;
-        constexpr uintptr_t Timer_Delta          = 0x2C;
-        constexpr uintptr_t MatchIsRunning       = 0xCC;
-        constexpr uintptr_t Match_PlayerDict     = 0xC0;
-        constexpr uintptr_t Match_LocalPlayer    = 0xD8;
+        constexpr uintptr_t GameFacade           = 0xA72E4E0; // Global Il2Cpp GameFacade class cell
+        constexpr uintptr_t GameFacade_P2        = 0xB8;      // Static fields pointer displacement (0xB8)
+        constexpr uintptr_t BaseGame_Match       = 0x90;      // Current Match instance pointer displacement
+        constexpr uintptr_t BaseGame_Timer       = 0x20;      // Game timer instance
+        constexpr uintptr_t Timer_Delta          = 0x2C;      // Delta time float
+        constexpr uintptr_t MatchIsRunning       = 0xCC;      // Boolean: active match flag
+        constexpr uintptr_t Match_PlayerDict     = 0xC0;      // System.Collections.Generic.Dictionary<byte, Player>
+        constexpr uintptr_t Match_LocalPlayer    = 0xD8;      // Local Player entity pointer
     }
 
-// Il2Cpp Mono Dictionary Traversal
+// ----------------------------------------------------------------------------------------------
+// 2. IL2CPP MONO DICTIONARY INTERNAL DISPLACEMENTS
+// ----------------------------------------------------------------------------------------------
     namespace Dict {
-        constexpr uintptr_t Entries              = 0x18;
-        constexpr uintptr_t Count                = 0x20;
-        constexpr uintptr_t ArrayHeader          = 0x20;
-        constexpr uintptr_t EntryStride          = 0x18;
-        constexpr uintptr_t EntryValue           = 0x10;
+        constexpr uintptr_t Entries              = 0x18;      // Pointer to managed entries array
+        constexpr uintptr_t Count                = 0x20;      // Active element count
+        constexpr uintptr_t ArrayHeader          = 0x20;      // Skip Il2Cpp managed array object header
+        constexpr uintptr_t EntryStride          = 0x18;      // Size of each RawEntry struct (24 bytes)
+        constexpr uintptr_t EntryValue           = 0x10;      // Offset to entity pointer within RawEntry
     }
 
-// Memory Safety Thresholds
+// ----------------------------------------------------------------------------------------------
+// 3. MEMORY SAFETY THRESHOLDS
+// ----------------------------------------------------------------------------------------------
     namespace Memory {
-        constexpr uintptr_t MinValidAddress      = 0x10000; // Standard 64KB userland unmapped null-page boundary
+        constexpr uintptr_t MinValidAddress      = 0x10000;   // 64KB userland unmapped null-page boundary
     }
 
-// ESP Geometric Proportions
+// ----------------------------------------------------------------------------------------------
+// 4. VISUAL & ESP GEOMETRIC PROPORTIONS
+// ----------------------------------------------------------------------------------------------
     namespace ESP {
-        constexpr float BoxWidthRatio            = 0.48f;   // Width-to-height aspect ratio for humanoid 2D box
-        constexpr float BoxPadTopPercent         = 0.12f;   // 12% helmet/head padding above head node
-        constexpr float BoxPadBotPercent         = 0.05f;   // 5% boots padding below toe node
+        constexpr float BoxWidthRatio            = 0.48f;     // Standard humanoid width-to-height ratio (48%)
+        constexpr float BoxPadTopPercent         = 0.12f;     // 12% helmet/head padding above head node
+        constexpr float BoxPadBotPercent         = 0.05f;     // 5% boots padding below toe node
     }
 
-// Player Entity Fields
+// ----------------------------------------------------------------------------------------------
+// 5. PLAYER REPLICATION ENTITY FIELDS
+// ----------------------------------------------------------------------------------------------
     namespace Player {
-        constexpr uintptr_t Rotation             = 0x614;   // Vector3
-        constexpr uintptr_t HeadTF               = 0x6A8;   // Primary Head ITransformNode (0x6A8 proven in pewpew & STORM_MODS)
-        constexpr uintptr_t HeadTF_Alt           = 0x6A0;   // Auxiliary Head TF (0x6A0)
-        constexpr uintptr_t HipTF                = 0x6B0;   // Hip / Waist ITransformNode (0x6B0)
-        constexpr uintptr_t SpineTF              = 0x6B8;   // Spine ITransformNode (0x6B8 CBHHCCNKOND)
-        constexpr uintptr_t RootTF               = 0x6D0;   // Root / Pelvis ITransformNode (0x6D0)
-        constexpr uintptr_t FootTF               = 0x6F0;   // Foot / Left Toe ITransformNode (0x6F0 proven in pewpew & STORM_MODS)
-        constexpr uintptr_t FootTF_Alt           = 0x6E8;   // Auxiliary Foot / Left Toe TF (0x6E8 GMJLIMFHMAE)
-        constexpr uintptr_t HeadCollider         = 0x740;   // Head Collider (0x740 proven in STORM_MODS, pewpew & crack_master)
-        constexpr uintptr_t HeadCollider_Alt     = 0x738;   // Auxiliary Head Collider (0x738)
-        constexpr uintptr_t LockedAimingCollider = 0x80;    // Primary: Collider on AttackableEntity (0x80)
-        constexpr uintptr_t LockedAimingCollider_Alt = 0x78;// Auxiliary: AttackableEntity Current Collider (0x78)
-        constexpr uintptr_t AimingTarget         = 0xE68;   // LastAimingTargetFromWeapon (0xE68 in OB55)
-        constexpr uintptr_t AimingAdjusted       = 0xE60;   // LastAimingInfoFromWeaponAdjusted (0xE60 in OB55)
-        constexpr uintptr_t Camera               = 0x690;   // FollowCamera (0x690)
-        constexpr uintptr_t Camera_Alt           = 0x698;   // FollowCamera auxiliary
-        constexpr uintptr_t FollowCamera_Sub     = 0x690;   // FollowCamera auxiliary pointer
-        constexpr uintptr_t IsFiring             = 0x850;   // Primary: isFiring (0x850)
-        constexpr uintptr_t IsFiring_Alt         = 0x848;   // Auxiliary: isFiring (0x848)
-        constexpr uintptr_t HP                   = 0x70;    // HP Pool Pointer
-        constexpr uintptr_t Armor                = 0x74;    // Int32
-        constexpr uintptr_t HP_MaxEntry          = 0x28;    // Index 1 in HP datas pool
-        constexpr uintptr_t HP_ArmorEntry        = 0x40;    // Index 4 in HP datas pool
-        constexpr uintptr_t IsDead               = 0x7C;    // Boolean (0x7C)
-        constexpr uintptr_t Avatar               = 0x778;   // AvatarManager (0x778 proven in pewpew)
-        constexpr uintptr_t Avatar_Alt           = 0x770;   // AvatarManager auxiliary (0x770)
-        constexpr uintptr_t IsBot                = 0x4A8;   // Boolean: IsClientBot (0x4A8 proven in pewpew)
-        constexpr uintptr_t IsBot_Alt            = 0x4A0;   // Boolean: IsClientBot auxiliary (0x4A0)
-        constexpr uintptr_t Name                 = 0x498;   // MonoString* OriginalNickName (0x498)
-        constexpr uintptr_t Speed                = 0x560;   // Single (Speed 0x560)
-        constexpr uintptr_t AimInfo              = 0xE58;   // Primary: LastAimingInfoFromWeapon (0xE58)
-        constexpr uintptr_t AimInfo_Alt          = 0xE50;   // Auxiliary: AimingInfo (0xE50)
-        constexpr uintptr_t Velocity             = 0xF0;    // Vector3
-        constexpr uintptr_t IsGrounded           = 0x11C;   // Boolean
-        constexpr uintptr_t FOVOffset            = 0x84;    // Single
-        constexpr uintptr_t Weapon               = 0x600;   // WeaponOnHand (0x600)
-        constexpr uintptr_t Attributes           = 0x768;   // PlayerAttributes (0x768)
-        constexpr uintptr_t Attributes_Max       = 0x770;   // PlayerAttributes Max (0x770)
+        constexpr uintptr_t Rotation             = 0x614;     // Entity rotation Vector3
+        constexpr uintptr_t HeadTF               = 0x6A8;     // Primary Head ITransformNode (proven in pewpew)
+        constexpr uintptr_t HeadTF_Alt           = 0x6A0;     // Auxiliary Head TF
+        constexpr uintptr_t HipTF                = 0x6B0;     // Hip / Waist ITransformNode
+        constexpr uintptr_t SpineTF              = 0x6B8;     // Spine ITransformNode
+        constexpr uintptr_t RootTF               = 0x6D0;     // Root / Pelvis ITransformNode
+        constexpr uintptr_t FootTF               = 0x6F0;     // Foot / Left Toe ITransformNode
+        constexpr uintptr_t FootTF_Alt           = 0x6E8;     // Auxiliary Foot TF
+        constexpr uintptr_t HeadCollider         = 0x740;     // Head Collider pointer
+        constexpr uintptr_t HeadCollider_Alt     = 0x738;     // Auxiliary Head Collider pointer
+        constexpr uintptr_t LockedAimingCollider = 0x80;      // Primary collider on AttackableEntity
+        constexpr uintptr_t LockedAimingCollider_Alt = 0x78;  // Auxiliary collider on AttackableEntity
+        constexpr uintptr_t AimingTarget         = 0xE68;     // LastAimingTargetFromWeapon
+        constexpr uintptr_t AimingAdjusted       = 0xE60;     // LastAimingInfoFromWeaponAdjusted
+        constexpr uintptr_t Camera               = 0x690;     // FollowCamera pointer
+        constexpr uintptr_t Camera_Alt           = 0x698;     // FollowCamera auxiliary
+        constexpr uintptr_t FollowCamera_Sub     = 0x690;     // FollowCamera auxiliary pointer
+        constexpr uintptr_t IsFiring             = 0x850;     // Primary isFiring integer flag
+        constexpr uintptr_t IsFiring_Alt         = 0x848;     // Auxiliary isFiring integer flag
+        constexpr uintptr_t HP                   = 0x70;      // m_PRIDataPool pointer
+        constexpr uintptr_t Armor                = 0x74;      // Armor points
+        constexpr uintptr_t HP_MaxEntry          = 0x28;      // Index 1 (Max HP) in ReplicationData pool
+        constexpr uintptr_t HP_ArmorEntry        = 0x40;      // Index 4 (Armor Points) in pool
+        constexpr uintptr_t IsDead               = 0x7C;      // Boolean: isDead flag
+        constexpr uintptr_t Avatar               = 0x778;     // AvatarManager pointer
+        constexpr uintptr_t Avatar_Alt           = 0x770;     // AvatarManager auxiliary pointer
+        constexpr uintptr_t IsBot                = 0x4A8;     // Boolean: isClientBot flag
+        constexpr uintptr_t IsBot_Alt            = 0x4A0;     // Auxiliary bot flag
+        constexpr uintptr_t Name                 = 0x498;     // MonoString* OriginalNickName
+        constexpr uintptr_t Speed                = 0x560;     // Speed single
+        constexpr uintptr_t AimInfo              = 0xE58;     // Primary LastAimingInfoFromWeapon
+        constexpr uintptr_t AimInfo_Alt          = 0xE50;     // Auxiliary AimingInfo
+        constexpr uintptr_t Velocity             = 0xF0;      // Velocity Vector3
+        constexpr uintptr_t IsGrounded           = 0x11C;     // Boolean: isGrounded flag
+        constexpr uintptr_t FOVOffset            = 0x84;      // Scope FOV offset float inside FollowCamera
+        constexpr uintptr_t Weapon               = 0x600;     // WeaponOnHand pointer
+        constexpr uintptr_t Attributes           = 0x768;     // PlayerAttributes (Global Primary)
+        constexpr uintptr_t Attributes_Max       = 0x770;     // PlayerAttributes Max (Max Fallback)
 
-        // Player Physical Constraints
-        constexpr int       StandardBaseHP       = 200;     // Standard baseline HP
-        constexpr float     ModelHeight          = 1.75f;   // Standard player height (meters)
+        // Physical Constants
+        constexpr int       StandardBaseHP       = 200;       // Standard base HP
+        constexpr float     ModelHeight          = 1.75f;     // Standard human model height (meters)
     }
 
-// Mono Internals (String)
+// ----------------------------------------------------------------------------------------------
+// 6. MONO & UNITY INTERNALS
+// ----------------------------------------------------------------------------------------------
     namespace Mono {
         constexpr uintptr_t String_Length        = 0x10;
         constexpr uintptr_t String_Chars         = 0x14;
     }
 
-// Unity Core Internals
     namespace Unity {
         constexpr uintptr_t StaticFields_Instance = 0x8;
         constexpr uintptr_t Component_Transform   = 0x18;
         constexpr uintptr_t Transform_Internal    = 0x20;
     }
 
-// Transform Hierarchy Traversal (Unity Matrix Resolution)
+// ----------------------------------------------------------------------------------------------
+// 7. TRANSFORM HIERARCHY TRAVERSAL (Unity TransformAccessReadOnly Decomposition)
+// ----------------------------------------------------------------------------------------------
     namespace Transform {
-        constexpr uintptr_t Node                 = 0x10;
-        constexpr uintptr_t Obj                  = 0x10;
-        constexpr uintptr_t MatrixPtr            = 0x38;
-        constexpr uintptr_t Matrices             = 0x18;
-        constexpr uintptr_t Indices              = 0x20;
-        constexpr uintptr_t Index                = 0x40;
-        constexpr uintptr_t MatrixStride         = 0x30;
-        constexpr uintptr_t IndexStride          = 0x4;
-        constexpr uintptr_t Position             = 0x90;
+        constexpr uintptr_t Node                 = 0x10;      // Node to Transform component
+        constexpr uintptr_t Obj                  = 0x10;      // Transform internal pointer
+        constexpr uintptr_t MatrixPtr            = 0x38;      // Matrix pointer
+        constexpr uintptr_t Matrices             = 0x18;      // Matrices array buffer pointer
+        constexpr uintptr_t Indices              = 0x20;      // Indices array buffer pointer
+        constexpr uintptr_t Index                = 0x40;      // Bone index slot
+        constexpr uintptr_t MatrixStride         = 0x30;      // Matrix element stride (48 bytes)
+        constexpr uintptr_t IndexStride          = 0x4;       // Index element stride (4 bytes)
+        constexpr uintptr_t Position             = 0x90;      // Direct position offset
     }
 
-// Weapon Data Fields
+// ----------------------------------------------------------------------------------------------
+// 8. WEAPON & COMBAT DATA
+// ----------------------------------------------------------------------------------------------
     namespace Weapon {
-        constexpr uintptr_t Data                 = 0x80;
-        constexpr uintptr_t Weapon_ID            = 0x64;
-        constexpr uintptr_t Recoil               = 0x18;
+        constexpr uintptr_t Data                 = 0x18;      // Weapon_Data pointer displacement
+        constexpr uintptr_t Weapon_ID            = 0x64;      // Weapon identifier int
+        constexpr uintptr_t Recoil               = 0x80;      // Weapon Recoil float (0.0f = zero recoil)
     }
 
-// Movement & Speed Attributes
     namespace Speed {
-        constexpr uintptr_t RunSpeedUpScale      = 0x2C0;                  // Single (0x2C0)
+        constexpr uintptr_t RunSpeedUpScale      = 0x1C;      // RunSpeedUpScale float on PlayerAttributes
     }
 
-// Avatar Visibility
+// ----------------------------------------------------------------------------------------------
+// 9. AVATAR & TEAMMATE FILTERING (UMAData Flags)
+// ----------------------------------------------------------------------------------------------
     namespace Avatar {
-        constexpr uintptr_t Uma                  = 0x138;
-        constexpr uintptr_t Uma_Visible          = 0x101;
-        constexpr uintptr_t Uma_Data             = 0x28;
-        constexpr uintptr_t UmaData_LocalPlayer  = 0x80;
-        constexpr uintptr_t UmaData_Teammate     = 0x81;
+        constexpr uintptr_t Uma                  = 0x138;     // AvatarManager -> UMA pointer
+        constexpr uintptr_t Uma_Visible          = 0x101;     // Visibility boolean
+        constexpr uintptr_t Uma_Data             = 0x28;      // UMA -> UMAData pointer
+        constexpr uintptr_t UmaData_LocalPlayer  = 0x80;      // Flag: isLocalPlayer
+        constexpr uintptr_t UmaData_Teammate     = 0x81;      // Flag: isTeammate (filter out allies)
     }
 
-// Camera Chain
+// ----------------------------------------------------------------------------------------------
+// 10. CAMERA & VIEW MATRIX
+// ----------------------------------------------------------------------------------------------
     namespace Camera {
-        constexpr uintptr_t Follow               = 0x28;
-        constexpr uintptr_t IntPtr               = 0x10;
-        constexpr uintptr_t Matrix               = 0x100;
+        constexpr uintptr_t Follow               = 0x28;      // Camera follow component
+        constexpr uintptr_t IntPtr               = 0x10;      // Camera native IntPtr
+        constexpr uintptr_t Matrix               = 0x100;     // 4x4 ViewMatrix float buffer
         constexpr uintptr_t Follow_Alt           = 0x30;
         constexpr uintptr_t IntPtr_Alt           = 0x10;
     }
 
-// Aim Information (HitInfo / Trajectory: CGKJLKPMGDJ in IL2CPP dump)
+// ----------------------------------------------------------------------------------------------
+// 11. WEAPON AIM / RAYCAST BUFFER (Silent Aim Trajectory Injection)
+// ----------------------------------------------------------------------------------------------
     namespace Aim {
-        constexpr uintptr_t HitObject            = 0x18;    // GameObject JHAINOBIFMA (0x18)
-        constexpr uintptr_t HitCollider          = 0x20;    // Collider JINDNOFABKB (0x20)
-        constexpr uintptr_t HitPoint             = 0x28;    // Vector3 HPCOJHGFEEG (0x28)
-        constexpr uintptr_t HitNormal            = 0x34;    // Vector3 DOJDNHCGFGK (0x34)
-        constexpr uintptr_t Direction            = 0x40;    // Vector3 RayDir HLDECMJFKJK (0x40)
-        constexpr uintptr_t StartPosition        = 0x4C;    // Vector3 EKPLMDDKOGB (0x4C)
-        constexpr uintptr_t Damage               = 0x58;    // Int32 OLGEMBBDBID (0x58)
-        constexpr uintptr_t Distance             = 0x5C;    // Single CFIPDNFBKHK (0x5C)
-        constexpr uintptr_t ActorLayer           = 0x60;    // Int32 GABPHAKNADH (0x60)
-        constexpr uintptr_t HitGroup             = 0x64;    // LKOOALMKJND DKPDBLLJEAA (0x64) (1 = Head, 2 = Body)
-        constexpr uintptr_t HitPhysicMaterial    = 0x68;    // PhysicMaterial DIDOKHNBBAD (0x68)
-        constexpr uintptr_t IgnoreHappens        = 0x70;    // Boolean EFMBNPNFGHM (0x70)
-        constexpr uintptr_t ViewBlocked          = 0x71;    // Boolean CEOKOILBODN (0x71)
-        constexpr uintptr_t OrigStartPosition    = 0x74;    // Vector3 ONMKMEGMHOL (0x74)
-        constexpr uintptr_t SpecialHitType       = 0x80;    // Int16 CLOLKHNMNEK (0x80)
+        constexpr uintptr_t HitObject            = 0x18;      // Target GameObject
+        constexpr uintptr_t HitCollider          = 0x20;      // Target Collider
+        constexpr uintptr_t HitPoint             = 0x28;      // Raycast hit point Vector3
+        constexpr uintptr_t HitNormal            = 0x34;      // Surface normal Vector3
+        constexpr uintptr_t Direction            = 0x40;      // Bullet trajectory raycast direction (0x40)
+        constexpr uintptr_t StartPosition        = 0x4C;      // Bullet muzzle start position (0x4C)
+        constexpr uintptr_t Damage               = 0x58;      // Damage integer
+        constexpr uintptr_t Distance             = 0x5C;      // Distance float
+        constexpr uintptr_t ActorLayer           = 0x60;      // Layer mask
+        constexpr uintptr_t HitGroup             = 0x64;      // Hit hitbox group (1 = Head, 2 = Body)
+        constexpr uintptr_t HitPhysicMaterial    = 0x68;
+        constexpr uintptr_t IgnoreHappens        = 0x70;
+        constexpr uintptr_t ViewBlocked          = 0x71;
+        constexpr uintptr_t OrigStartPosition    = 0x74;
+        constexpr uintptr_t SpecialHitType       = 0x80;
 
-        // HitGroup Enum Values (LKOOALMKJND: Default = 0, Head = 1, Body = 2)
         constexpr int32_t HitGroup_Default       = 0;
         constexpr int32_t HitGroup_Head          = 1;
         constexpr int32_t HitGroup_Body          = 2;
     }
 
-// Skeleton Bones (OB55 / 1.132.1 verified: Head 0x6A8, Hip 0x6B0, Spine 0x6B8, Root 0x6D0, LeftToe 0x6F0)
+// ----------------------------------------------------------------------------------------------
+// 12. SKELETON BONES (ITransformNode Pointers)
+// ----------------------------------------------------------------------------------------------
     namespace Bone {
-        constexpr uintptr_t Head                 = 0x6A8;   // Primary Head ITransformNode (0x6A8 proven in pewpew & STORM_MODS)
-        constexpr uintptr_t Head_Alt             = 0x6A0;   // Auxiliary Head TF (0x6A0)
-        constexpr uintptr_t Hip                  = 0x6B0;   // Hip / Waist ITransformNode (0x6B0)
-        constexpr uintptr_t Breast               = 0x6B0;   // Breast / Upper Chest (0x6B0)
-        constexpr uintptr_t Spine                = 0x6B8;   // Spine ITransformNode (0x6B8 CBHHCCNKOND)
-        constexpr uintptr_t Root                 = 0x6D0;   // Root / Pelvis ITransformNode (0x6D0, pewpew & STORM_MODS)
-        constexpr uintptr_t Root_Alt             = 0x6C8;   // Root Auxiliary (0x6C8 IIPBIDIBJDK)
-        constexpr uintptr_t LeftToe              = 0x6F0;   // Foot / Left Toe ITransformNode (0x6F0, pewpew & STORM_MODS)
-        constexpr uintptr_t LeftToe_Alt          = 0x6E8;   // Foot / Left Toe Auxiliary (0x6E8 GMJLIMFHMAE)
-        constexpr uintptr_t RightToe             = 0x6F8;   // Foot / Right Toe ITransformNode (0x6F8 JMHBBGIKBNO)
-        constexpr float     SkullElevation       = 0.12f;   // Cranium center elevation from neck node (meters)
+        constexpr uintptr_t Head                 = 0x6A8;     // Head node (Primary)
+        constexpr uintptr_t Head_Alt             = 0x6A0;     // Head node (Fallback)
+        constexpr uintptr_t Hip                  = 0x6B0;     // Hip / Waist node
+        constexpr uintptr_t Breast               = 0x6B0;     // Upper chest
+        constexpr uintptr_t Spine                = 0x6B8;     // Spine node
+        constexpr uintptr_t Root                 = 0x6D0;     // Root / Pelvis node
+        constexpr uintptr_t Root_Alt             = 0x6C8;     // Root fallback
+        constexpr uintptr_t LeftToe              = 0x6F0;     // Left toe sole node
+        constexpr uintptr_t LeftToe_Alt          = 0x6E8;     // Left toe fallback
+        constexpr uintptr_t RightToe             = 0x6F8;     // Right toe sole node
+        constexpr float     SkullElevation       = 0.12f;     // Head center elevation (meters)
     }
 
-// Flat Aliases
+// ----------------------------------------------------------------------------------------------
+// 13. FLAT GLOBAL ALIASES (Direct Namespace Access)
+// ----------------------------------------------------------------------------------------------
     constexpr uintptr_t GameFacade               = Base::GameFacade;
     constexpr uintptr_t GameFacade_P2            = Base::GameFacade_P2;
     constexpr uintptr_t BaseGame_Match           = Base::BaseGame_Match;
@@ -285,6 +328,6 @@ namespace Offsets {
     // Movement & Speed Attributes
     constexpr uintptr_t PlayerAttributes         = Player::Attributes;     // 0x768 (Global Primary)
     constexpr uintptr_t PlayerAttributes_Max     = Player::Attributes_Max; // 0x770 (Max Fallback)
-    constexpr uintptr_t RunSpeedUpScale          = Speed::RunSpeedUpScale; // Single (0x2C0)
+    constexpr uintptr_t RunSpeedUpScale          = Speed::RunSpeedUpScale; // 0x1C on PlayerAttributes
 
 } // namespace Offsets

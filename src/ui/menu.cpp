@@ -19,6 +19,37 @@
 #include <atomic>
 #include <unistd.h>
 
+// ==============================================================================================
+// FILE: src/ui/menu.cpp
+// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
+// PURPOSE: Interactive ImGui Graphical User Interface, Floating Logo, and Touch Scroll Controller.
+//
+// SYSTEM ARCHITECTURE & TAB STRUCTURE:
+// ----------------------------------------------------------------------------------------------
+// 1. FLOATING LOGO (src/ui/floating_logo.cpp):
+//    - Renders as a draggable circular floating logo on screen.
+//    - Tapping toggles g_ShowMenu (true = menu open, false = menu minimized to logo).
+//
+// 2. TOUCH SCROLL ENGINE (handleTouchScroll()):
+//    - Custom swipe gesture detector handling vertical flick & drag scrolling on touch screens.
+//    - Works even when finger touches directly over sliders, buttons, or checkboxes.
+//
+// 3. THREE-TAB CONFIGURATION INTERFACE:
+//    - Tab 0 (Visuals / ESP):
+//      * Master Switch, ESP Box (Chaturbhuj), ESP Armor Bar, ESP Laser Line, ESP Bot Tag (AI),
+//        Max Render Distance Slider (50m - 500m), Fixed Purple Accent (#E10098).
+//    - Tab 1 (Combat / Aimbot):
+//      * Master Switch, Aim Silent (Unnormalized Vector), Scope Aim (Instant Head),
+//        Auto Headshot (100% Red), Ignore Knocked, Draw FOV Circle, Headshot Elevation Bias.
+//    - Tab 2 (Mods & System):
+//      * Master Switch, Speed Hack (1.00x - 1.30x safe clamp), No Recoil (0.0f recoil),
+//        Diagnostic Telemetry (PID, LibBase, Driver Mode, FPS), and EXIT OVERLAY Button.
+//
+// 4. CROSS-FILE RENDER PIPELINE:
+//    - Calls func::esp::draw() (in src/func/esp/esp.hpp) to draw world ESP on background draw list.
+//    - Updates touch regions via Touch_ClearUiRects() and Touch_CommitUiRects() (in TouchHelperA.h).
+// ==============================================================================================
+
 extern int native_window_screen_x;
 extern int native_window_screen_y;
 extern ImFont* g_BoldFont;

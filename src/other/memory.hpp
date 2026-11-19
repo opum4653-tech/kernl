@@ -9,20 +9,42 @@
 #include "../protect/oxorany.hpp"
 #include "../offsets/offsets.hpp"
 
+// ==============================================================================================
+// FILE: src/other/memory.hpp
+// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
+// PURPOSE: Low-level kernel memory access bridge (RPM/WPM), raw assembly syscalls, and PID discovery.
+//
+// CROSS-FILE CALL GRAPH & CONSUMERS:
+// ----------------------------------------------------------------------------------------------
+// 1. ALL ENGINE SUBSYSTEMS (Universal Memory Layer):
+//    - src/game/data.cpp: Uses rpm<T>(), mem_read() to walk Il2Cpp object graphs.
+//    - src/func/aim/silent.hpp: Uses wpm<Vector3>() to steer bullet trajectory vectors.
+//    - src/func/aim/target.hpp: Uses rpm<bool>() to check player state.
+//    - src/main.cpp: Calls get_pid() and get_lib() to attach kernel driver to target game.
+//
+// 2. ZERO-USERLAND KERNEL DRIVER INVARIANT:
+//    - Memory reading and writing are strictly dispatched via the active kernel driver backend
+//      (c_driver in driver.h -> KPM / prctl / QX / RT / standard IOCTL).
+//    - Zero userland ptrace / process_vm_readv fallbacks are used, preventing ptrace detection.
+//
+// 3. RAW ASSEMBLY SYSCALL LAYER (sys::sc6):
+//    - Bypasses Android Bionic libc wrappers to prevent in-process hooked function interception.
+//    - Invokes direct ARM64 assembly kernel transitions (svc #0) using registers x0-x8.
+// ==============================================================================================
+
 namespace proc {
     // Written by the render thread (process watchdog in main loop), read by the
-    // data and aim worker threads on every read. Plain int/uint64_t here meant a
-    // worker could observe a cleared pid paired with the previous lib base — a
-    // whole run of reads against a dead module. Atomic keeps the pair coherent
+    // data and aim worker threads on every read. Atomic keeps the pair coherent
     // per-field, and every read of the pair goes through the snapshot below.
     inline std::atomic<int>      pid{-1};
     inline std::atomic<uint64_t> lib{0};
 
     struct Snapshot {
-        int      pid;
-        uint64_t lib;
+        int      pid;   // Target process ID
+        uint64_t lib;   // Target libil2cpp.so base virtual address
     };
 
+    // Lock-free atomic snapshot returning coherent pid and libBase
     inline Snapshot snapshot() {
         Snapshot s;
         s.pid = pid.load(std::memory_order_acquire);
@@ -61,6 +83,7 @@ namespace sys {
     #define AT_FDCWD -100
     #endif
 
+    // Direct raw 6-argument assembly syscall invoker (svc #0 on ARM64)
     static inline long sc6(long n, long a1, long a2, long a3, long a4, long a5, long a6) {
         long r;
         #if defined(__aarch64__)
@@ -102,11 +125,13 @@ struct linux_dirent64 {
     char d_name[];
 };
 
+// Zeroes memory securely on stack to prevent forensic memory dumps
 static inline void wipe(void* p, size_t n) {
     volatile uint8_t* v = reinterpret_cast<volatile uint8_t*>(p);
     for (size_t i = 0; i < n; i++) v[i] = 0;
 }
 
+// Memory boundary validation check (guards against null pointers & kernel addresses)
 inline bool is_valid_ptr(uint64_t a) {
     uint64_t p = a & 0x0000FFFFFFFFFFFFULL;
     return (p >= 0x10000ULL && p <= 0x00007FFFFFFFFFFFULL);
@@ -114,8 +139,7 @@ inline bool is_valid_ptr(uint64_t a) {
 
 inline bool addr_valid(uint64_t a) { return is_valid_ptr(a); }
 
-// STRICT KERNEL DRIVER MEMORY ACCESS ONLY
-// Zero userland syscall fallbacks.
+// STRICT KERNEL DRIVER READ (RPM): Dispatched to active kernel driver module
 inline bool mem_read(uint64_t a, void* b, size_t l) {
     if (proc::pid.load(std::memory_order_relaxed) <= 0 || a < Offsets::MinValidAddress || l == 0 || b == nullptr) return false;
     if (!driver || !driver->is_driver_loaded()) {
@@ -125,6 +149,7 @@ inline bool mem_read(uint64_t a, void* b, size_t l) {
     return driver->read(static_cast<uintptr_t>(a), b, l);
 }
 
+// STRICT KERNEL DRIVER WRITE (WPM): Dispatched to active kernel driver module
 inline bool mem_write(uint64_t a, const void* b, size_t l) {
     if (proc::pid.load(std::memory_order_relaxed) <= 0 || !is_valid_ptr(a) || l == 0 || b == nullptr) return false;
     if (!driver || !driver->is_driver_loaded()) {
@@ -133,16 +158,19 @@ inline bool mem_write(uint64_t a, const void* b, size_t l) {
     return driver->write(static_cast<uintptr_t>(a), const_cast<void*>(b), l);
 }
 
+// Templated single-value memory read (RPM)
 template<typename T> inline T rpm(uint64_t a) {
     T v{};
     mem_read(a, &v, sizeof(T));
     return v;
 }
 
+// Templated single-value memory write (WPM)
 template<typename T> inline bool wpm(uint64_t a, const T& d) {
     return mem_write(a, &d, sizeof(T));
 }
 
+// Scans /proc using direct raw assembly syscalls to detect game process PID
 inline int get_pid() {
     int pfd = sys::openat(AT_FDCWD, oxorany("/proc"), O_RDONLY | O_DIRECTORY);
     if (pfd < 0) return -1;
@@ -159,7 +187,7 @@ inline int get_pid() {
         while (p < buf + nr) {
             auto* e = reinterpret_cast<linux_dirent64*>(p);
 
-            if (e->d_type == 4) {
+            if (e->d_type == 4) { // Directory
                 char* n = e->d_name;
                 bool in = true;
                 for (char* c = n; *c; c++) {
@@ -188,6 +216,7 @@ inline int get_pid() {
 
                         if (b > 0) {
                             cmd[b] = '\0';
+                            // Target package matching (Free Fire Global vs Max)
                             if (strstr(cmd, "com.dts.freefireth")) {
                                 found_global = pid;
                             } else if (strstr(cmd, "com.dts.freefiremax")) {
@@ -216,6 +245,7 @@ inline int get_pid() {
     return target_pid;
 }
 
+// Queries kernel driver to resolve libil2cpp.so base address in target game virtual memory
 inline uint64_t get_lib(const char* targetName = "libil2cpp.so") {
     if (proc::pid.load(std::memory_order_relaxed) <= 0) return 0;
 
