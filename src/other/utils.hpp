@@ -56,7 +56,7 @@ public:
 
         for (size_t b = 0; b < kBlockSize; ++b) {
             if (b < to_read) {
-                if (raw[b].hashCode >= 0 && raw[b].key != 0) {
+                if (raw[b].hashCode >= 0 && is_valid_ptr(raw[b].value)) {
                     out_blk.value[b] = raw[b].value;
                 } else {
                     out_blk.value[b] = 0;

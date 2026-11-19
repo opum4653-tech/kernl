@@ -72,7 +72,7 @@ public:
     void close_driver() {
         if (fd > 0) {
             close(fd);
-            fd = -1;
         }
+        fd = -1;
     }
 };

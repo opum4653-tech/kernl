@@ -268,6 +268,9 @@ static int start_overlay() {
         usleep(16000);
     }
 
+    speed_system::shutdown();
+    data::thread_stop();
+    aimbot::thread_stop();
     ui::menu::save_logo_pos();
     shutdown();
     Touch_Close();

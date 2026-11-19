@@ -56,7 +56,8 @@ static struct {
 
 static targ targF[maxE];
 static touchObj Finger[maxE][maxF];
-static int fdNum = 0, origfd[maxE], nowfd;
+static int fdNum = 0, origfd[maxE] = {-1, -1, -1, -1, -1}, nowfd = -1;
+static pthread_t s_touchThreads[maxE] = {0};
 static float s_digitizerMaxX = 0.0f, s_digitizerMaxY = 0.0f;
 
 static bool Touch_initialized = false;
@@ -276,7 +277,9 @@ static void *TypeA(void *arg) {
     input_event inputEvent[64]{0};
 
     while (Touch_initialized) {
+        if (origfd[i] < 0) break;
         auto readSize = (int32_t) read(origfd[i], inputEvent, sizeof(inputEvent));
+        if (!Touch_initialized || origfd[i] < 0) break;
         if (readSize <= 0 || (readSize % sizeof(input_event)) != 0) {
             continue;
         }
@@ -290,6 +293,10 @@ static void *TypeA(void *arg) {
                         Finger[i][latest].id = (i * 2 + 1) * maxF + latest;
                         Finger[i][latest].freshDown = true;
                     } else {
+                        if (Finger[i][latest].swallow) {
+                            ImGuiIO &io = ImGui::GetIO();
+                            io.MouseDown[0] = false;
+                        }
                         Finger[i][latest].swallow = false;
                         Finger[i][latest].freshDown = false;
                     }
@@ -305,19 +312,19 @@ static void *TypeA(void *arg) {
                 }
                 if (ie.code == ABS_MT_TRACKING_ID) {
                     if (ie.value == -1) {
+                        if (Finger[i][latest].swallow) {
+                            ImGuiIO &io = ImGui::GetIO();
+                            io.MouseDown[0] = false;
+                        }
                         Finger[i][latest].isDown = false;
                         Finger[i][latest].isTmpDown = false;
                         Finger[i][latest].swallow = false;
                         Finger[i][latest].freshDown = false;
-                        ImGuiIO &io = ImGui::GetIO();
-                        io.MouseDown[0] = false;
                     } else {
                         Finger[i][latest].id = (i * 2 + 1) * maxF + latest;
                         Finger[i][latest].isDown = true;
                         Finger[i][latest].isTmpDown = true;
                         Finger[i][latest].freshDown = true;
-                        ImGuiIO &io = ImGui::GetIO();
-                        io.MouseDown[0] = true;
                     }
                     continue;
                 }
@@ -335,7 +342,6 @@ static void *TypeA(void *arg) {
                 }
             }
             if (ie.code == SYN_REPORT) {
-                ImGuiIO &io = ImGui::GetIO();
                 if (Finger[i][latest].isDown) {
                     // Continuous pure normalized mathematical mapping [0.0 - 1.0]
                     // Completely eliminates digitizer hardware grid differences (1080, 2400, 4096, 32767)
@@ -373,9 +379,6 @@ static void *TypeA(void *arg) {
                     x = std::clamp(x, 0.0f, (orientation == 1 || orientation == 3) ? longEdge : shortEdge);
                     y = std::clamp(y, 0.0f, (orientation == 1 || orientation == 3) ? shortEdge : longEdge);
 
-                    io.MousePos = ImVec2(x, y);
-                    io.MouseDown[0] = true;
-
                     // UI barrier. The swallow decision is taken on the first
                     // SYN_REPORT of the gesture only, then latched until the
                     // finger lifts. Deciding every frame meant a game drag that
@@ -385,10 +388,20 @@ static void *TypeA(void *arg) {
                         Finger[i][latest].freshDown = false;
                         Finger[i][latest].swallow = Touch_IsPointInUi(x, y);
                     }
+
+                    // Only inject mouse input into ImGui if the touch belongs to the overlay UI
+                    if (Finger[i][latest].swallow) {
+                        ImGuiIO &io = ImGui::GetIO();
+                        io.MousePos = ImVec2(x, y);
+                        io.MouseDown[0] = true;
+                    }
                 } else {
+                    if (Finger[i][latest].swallow) {
+                        ImGuiIO &io = ImGui::GetIO();
+                        io.MouseDown[0] = false;
+                    }
                     Finger[i][latest].swallow = false;
                     Finger[i][latest].freshDown = false;
-                    io.MouseDown[0] = false;
                 }
 
                 if (Finger[i][latest].isTmpDown) {
@@ -530,12 +543,11 @@ bool Touch_Init(int w, int h, uint32_t orientation_, bool readOnly) {
     Touch_initialized = true;
     Touch_readOnly = readOnly;
 
-    pthread_t t;
     for (i = 0; i < fdNum; i++) {
         targF[i].fdNum = i;
         targF[i].maxRawX = (float)absX[i].maximum;
         targF[i].maxRawY = (float)absY[i].maximum;
-        pthread_create(&t, NULL, TypeA, &targF[i]);
+        pthread_create(&s_touchThreads[i], NULL, TypeA, &targF[i]);
     }
 
     ::screenWidth = (float)w;
@@ -575,23 +587,29 @@ static bool checkDeviceIsTouch(int fd, float &outMaxX, float &outMaxY) {
 
 void Touch_Close() {
     if (Touch_initialized) {
+        Touch_initialized = false;
         for (int i = 0; i < maxE; ++i) {
-            if (origfd[i] > 0) {
+            if (origfd[i] >= 0) {
                 if (!Touch_readOnly)
                     ioctl(origfd[i], EVIOCGRAB, UNGRAB);
                 close(origfd[i]);
-                origfd[i] = 0;
+                origfd[i] = -1;
             }
         }
-        if (nowfd > 0) {
+        for (int i = 0; i < fdNum; ++i) {
+            if (s_touchThreads[i] != 0) {
+                pthread_join(s_touchThreads[i], NULL);
+                s_touchThreads[i] = 0;
+            }
+        }
+        if (nowfd >= 0) {
             ioctl(nowfd, UI_DEV_DESTROY);
             close(nowfd);
-            nowfd = 0;
+            nowfd = -1;
         }
         fdNum = 0;
         memset(Finger, 0, sizeof(Finger));
         memset(input.event, 0, sizeof(input.event));
-        Touch_initialized = false;
     }
 }
 

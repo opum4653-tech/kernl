@@ -181,8 +181,7 @@ namespace speed_system {
                             g_mod_state.recoil_orig_captured = true;
                         }
                     }
-                    float zero = 0.0f;
-                    driver->write(wdata + Offsets::Weapon_Recoil, &zero, sizeof(float));
+                    driver_write_float(wdata + Offsets::Weapon_Recoil, 0.0f);
                     g_mod_state.recoil_last = true;
                 }
             }
@@ -191,12 +190,41 @@ namespace speed_system {
             if (weapon >= Offsets::MinValidAddress) {
                 uintptr_t wdata = driver_read<uintptr_t>(weapon + Offsets::Weapon_Data);
                 if (wdata >= Offsets::MinValidAddress && g_mod_state.recoil_orig_captured) {
-                    float orig = g_mod_state.recoil_orig;
-                    driver->write(wdata + Offsets::Weapon_Recoil, &orig, sizeof(float));
+                    driver_write_float(wdata + Offsets::Weapon_Recoil, g_mod_state.recoil_orig);
                     g_mod_state.recoil_last = false;
                     g_mod_state.recoil_orig_captured = false;
                 }
             }
+        }
+    }
+
+    // Clean memory restoration hook invoked on overlay shutdown
+    inline void shutdown() {
+        if (!is_driver_active()) return;
+        uintptr_t localPlayer = static_cast<uintptr_t>(data::localPlayerAddr.load(std::memory_order_relaxed));
+        if (localPlayer < Offsets::MinValidAddress) return;
+
+        // Restore speed hack baseline
+        if (g_config.last_state && g_mod_state.orig_player_captured) {
+            uintptr_t attrs = resolve_player_attributes(localPlayer);
+            if (attrs >= Offsets::MinValidAddress) {
+                driver_write_float(attrs + Offsets::RunSpeedUpScale, g_mod_state.orig_run_scale);
+            }
+            g_mod_state.orig_player_captured = false;
+            g_config.last_state = false;
+        }
+
+        // Restore recoil baseline
+        if (g_mod_state.recoil_last && g_mod_state.recoil_orig_captured) {
+            uintptr_t weapon = driver_read<uintptr_t>(localPlayer + Offsets::Player_Weapon);
+            if (weapon >= Offsets::MinValidAddress) {
+                uintptr_t wdata = driver_read<uintptr_t>(weapon + Offsets::Weapon_Data);
+                if (wdata >= Offsets::MinValidAddress) {
+                    driver_write_float(wdata + Offsets::Weapon_Recoil, g_mod_state.recoil_orig);
+                }
+            }
+            g_mod_state.recoil_last = false;
+            g_mod_state.recoil_orig_captured = false;
         }
     }
 
