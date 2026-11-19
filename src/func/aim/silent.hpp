@@ -55,6 +55,9 @@ namespace aimbot {
 
     inline void start_silent_writer() {
         if (s_writerRunning.exchange(true)) return;
+        if (s_writerThread.joinable()) {
+            s_writerThread.join();
+        }
         s_writerThread = std::thread(writer_loop);
     }
 

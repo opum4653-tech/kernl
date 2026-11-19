@@ -77,8 +77,9 @@ namespace aimbot {
                         float dyHead = enemy.Head.y - screenCy;
                         float distHead = sqrtf(dxHead * dxHead + dyHead * dyHead);
 
-                        float bodyX = (enemy.Head.x + enemy.Toe.x) * 0.5f;
-                        float bodyY = (enemy.Head.y + enemy.Toe.y) * 0.5f;
+                        bool hasToe = (enemy.Toe.z >= 0.05f);
+                        float bodyX = hasToe ? ((enemy.Head.x + enemy.Toe.x) * 0.5f) : enemy.Head.x;
+                        float bodyY = hasToe ? ((enemy.Head.y + enemy.Toe.y) * 0.5f) : (enemy.Head.y + 30.0f);
                         float dxBody = bodyX - screenCx;
                         float dyBody = bodyY - screenCy;
                         float distBody = sqrtf(dxBody * dxBody + dyBody * dyBody);
@@ -113,8 +114,9 @@ namespace aimbot {
                 float dyHead = enemy.Head.y - screenCy;
                 float distHead = sqrtf(dxHead * dxHead + dyHead * dyHead);
 
-                float bodyX = (enemy.Head.x + enemy.Toe.x) * 0.5f;
-                float bodyY = (enemy.Head.y + enemy.Toe.y) * 0.5f;
+                bool hasToe = (enemy.Toe.z >= 0.05f);
+                float bodyX = hasToe ? ((enemy.Head.x + enemy.Toe.x) * 0.5f) : enemy.Head.x;
+                float bodyY = hasToe ? ((enemy.Head.y + enemy.Toe.y) * 0.5f) : (enemy.Head.y + 30.0f);
                 float dxBody = bodyX - screenCx;
                 float dyBody = bodyY - screenCy;
                 float distBody = sqrtf(dxBody * dxBody + dyBody * dyBody);

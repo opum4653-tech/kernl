@@ -31,10 +31,10 @@ include_directories(
 
 file(GLOB_RECURSE SRC_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/protect/license.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/includes/draw/*.cpp
 )
 
+list(REMOVE_DUPLICATES SRC_FILES)
 list(FILTER SRC_FILES EXCLUDE REGEX "imgui_demo\\.cpp")
 list(FILTER SRC_FILES EXCLUDE REGEX "imgui_impl_vulkan\\.cpp")
 list(FILTER SRC_FILES EXCLUDE REGEX "stb_image\\.cpp")

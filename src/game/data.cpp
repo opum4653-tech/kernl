@@ -495,6 +495,7 @@ namespace data {
 
     void thread_start() {
         if (g_run.exchange(true)) return;
+        if (g_thread.joinable()) g_thread.join();
         g_thread = std::thread(loop);
     }
 

@@ -94,7 +94,11 @@ namespace func::esp {
         float height = botY - topY;
         if (height < 6.f) {
             // Distance-based height fallback if toe is too close to head or compressed
-            height = std::clamp((g_sh * 1.6f) / std::max(p.distance, 1.0f), 15.0f, g_sh * 0.9f);
+            float curSh = g_sh.load(std::memory_order_relaxed);
+            if (curSh < 200.0f) curSh = 1080.0f;
+            float maxH = std::max(15.0f, curSh * 0.9f);
+            float calcH = (curSh * 1.6f) / std::max(p.distance, 1.0f);
+            height = std::clamp(calcH, 15.0f, maxH);
             botY = topY + height;
         }
 

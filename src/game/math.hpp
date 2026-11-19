@@ -8,24 +8,27 @@
 #include <cmath>
 
 inline Vector3 GetPosition(uint64_t Transform) {
+    if (Transform == 0) return Vector3::Zero();
     auto transformObjValue = rpm<uint64_t>(Transform + Offsets::Transform::Obj);
     if (transformObjValue == 0) return Vector3::Zero();
 
-    struct { uint64_t matrices; uint64_t indices; } ptrs;
     auto matrixValue = rpm<uint64_t>(transformObjValue + Offsets::Transform::MatrixPtr);
     if (!matrixValue) return Vector3::Zero();
 
-    ptrs.matrices = rpm<uint64_t>(matrixValue + Offsets::Transform::Matrices);
-    ptrs.indices  = rpm<uint64_t>(matrixValue + Offsets::Transform::Indices);
-    if (!ptrs.matrices || !ptrs.indices) return Vector3::Zero();
+    uint64_t matrices = rpm<uint64_t>(matrixValue + Offsets::Transform::Matrices);
+    uint64_t indices  = rpm<uint64_t>(matrixValue + Offsets::Transform::Indices);
+    if (!matrices || !indices) return Vector3::Zero();
 
-    auto indexValue = rpm<uint64_t>(transformObjValue + Offsets::Transform::Index);
+    int indexValue = rpm<int>(transformObjValue + Offsets::Transform::Index);
+    if (indexValue < 0 || indexValue > 50000) return Vector3::Zero();
 
-    auto resultValue = rpm<Vector3>(ptrs.matrices + (indexValue * Offsets::Transform::MatrixStride));
-    auto transformIndexValue = rpm<int>(ptrs.indices + (indexValue * Offsets::Transform::IndexStride));
+    auto resultValue = rpm<Vector3>(matrices + ((uint64_t)indexValue * Offsets::Transform::MatrixStride));
+    int transformIndexValue = rpm<int>(indices + ((uint64_t)indexValue * Offsets::Transform::IndexStride));
 
-    for (int tries = 0; transformIndexValue >= 0 && tries < 50; tries++) {
-        uint64_t matAddr = ptrs.matrices + (transformIndexValue * Offsets::Transform::MatrixStride);
+    int tries = 0;
+    while (transformIndexValue >= 0 && transformIndexValue <= 50000 && tries < 50) {
+        tries++;
+        uint64_t matAddr = matrices + ((uint64_t)transformIndexValue * Offsets::Transform::MatrixStride);
         auto t = rpm<TransformMatrix>(matAddr);
 
         auto rx = t.rotation.x, ry = t.rotation.y, rz = t.rotation.z, rw = t.rotation.w;
@@ -34,20 +37,23 @@ inline Vector3 GetPosition(uint64_t Transform) {
         auto sz = resultValue.z * t.scale.z;
 
         resultValue.x = t.position.x + sx +
-                        (sx * ((ry * ry * -2.0) - (rz * rz * 2.0))) +
-                        (sy * ((rw * rz * -2.0) - (ry * rx * -2.0))) +
-                        (sz * ((rz * rx *  2.0) - (rw * ry * -2.0)));
+                        (sx * ((ry * ry * -2.0f) - (rz * rz * 2.0f))) +
+                        (sy * ((rw * rz * -2.0f) - (ry * rx * -2.0f))) +
+                        (sz * ((rz * rx *  2.0f) - (rw * ry * -2.0f)));
         resultValue.y = t.position.y + sy +
-                        (sx * ((rx * ry *  2.0) - (rw * rz * -2.0))) +
-                        (sy * ((rz * rz * -2.0) - (rx * rx *  2.0))) +
-                        (sz * ((rw * rx * -2.0) - (rz * ry * -2.0)));
+                        (sx * ((rx * ry *  2.0f) - (rw * rz * -2.0f))) +
+                        (sy * ((rz * rz * -2.0f) - (rx * rx *  2.0f))) +
+                        (sz * ((rw * rx * -2.0f) - (rz * ry * -2.0f)));
         resultValue.z = t.position.z + sz +
-                        (sx * ((rw * ry * -2.0) - (rx * rz * -2.0))) +
-                        (sy * ((ry * rz *  2.0) - (rw * rx * -2.0))) +
-                        (sz * ((rx * rx * -2.0) - (ry * ry *  2.0)));
+                        (sx * ((rw * ry * -2.0f) - (rx * rz * -2.0f))) +
+                        (sy * ((ry * rz *  2.0f) - (rw * rx * -2.0f))) +
+                        (sz * ((rx * rx * -2.0f) - (ry * ry *  2.0f)));
 
-        transformIndexValue = rpm<int>(ptrs.indices + (transformIndexValue * Offsets::Transform::IndexStride));
+        transformIndexValue = rpm<int>(indices + ((uint64_t)transformIndexValue * Offsets::Transform::IndexStride));
     }
+
+    if (tries >= 50) return Vector3::Zero();
+    if (std::isnan(resultValue.x) || std::isnan(resultValue.y) || std::isnan(resultValue.z)) return Vector3::Zero();
 
     return resultValue;
 }
