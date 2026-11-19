@@ -1,6 +1,5 @@
 #pragma once
 #include "common.hpp"
-#include "../../other/logger.hpp"
 #include <atomic>
 #include <mutex>
 #include <thread>

@@ -2,7 +2,6 @@
 #include "../offsets/offsets.hpp"
 #include "../other/utils.hpp"
 #include "../other/memory.hpp"
-#include "../other/logger.hpp"
 #include "../ui/cfg.hpp"
 #include "../protect/oxorany.hpp"
 #include <atomic>
@@ -140,12 +139,7 @@ namespace data {
 
         // 1. Resolve GameFacade Cell from libil2cpp.so base
         auto GfCell = rpm<uint64_t>(snap.lib + oxorany(Offsets::GameFacade));
-        if (!GfCell) {
-            if (logger::should_log("err_gfcell", 2500)) {
-                logger::log_not_found("GameFacade Cell (Offset +0x%lX from libil2cpp.so 0x%lX)", Offsets::GameFacade, (unsigned long)snap.lib);
-            }
-            return;
-        }
+        if (!GfCell) return;
 
         uint64_t BaseGame = 0;
         uint64_t StaticFields = 0;
@@ -175,12 +169,7 @@ namespace data {
             }
         }
 
-        if (!is_valid_ptr(BaseGame)) {
-            if (logger::should_log("err_bg", 2500)) {
-                logger::log_not_found("BaseGame Instance (Resolution Failed from GfCell 0x%lX)", (unsigned long)GfCell);
-            }
-            return;
-        }
+        if (!is_valid_ptr(BaseGame)) return;
 
         // 2. Resolve Match and Local Player entities
         auto m_Match = rpm<uint64_t>(BaseGame + Offsets::BaseGame_Match);
@@ -197,42 +186,25 @@ namespace data {
 
         // If match is not currently active, flush lists and sleep gracefully
         if (!matchActive) {
-            if (logger::should_log("diag_match_idle", 3000)) {
-                logger::log_info("Match Status: Waiting for match (BaseGame=0x%lX, Match=0x%lX)", (unsigned long)BaseGame, (unsigned long)m_Match);
-            }
-            {
-                std::lock_guard<std::mutex> lk(players_mutex);
-                if (!players.empty()) players.clear();
-            }
+            std::lock_guard<std::mutex> lk(players_mutex);
+            if (!players.empty()) players.clear();
             return;
-        }
-
-        if (logger::should_log("diag_match_active", 3000)) {
-            logger::log_found("Match Active: BaseGame=0x%lX | Match=0x%lX | LocalPlayer=0x%lX", (unsigned long)BaseGame, (unsigned long)m_Match, (unsigned long)localPlayer);
         }
 
         // Feature-muted mode: if user disabled all features in menu, skip heavy camera/bone calculations
         if (!cfg::any_feature_enabled()) {
-            {
-                std::lock_guard<std::mutex> lk(players_mutex);
-                if (!players.empty()) players.clear();
-            }
+            std::lock_guard<std::mutex> lk(players_mutex);
+            if (!players.empty()) players.clear();
             return;
         }
 
         if (!m_Match) {
-            if (logger::should_log("err_match", 2500)) {
-                logger::log_not_found("Match Instance (Offset +0x%lX from BaseGame 0x%lX)", Offsets::BaseGame_Match, (unsigned long)BaseGame);
-            }
             std::lock_guard<std::mutex> lk(players_mutex);
             players.clear();
             return;
         }
 
         if (!localPlayer) {
-            if (logger::should_log("err_lp", 2500)) {
-                logger::log_not_found("LocalPlayer Entity (Offset +0x%lX from Match 0x%lX)", Offsets::Match_LocalPlayer, (unsigned long)m_Match);
-            }
             std::lock_guard<std::mutex> lk(players_mutex);
             players.clear();
             return;
@@ -253,9 +225,6 @@ namespace data {
         }
 
         if (!IntPtr) {
-            if (logger::should_log("err_cam", 2500)) {
-                logger::log_not_found("Camera Native IntPtr (Follow=0x%lX, Cam=0x%lX from LocalPlayer 0x%lX)", (unsigned long)Follow, (unsigned long)Cam, (unsigned long)localPlayer);
-            }
             std::lock_guard<std::mutex> lk(players_mutex);
             players.clear();
             return;
@@ -285,9 +254,6 @@ namespace data {
             dictAddr = rpm<uint64_t>(m_Match + Offsets::Match_PlayerDict);
         }
         if (!dictAddr) {
-            if (logger::should_log("err_dict_addr", 2500)) {
-                logger::log_not_found("Player Dictionary Address (Offset +0x%lX from BaseGame 0x%lX / Match 0x%lX)", Offsets::Match_PlayerDict, (unsigned long)BaseGame, (unsigned long)m_Match);
-            }
             std::lock_guard<std::mutex> lk(players_mutex);
             players.clear();
             return;
@@ -295,9 +261,6 @@ namespace data {
 
         MonoDictionary dict(dictAddr);
         if (!dict.valid) {
-            if (logger::should_log("err_dict_valid", 2500)) {
-                logger::log_not_found("MonoDictionary Validation Failed on 0x%lX", (unsigned long)dictAddr);
-            }
             std::lock_guard<std::mutex> lk(players_mutex);
             players.clear();
             return;
@@ -399,10 +362,6 @@ namespace data {
         {
             std::lock_guard<std::mutex> lk(players_mutex);
             players.swap(tmp);
-        }
-
-        if (logger::should_log("diag_players_summary", 2500)) {
-            logger::log_info("Players Parsed: %zu active enemies (Total Dict Entries: %d)", players.size(), nv);
         }
     }
 

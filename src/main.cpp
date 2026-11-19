@@ -5,7 +5,6 @@
 #include "protect/license.hpp"
 #include "protect/oxorany.hpp"
 #include "other/memory.hpp"
-#include "other/logger.hpp"
 #include "other/display_manager.hpp"
 #include "driver.h"
 #include "game/data.hpp"
@@ -231,8 +230,6 @@ static int start_overlay() {
     Touch_Init(displayInfo.width, displayInfo.height, displayInfo.orientation, false);
     ui::menu::load_logo_pos();
 
-    logger::init();
-
     printf("[+] Overlay engine started successfully.\n");
     printf("[*] Running interactive render loop...\n");
     fflush(stdout);
@@ -253,16 +250,10 @@ static int start_overlay() {
                 if (curPid > 0) {
                     proc::lib.store(0, std::memory_order_release);
                     proc::pid.store(curPid, std::memory_order_release);
-                    logger::log_found("Game Process PID: %d", curPid);
                     if (driver) {
                         driver->initialize((pid_t)curPid);
                         driver->init_key((char*)oxorany("ninmods_kernel"));
                         driver->hide_process();
-                        logger::log_info("Kernel Driver attached to PID %d (%s)", curPid, driver->get_driver_name());
-                    }
-                } else {
-                    if (logger::should_log("pid_search", 3000)) {
-                        logger::log_not_found("Game Process PID (com.dts.freefiremax not running)");
                     }
                 }
             }
@@ -271,7 +262,6 @@ static int start_overlay() {
                 char pPath[64];
                 snprintf(pPath, sizeof(pPath), "/proc/%d", curPid);
                 if (access(pPath, F_OK) != 0) {
-                    logger::log_not_found("Game Process PID %d exited (Process terminated)", curPid);
                     // Clear lib before pid so worker threads never pair live pid with dead base
                     proc::lib.store(0, std::memory_order_release);
                     proc::pid.store(0, std::memory_order_release);
@@ -286,13 +276,8 @@ static int start_overlay() {
                 uint64_t base = get_lib("libil2cpp.so");
                 if (base > 0) {
                     proc::lib.store(base, std::memory_order_release);
-                    logger::log_found("libil2cpp.so Base Address: 0x%lX", (unsigned long)base);
                     data::thread_start();
                     trajectory::thread_start();
-                } else {
-                    if (logger::should_log("lib_search", 3000)) {
-                        logger::log_not_found("libil2cpp.so Base Address (Library not loaded into memory yet)");
-                    }
                 }
             }
         }
