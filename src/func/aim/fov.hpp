@@ -3,7 +3,7 @@
 
 // ==============================================================================================
 // FILE: src/func/aim/fov.hpp
-// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
+// ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
 // PURPOSE: FOV kill-zone circle renderer and active locked-target indicator marker.
 //
 // CROSS-FILE CALL GRAPH & CONTRACTS:
@@ -24,7 +24,7 @@
 //    - Lock Marker: Solid center dot + pulsing outer ring centered on target screenPos.
 // ==============================================================================================
 
-namespace aimbot {
+namespace trajectory {
 
     // Renders the FOV boundary circle and the active locked-target indicator marker
     inline void render_fov(ImDrawList* dl = nullptr) {
@@ -45,7 +45,7 @@ namespace aimbot {
         // Calculate screen center point
         ImVec2 center(sw * 0.5f, sh * 0.5f);
         float r = cfg::aim::get_fov_radius();
-        if (r < 30.0f) r = 180.0f;
+        if (r <= 0.0f) return;
 
         // 1. Primary FOV circle in unified signature purple (#E10098)
         dl->AddCircle(center, r, IM_COL32(225, 0, 152, 235), 64, 1.8f);
@@ -66,4 +66,4 @@ namespace aimbot {
         }
     }
 
-} // namespace aimbot
+} // namespace trajectory

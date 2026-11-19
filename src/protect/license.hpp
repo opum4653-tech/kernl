@@ -5,7 +5,7 @@
 
 // ==============================================================================================
 // FILE: src/protect/license.hpp
-// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
+// ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
 // PURPOSE: Cryptographic authorization, token validation, and subscription expiry gate interface.
 //
 // CROSS-FILE CALL GRAPH & CONSUMERS:

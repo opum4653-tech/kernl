@@ -3,7 +3,7 @@
 
 // ==============================================================================================
 // FILE: src/func/aim/headshot.hpp
-// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
+// ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
 // PURPOSE: 100% Red Auto Headshot evaluator and zero-footprint entity decoupling interface.
 //
 // ARCHITECTURAL AUTOPSY & SAFETY PROTOCOL:
@@ -17,12 +17,12 @@
 //      100% untouched and unpatched (zero WPM footprint).
 //
 // 2. CROSS-FILE CALL GRAPH:
-//    - Caller: src/func/aim/aim.hpp -> aimbot::update():
+//    - Caller: src/func/aim/aim.hpp -> trajectory::update():
 //      * Calls evaluate_headshot(target, isScoping) to authorize head targeting.
 //      * Calls restore_headshot_override() upon target loss or overlay shutdown.
 // ==============================================================================================
 
-namespace aimbot {
+namespace trajectory {
 
     // Clean restore hook: maintains zero-footprint memory invariant (no entity memory to restore)
     inline void restore_headshot_override() {
@@ -37,4 +37,4 @@ namespace aimbot {
         return true;
     }
 
-} // namespace aimbot
+} // namespace trajectory

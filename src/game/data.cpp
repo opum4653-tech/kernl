@@ -13,7 +13,7 @@
 
 // ==============================================================================================
 // FILE: src/game/data.cpp
-// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
+// ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
 // PURPOSE: Core memory extraction pipeline. Traverses Il2Cpp object graphs, parses enemy entities,
 //          extracts 3D bone nodes, executes WorldToScreen projection, and publishes to rendering.
 //
@@ -36,7 +36,7 @@
 // 3. PUBLISHING & SYNCHRONIZATION:
 //    - Atomically swaps parsed list into data::players under data::players_mutex.
 //    - Consumed every frame by func::esp::draw() in src/func/esp/esp.hpp.
-//    - Consumed by aimbot::acquire_target() in src/func/aim/target.hpp.
+//    - Consumed by trajectory::acquire_target() in src/func/aim/target.hpp.
 // ==============================================================================================
 
 namespace data {
@@ -186,7 +186,7 @@ namespace data {
         auto m_Match = rpm<uint64_t>(BaseGame + Offsets::BaseGame_Match);
         auto localPlayer = m_Match ? rpm<uint64_t>(m_Match + Offsets::Match_LocalPlayer) : 0;
 
-        // Store local player address immediately for aimbot and speed mod fast-path lookup
+        // Store local player address immediately for trajectory and speed mod fast-path lookup
         localPlayerAddr.store(localPlayer ? localPlayer : 0);
 
         bool matchActive = (localPlayer != 0);
@@ -334,6 +334,8 @@ namespace data {
             auto uma = rpm<uint64_t>(avatarMgr + Offsets::Avatar_Uma);
             if (!uma) continue;
 
+            bool isVisible = rpm<bool>(uma + Offsets::Avatar::Uma_Visible);
+
             auto umaData = rpm<uint64_t>(uma + Offsets::Uma_Data);
             if (!umaData) continue;
             if (rpm<bool>(umaData + Offsets::Avatar::UmaData_Teammate)) continue;
@@ -356,10 +358,10 @@ namespace data {
             if (!std::isfinite(headWorld.x) || !std::isfinite(headWorld.y) || !std::isfinite(headWorld.z)) continue;
             if (headWorld.y < -150.0f || headWorld.y > 600.0f) continue;
 
-            // Distance filter against user-configured Max Range slider
+            // Distance filter against user-configured Max Range slider (0.0f = Unlimited Range)
             float dist = calculate_distance(localPos, headWorld);
             float maxTrackingDist = cfg::esp::max_range.load(std::memory_order_relaxed);
-            if (dist < 0.5f || dist > maxTrackingDist) continue;
+            if (dist < 0.5f || (maxTrackingDist > 0.0f && dist > maxTrackingDist)) continue;
 
             // Project Head to screen coordinates
             Vector3 headScreen = WorldToScreenPoint(viewMatrix, headWorld);
@@ -384,6 +386,7 @@ namespace data {
             pd.Toe        = toeScreen;
             pd.headWorld  = headWorld;
             pd.isBot      = isBot;
+            pd.isVisible  = isVisible;
             pd.distance   = dist;
             pd.curHP      = curHP;
             pd.maxHP      = maxHP;

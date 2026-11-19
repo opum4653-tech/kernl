@@ -3,8 +3,8 @@
 
 // ==============================================================================================
 // FILE: src/func/esp/box.hpp
-// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
-// PURPOSE: 2D Bounding Box (Chaturbhuj) renderer with multi-pass glow borders and semi-transparent fills.
+// ARCHITECTURE: Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
+// PURPOSE: 2D Bounding Box renderer with multi-pass glow borders and semi-transparent fills.
 //
 // CROSS-FILE CALL GRAPH & USAGE:
 // ----------------------------------------------------------------------------------------------
@@ -17,7 +17,7 @@
 //    - Bounding dimensions automatically scale based on enemy distance and humanoid aspect ratios.
 //
 // 3. RENDER STYLES:
-//    - Type 1 (Full 2D Box / Chaturbhuj): Multi-pass soft glow border (3 gradient passes)
+//    - Type 1 (Full 2D Bounding Box): Multi-pass soft glow border (3 gradient passes)
 //      plus a 5% alpha interior fill for clear entity silhouette highlighting.
 // ==============================================================================================
 
@@ -48,7 +48,7 @@ namespace func::esp {
                 dl->AddLine(s[0], s[1], col, thick);
             }
         } else if (type == 1) {
-            // Full 2D Box (Chaturbhuj) with internal multi-pass orchid glow border
+            // Full 2D Bounding Box with internal multi-pass orchid glow border
             for (int g = 1; g <= 3; g++) {
                 dl->AddRect(
                     ImVec2(tl.x - g, tl.y - g),

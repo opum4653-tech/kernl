@@ -3,7 +3,7 @@
 
 // ==============================================================================================
 // FILE: src/func/esp/health.hpp
-// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
+// ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
 // PURPOSE: Vertical Armor Point (Vest/Helmet) gauge rendered on the right side of the 2D box.
 //
 // CROSS-FILE CALL GRAPH & CONTRACTS:

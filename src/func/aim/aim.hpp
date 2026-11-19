@@ -7,17 +7,17 @@
 
 // ==============================================================================================
 // FILE: src/func/aim/aim.hpp
-// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
+// ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
 // PURPOSE: Master coordinator for the Combat, Silent Aim, and Trajectory Steering subsystem.
 //
 // CROSS-FILE CALL GRAPH & WORKFLOW:
 // ----------------------------------------------------------------------------------------------
 // 1. LIFECYCLE MANAGEMENT:
 //    - src/main.cpp -> start_overlay():
-//      * Calls aimbot::thread_start() upon game attachment.
-//      * Calls aimbot::thread_stop() upon game exit or overlay termination.
+//      * Calls trajectory::thread_start() upon game attachment.
+//      * Calls trajectory::thread_stop() upon game exit or overlay termination.
 //
-// 2. INTERNAL DISPATCH PIPELINE (aimbot::update()):
+// 2. INTERNAL DISPATCH PIPELINE (trajectory::update()):
 //    Step 1: Check master enable & aim toggles (cfg::master_enabled, cfg::aim::silent, etc.).
 //    Step 2: Check match state (data::inMatch) & local player validity (data::localPlayerAddr).
 //    Step 3: Call acquire_target() (in target.hpp) to scan enemies with target hysteresis.
@@ -31,7 +31,7 @@
 //    - While idle: throttles politely to 10ms (100Hz) to conserve CPU cycles and battery.
 // ==============================================================================================
 
-namespace aimbot {
+namespace trajectory {
 
     // Thread running state atomic flag
     inline std::atomic<bool>& aim_thread_running() {
@@ -39,7 +39,7 @@ namespace aimbot {
         return s_run;
     }
 
-    // Core aimbot evaluation routine executed on each tick of the aim thread
+    // Core trajectory evaluation routine executed on each tick of the trajectory thread
     inline void update() {
         // Master switch guard
         if (!cfg::master_enabled) {
@@ -105,7 +105,7 @@ namespace aimbot {
         }
     }
 
-    // Continuous aimbot worker loop with adaptive 2ms/10ms rate throttling
+    // Continuous trajectory worker loop with adaptive 2ms/10ms rate throttling
     inline void loop() {
         while (aim_thread_running().load(std::memory_order_relaxed)) {
             if (cfg::master_enabled && (cfg::aim::silent || cfg::aim::auto_headshot || cfg::aim::scope_aim)) {
@@ -135,13 +135,13 @@ namespace aimbot {
         }
     }
 
-    // Singleton thread handle for the aimbot coordinator thread
+    // Singleton thread handle for the trajectory coordinator thread
     inline std::thread& get_aim_thread() {
         static std::thread s_aim_thread;
         return s_aim_thread;
     }
 
-    // Starts the aimbot coordinator thread and the trajectory writer thread
+    // Starts the trajectory coordinator thread and the trajectory writer thread
     inline void thread_start() {
         if (aim_thread_running().exchange(true)) return;
         start_silent_writer();
@@ -152,7 +152,7 @@ namespace aimbot {
         t = std::thread(loop);
     }
 
-    // Stops the aimbot coordinator thread, flushes trajectory writer, and clears targets
+    // Stops the trajectory coordinator thread, flushes trajectory writer, and clears targets
     inline void thread_stop() {
         if (!aim_thread_running().exchange(false)) return;
         auto& t = get_aim_thread();
@@ -164,4 +164,4 @@ namespace aimbot {
         publish_target_invalid();
     }
 
-} // namespace aimbot
+} // namespace trajectory

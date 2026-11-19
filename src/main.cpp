@@ -3,6 +3,7 @@
 #include "globals.hpp"
 #include "ui/menu.hpp"
 #include "protect/license.hpp"
+#include "protect/oxorany.hpp"
 #include "other/memory.hpp"
 #include "other/logger.hpp"
 #include "other/display_manager.hpp"
@@ -29,7 +30,7 @@
 
 // ==============================================================================================
 // FILE: src/main.cpp
-// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
+// ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
 // PURPOSE: Engine lifecycle entry point, process masquerade, watchdog coordinator, and render tick.
 //
 // SYSTEM LIFECYCLE & WORKFLOW OVERVIEW:
@@ -49,17 +50,17 @@
 //    - Invokes get_pid() (in memory.hpp) using raw direct assembly syscalls (/proc scan).
 //    - Attaches kernel driver module (c_driver in driver.h) to target game PID.
 //    - Resolves libil2cpp.so module base address via get_lib().
-//    - Launches data::thread_start() (in data.cpp) and aimbot::thread_start() (in aim.hpp).
+//    - Launches data::thread_start() (in data.cpp) and trajectory::thread_start() (in aim.hpp).
 //    - Detects game exit/crash via /proc/<pid> access test; cleans up and halts workers gracefully.
 //
 // 4. MAIN RENDER LOOP (~60 FPS / 16ms sleep):
 //    - Rebuilds touchable UI rectangle hit-boxes (Touch_ClearUiRects / Touch_CommitUiRects).
 //    - Calls ui::menu::render() (in menu.cpp) which renders ESP visuals and ImGui interactive menus.
-//    - Calls speed_system::tick(libBase) (in speed.hpp) for Speed Hack and No Recoil patches.
+//    - Calls speed_system::tick(libBase) (in speed.hpp) for Velocity Modifier and Recoil Compensation patches.
 //
 // 5. CLEAN REVERSE SHUTDOWN:
 //    - Restores patched game memory via speed_system::shutdown().
-//    - Halts and joins background worker threads (data::thread_stop(), aimbot::thread_stop()).
+//    - Halts and joins background worker threads (data::thread_stop(), trajectory::thread_stop()).
 //    - Closes touch device handles and native surface window.
 // ==============================================================================================
 
@@ -106,7 +107,7 @@ static void print_dashboard() {
     const int   dOpt  = driver ? driver->getDriverSelectionCached() : 0;
 
     printf("====================================================\n");
-    printf("   NinMods Kernel Overlay Engine v2.0 (ARM64)\n");
+    printf("   Kernel Service Overlay Engine v2.0 (ARM64)\n");
     printf("====================================================\n");
     printf("Environment    : Android Linux aarch64 (Kernel Driver Safe)\n");
     printf("API Key Status : Valid / Active (%s)\n", lic::status_text());
@@ -122,7 +123,7 @@ static void print_dashboard() {
 static bool check_license_gate(int argc, char** argv) {
     lic::init();
 
-    printf("[*] NinMods Kernel Overlay Engine v2.0\n");
+    printf("[*] Kernel Service Overlay Engine v2.0\n");
     printf("[*] Verifying authorization...\n");
     fflush(stdout);
 
@@ -139,8 +140,11 @@ static bool check_license_gate(int argc, char** argv) {
         }
     }
 
-    // 2. Scan environment session variables
-    const char* env_key = getenv("NIN_LICENSE_KEY");
+    // 2. Scan environment session variables (checks KERNEL_AUTH_KEY first, then NIN_LICENSE_KEY fallback)
+    const char* env_key = getenv("KERNEL_AUTH_KEY");
+    if (!env_key || strlen(env_key) == 0) {
+        env_key = getenv("NIN_LICENSE_KEY");
+    }
     if (env_key && strlen(env_key) > 0) {
         if (lic::set_key(env_key) && lic::is_valid()) {
             printf("[+] Pre-authorized via secure environment session.\n");
@@ -228,15 +232,9 @@ static int start_overlay() {
     ui::menu::load_logo_pos();
 
     logger::init();
-#if NIN_ENABLE_DEBUG_LOGGING
-    logger::log_info("Kernel Overlay Engine started. Diagnostic log file: %s", logger::get_path());
-#endif
 
     printf("[+] Overlay engine started successfully.\n");
     printf("[*] Running interactive render loop...\n");
-#if NIN_ENABLE_DEBUG_LOGGING
-    printf("[*] Diagnostic log file: %s\n", logger::get_path());
-#endif
     fflush(stdout);
 
     // 4. MAIN RENDER LOOP (~60 FPS)
@@ -258,13 +256,13 @@ static int start_overlay() {
                     logger::log_found("Game Process PID: %d", curPid);
                     if (driver) {
                         driver->initialize((pid_t)curPid);
-                        driver->init_key((char*)"ninmods_kernel");
+                        driver->init_key((char*)oxorany("ninmods_kernel"));
                         driver->hide_process();
                         logger::log_info("Kernel Driver attached to PID %d (%s)", curPid, driver->get_driver_name());
                     }
                 } else {
                     if (logger::should_log("pid_search", 3000)) {
-                        logger::log_not_found("Game Process PID (com.dts.freefireth / com.dts.freefiremax not running)");
+                        logger::log_not_found("Game Process PID (com.dts.freefiremax not running)");
                     }
                 }
             }
@@ -278,7 +276,7 @@ static int start_overlay() {
                     proc::lib.store(0, std::memory_order_release);
                     proc::pid.store(0, std::memory_order_release);
                     data::thread_stop();
-                    aimbot::thread_stop();
+                    trajectory::thread_stop();
                     curPid = 0;
                 }
             }
@@ -290,7 +288,7 @@ static int start_overlay() {
                     proc::lib.store(base, std::memory_order_release);
                     logger::log_found("libil2cpp.so Base Address: 0x%lX", (unsigned long)base);
                     data::thread_start();
-                    aimbot::thread_start();
+                    trajectory::thread_start();
                 } else {
                     if (logger::should_log("lib_search", 3000)) {
                         logger::log_not_found("libil2cpp.so Base Address (Library not loaded into memory yet)");
@@ -307,7 +305,7 @@ static int start_overlay() {
             ui::menu::render(); // Renders ESP drawings, floating logo, and ImGui menu
             Touch_CommitUiRects();
 
-            // Execute Speed Hack and No Recoil memory patches
+            // Execute Velocity Modifier and Recoil Compensation memory patches
             uint64_t libBase = proc::lib.load(std::memory_order_acquire);
             if (proc::pid.load(std::memory_order_acquire) > 0 && libBase > 0) {
                 speed_system::tick(libBase);
@@ -320,7 +318,7 @@ static int start_overlay() {
     // 5. Clean symmetrical shutdown sequence
     speed_system::shutdown();
     data::thread_stop();
-    aimbot::thread_stop();
+    trajectory::thread_stop();
     ui::menu::save_logo_pos();
     shutdown();
     Touch_Close();

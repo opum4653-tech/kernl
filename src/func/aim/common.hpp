@@ -20,15 +20,15 @@
 
 // ==============================================================================================
 // FILE: src/func/aim/common.hpp
-// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
-// PURPOSE: Common synchronization primitives, telemetry structures, and math utilities for aimbot.
+// ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
+// PURPOSE: Common synchronization primitives, telemetry structures, and math utilities for trajectory subsystem.
 //
 // CROSS-FILE CALL GRAPH & USAGE MAPPINGS:
 // ----------------------------------------------------------------------------------------------
 // 1. TELEMETRY SYNCHRONIZATION:
-//    - Writer: src/func/aim/aim.hpp -> aimbot::update():
+//    - Writer: src/func/aim/aim.hpp -> trajectory::update():
 //      * Calls publish_target(info) with locked target screen position.
-//    - Reader: src/func/aim/fov.hpp -> aimbot::render_fov():
+//    - Reader: src/func/aim/fov.hpp -> trajectory::render_fov():
 //      * Calls snapshot_target() to draw purple target lock indicator ring.
 //
 // 2. HYSTERESIS & TARGET TRACKING:
@@ -37,7 +37,7 @@
 //      * s_lockTimeoutTicks grants a grace-period lease across rapid burst-firing intervals.
 // ==============================================================================================
 
-namespace aimbot {
+namespace trajectory {
 
     // Clean, cache-aligned telemetry structure for the FOV lock indicator
     struct TargetInfo {
@@ -61,7 +61,7 @@ namespace aimbot {
         g_currentTarget.valid = false;
     }
 
-    // Publishes fresh target telemetry from aimbot evaluation cycle
+    // Publishes fresh target telemetry from trajectory evaluation cycle
     inline void publish_target(const TargetInfo& info) {
         std::lock_guard<std::mutex> lk(s_targetInfoMutex);
         g_currentTarget = info;
@@ -87,4 +87,4 @@ namespace aimbot {
     // Target entity pointer for which smoothed direction was calculated
     inline uint64_t s_smoothTargetAddr = 0;
 
-} // namespace aimbot
+} // namespace trajectory

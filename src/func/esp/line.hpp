@@ -3,7 +3,7 @@
 
 // ==============================================================================================
 // FILE: src/func/esp/line.hpp
-// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
+// ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
 // PURPOSE: ESP Laser Line (Tracer) renderer connecting screen anchor points to enemy targets.
 //
 // CROSS-FILE CALL GRAPH & ANCHOR MODES:
@@ -56,7 +56,8 @@ namespace func::esp {
         }
 
         // Distance-based alpha fade (closer enemies have more intense laser lines)
-        float aa = ImClamp(1.f - p.distance / cfg::esp::max_range, 0.25f, 1.f);
+        float maxR = (cfg::esp::max_range.load() > 0.0f) ? cfg::esp::max_range.load() : 500.0f;
+        float aa = ImClamp(1.f - p.distance / maxR, 0.25f, 1.f);
         float tThick = cfg::esp::tracer_thickness;
 
         // Pass 1: Outer soft ambient glow

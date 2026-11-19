@@ -3,13 +3,13 @@
 
 // ==============================================================================================
 // FILE: src/func/aim/target.hpp
-// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
+// ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
 // PURPOSE: Target acquisition, FOV boundary enforcement, and anti-jitter target hysteresis engine.
 //
 // CROSS-FILE CALL GRAPH & CONTRACTS:
 // ----------------------------------------------------------------------------------------------
 // 1. CALLER:
-//    - src/func/aim/aim.hpp -> aimbot::update():
+//    - src/func/aim/aim.hpp -> trajectory::update():
 //      * Calls acquire_target(localPlayer) on every aim worker cycle.
 //
 // 2. DATA SOURCES & DEPENDENCIES:
@@ -18,14 +18,14 @@
 //    - User settings: cfg::aim::get_fov_radius(), cfg::aim::ignore_knocked, cfg::aim::scope_aim.
 //
 // 3. TARGET HYSTERESIS (STICKINESS ALGORITHM):
-//    - Problem: In high-density combat, two enemies crossing each other causes the aimbot to flick
+//    - Problem: In high-density combat, two enemies crossing each other causes the targeting to flick
 //      rapidly back and forth, resulting in erratic screen shaking and missed shots.
 //    - Solution: Once a target is acquired (s_lockedTargetAddr), the engine maintains a sticky lock
 //      on that specific entity with an expanded 1.35x FOV boundary until they die, leave the FOV,
 //      or the trigger is released past the grace period (s_lockTimeoutTicks).
 // ==============================================================================================
 
-namespace aimbot {
+namespace trajectory {
 
     // Output contract containing target evaluation metadata
     struct TargetAcquisitionResult {
@@ -37,7 +37,7 @@ namespace aimbot {
         bool valid = false;                     // True if a valid locked target was acquired
     };
 
-    // Evaluates the closest, most optimal enemy entity for aimbot engagement
+    // Evaluates the closest, most optimal enemy entity for trajectory engagement
     inline TargetAcquisitionResult acquire_target(uint64_t localPlayer) {
         TargetAcquisitionResult result;
         if (!is_valid_ptr(localPlayer)) return result;
@@ -100,7 +100,7 @@ namespace aimbot {
         if (s_lockedTargetAddr != 0) {
             for (const auto& enemy : enemies) {
                 if (enemy.addr == s_lockedTargetAddr) {
-                    if (enemy.curHP > 0 && enemy.Head.z >= 0.05f &&
+                    if (enemy.curHP > 0 && enemy.Head.z >= 0.05f && enemy.isVisible &&
                         (!cfg::aim::ignore_knocked || enemy.curHP > 1)) {
                         float dxHead = enemy.Head.x - screenCx;
                         float dyHead = enemy.Head.y - screenCy;
@@ -114,7 +114,7 @@ namespace aimbot {
                         float distBody = sqrtf(dxBody * dxBody + dyBody * dyBody);
 
                         float dist = std::min(distHead, distBody);
-                        if (dist <= fovLimit * 1.35f) {
+                        if (fovLimit <= 0.0f || dist <= fovLimit * 1.35f) {
                             result.target = enemy;
                             result.bestScreenPos = enemy.Head;
                             result.valid = true;
@@ -136,8 +136,8 @@ namespace aimbot {
             const PlayerData* bestEnemy = nullptr;
 
             for (const auto& enemy : enemies) {
-                // Reject invalid screen depths or dead enemies
-                if (enemy.Head.z < 0.05f || enemy.curHP <= 0) continue;
+                // Reject invalid screen depths, dead enemies, or occluded/invisible targets (anti-ban)
+                if (enemy.Head.z < 0.05f || enemy.curHP <= 0 || !enemy.isVisible) continue;
 
                 // Filter knocked players (HP <= 1) if toggle is enabled
                 if (cfg::aim::ignore_knocked && enemy.curHP <= 1) continue;
@@ -156,7 +156,7 @@ namespace aimbot {
                 float crosshairDist = std::min(distHead, distBody);
 
                 // Reject targets outside configured FOV circle limit
-                if (crosshairDist > fovLimit) continue;
+                if (fovLimit > 0.0f && crosshairDist > fovLimit) continue;
 
                 if (crosshairDist < bestScore) {
                     bestScore = crosshairDist;
@@ -181,4 +181,4 @@ namespace aimbot {
         return result;
     }
 
-} // namespace aimbot
+} // namespace trajectory

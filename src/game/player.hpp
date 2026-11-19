@@ -4,7 +4,7 @@
 
 // ==============================================================================================
 // FILE: src/game/player.hpp
-// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
+// ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
 // PURPOSE: Primary entity data contract representing parsed enemy players in game memory.
 //
 // CROSS-FILE ARCHITECTURAL GRAPH & DEPENDENCY MAPPINGS:
@@ -22,10 +22,10 @@
 //      * src/func/esp/line.hpp   -> func::esp::drawTracer(): Draws laser tracer lines to Head position.
 //      * src/func/esp/health.hpp -> func::esp::drawSideArmorBar(): Renders armor gauge from curArmor.
 //      * src/func/esp/info.hpp   -> func::esp::drawBotTag(): Renders server AI tag when isBot is true.
-//    - Combat (Aimbot Subsystem):
-//      * src/func/aim/target.hpp -> aimbot::acquire_target(): Evaluates FOV angle and target hysteresis.
-//      * src/func/aim/silent.hpp -> aimbot::apply_trajectory(): Computes bullet vector to headWorld.
-//      * src/func/aim/headshot.hpp -> aimbot::evaluate_headshot(): Manages 100% headshot locking.
+//    - Combat (Kernel Trajectory Subsystem):
+//      * src/func/aim/target.hpp -> trajectory::acquire_target(): Evaluates FOV angle and target hysteresis.
+//      * src/func/aim/silent.hpp -> trajectory::apply_trajectory(): Computes bullet vector to headWorld.
+//      * src/func/aim/headshot.hpp -> trajectory::evaluate_headshot(): Manages 100% headshot locking.
 //
 // MEMORY LAYOUT & CACHE-LINE ALIGNMENT:
 // ----------------------------------------------------------------------------------------------
@@ -55,6 +55,7 @@ struct PlayerData {
 
     // Entity Metadata & Health Telemetry
     bool     isBot;     // Extracted from Player::IsBot (0x4A8)
+    bool     isVisible; // Extracted from Avatar::Uma_Visible (0x101)
     float    distance;  // Euclidean distance between local player head and enemy head
     int      curHP;     // Current health extracted from m_PRIDataPool (0x70) Index 0
     int      maxHP;     // Maximum health extracted from m_PRIDataPool (0x70) Index 1
@@ -64,7 +65,12 @@ struct PlayerData {
     PlayerData()
         : addr(0),
           Head(Vector3::Zero()), Toe(Vector3::Zero()), headWorld(Vector3::Zero()),
-          isBot(false), distance(0.f),
+          isBot(false), isVisible(false), distance(0.f),
           curHP(0), maxHP(200), curArmor(0)
     {}
+
+    Vector3 getTargetWorld(int targetPos = 0, float headBias = 0.0f) const {
+        (void)targetPos;
+        return (headBias != 0.0f) ? Vector3(headWorld.x, headWorld.y + headBias, headWorld.z) : headWorld;
+    }
 };

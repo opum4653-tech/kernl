@@ -4,7 +4,7 @@
 
 // ==============================================================================================
 // FILE: src/globals.hpp
-// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
+// ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
 // PURPOSE: Global atomic screen dimensions, engine lifecycle flags, and typography font handles.
 //
 // CROSS-FILE USAGE & DATA FLOW:

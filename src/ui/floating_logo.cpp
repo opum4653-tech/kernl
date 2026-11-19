@@ -38,11 +38,8 @@ static bool pos_is_sane(float x, float y) {
 void save_pos() {
     if (!pos_is_sane(s_logo_pos.x, s_logo_pos.y)) return;
 
-    // Clamp against the same bounds render() enforces. The old code clamped
-    // against the raw viewport, but s_logo_pos is a top-left, not a centre, so
-    // a legal x can be as large as realW - diameter - margin. Clamping to realW
-    // let a persisted position sit up to one diameter off-screen; the next
-    // launch then snapped it back, which read as the logo jumping on start.
+    // Clamp against the same bounds render() enforces.
+    // 100% Volatile RAM-only persistence: zero disk I/O, zero file footprint.
     float x = s_logo_pos.x;
     float y = s_logo_pos.y;
     if (s_last_view_w > 0.0f && s_last_radius > 0.0f) {
@@ -56,27 +53,16 @@ void save_pos() {
         if (s_last_view_h > 0.0f) y = std::min(y, s_last_view_h);
     }
 
-    FILE* fp = fopen("/dev/.nin_logo_pos.txt", "w");
-    if (!fp) return;
-    fprintf(fp, "%.1f %.1f\n", x, y);
-    fclose(fp);
+    s_logo_pos = ImVec2(x, y);
 }
 
 void load_pos() {
-    FILE* fp = fopen("/dev/.nin_logo_pos.txt", "r");
-    if (fp) {
-        float x = 0.0f, y = 0.0f;
-        if (fscanf(fp, "%f %f", &x, &y) == 2) {
-            if (std::isfinite(x) && std::isfinite(y) && x >= 0.0f && y >= 0.0f) {
-                s_logo_pos = ImVec2(x, y);
-            }
-        }
-        fclose(fp);
-    }
+    // Volatile RAM initialization: strictly zero disk I/O.
+    // Logo position is maintained in memory during live process lifecycle.
 }
 
 // ----------------------------------------------------------------------------
-// CIRCULAR FLOATING LOGO DRAWING ('N')
+// CIRCULAR FLOATING LOGO DRAWING ('K' for Kernel Service)
 // ----------------------------------------------------------------------------
 static void DrawCircularLogo(ImDrawList* dl, ImVec2 center, float radius) {
     ImU32 colPrimary = theme_orchid::ColPrimary;
@@ -92,13 +78,9 @@ static void DrawCircularLogo(ImDrawList* dl, ImVec2 center, float radius) {
     // 2. Clean Solid Outline Border in Active Theme Accent
     dl->AddCircle(center, radius, colPrimary, 64, 2.5f);
 
-    // 3. Center "N" Letter with subtle drop shadow
-    // Font.Size must be the atlas size. Only SizePixels is scaled by
-    // CalcFontScale, so passing fontSize here and fontSize to AddText keeps
-    // the quad at the size the glyphs were actually rasterised at. Sampling
-    // the 32px menu face up to ~63px looked visibly soft.
+    // 3. Center "K" Letter with subtle drop shadow
     ImFont* font = g_LogoFont ? g_LogoFont : ImGui::GetFont();
-    const char* txt = "N";
+    const char* txt = "K";
     float fontSize = radius * 1.15f;
     ImVec2 tsz = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, txt);
     ImVec2 txtPos = ImVec2(center.x - tsz.x * 0.5f, center.y - tsz.y * 0.5f);
@@ -149,7 +131,7 @@ void render(float realW, float realH, float ui_scale) {
                                  ImGuiWindowFlags_NoBackground |
                                  ImGuiWindowFlags_NoFocusOnAppearing;
 
-    if (ImGui::Begin("##NinmodsKernelPill", nullptr, logoFlags)) {
+    if (ImGui::Begin("##KernelServiceIndicator", nullptr, logoFlags)) {
         ImDrawList* dl = ImGui::GetWindowDrawList();
         ImVec2 winP = ImGui::GetWindowPos();
         ImVec2 center(winP.x + logoRadius, winP.y + logoRadius);

@@ -7,7 +7,7 @@
 
 // ==============================================================================================
 // FILE: src/game/data.hpp
-// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
+// ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
 // PURPOSE: Public interface and state declarations for the game memory scraping pipeline.
 //
 // CROSS-FILE CALL GRAPH & CONSUMERS:
@@ -24,9 +24,9 @@
 //    - src/func/esp/esp.hpp:
 //      * Acquires data::players_mutex to copy data::players snapshot for rendering.
 //    - src/func/aim/target.hpp:
-//      * Acquires data::players_mutex to scan enemies for optimal aimbot target locking.
+//      * Acquires data::players_mutex to scan enemies for optimal trajectory target locking.
 //    - src/func/speed.hpp:
-//      * Reads data::localPlayerAddr to directly apply speed hack & no-recoil without extra RPM.
+//      * Reads data::localPlayerAddr to directly apply velocity modifier & recoil compensation without extra RPM.
 //    - src/func/aim/aim.hpp:
 //      * Reads data::inMatch and data::localPlayerAddr to govern trajectory calculations.
 // ==============================================================================================

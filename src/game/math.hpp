@@ -9,7 +9,7 @@
 
 // ==============================================================================================
 // FILE: src/game/math.hpp
-// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
+// ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
 // PURPOSE: Low-level mathematical engine for Unity 3D Transform traversal and W2S projection.
 //
 // CROSS-FILE CALL GRAPH & USAGE SITES:

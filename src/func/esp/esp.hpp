@@ -7,7 +7,7 @@
 
 // ==============================================================================================
 // FILE: src/func/esp/esp.hpp
-// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
+// ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
 // PURPOSE: Master coordinator for the Visuals (ESP) rendering pipeline.
 //
 // CROSS-FILE CALL GRAPH & WORKFLOW:
@@ -28,10 +28,10 @@
 //    Step 4: Filter out-of-range (> max_range) or behind-camera (z < 0.5f) entities.
 //    Step 5: Compute 2D bounding box dimensions via computePlayerBox() (in box.hpp).
 //    Step 6: Render active visual layers:
-//      * Layer 1: ESP Laser Line (drawTracer() in line.hpp).
-//      * Layer 2: ESP 2D Box / Chaturbhuj (drawBox() in box.hpp).
-//      * Layer 3: ESP Bot Tag AI badge (drawBotTag() in info.hpp).
-//      * Layer 4: ESP Armor Bar (drawSideArmorBar() in health.hpp).
+//      * Layer 1: Kernel Target Line (drawTracer() in line.hpp).
+//      * Layer 2: Kernel Bounding Box (drawBox() in box.hpp).
+//      * Layer 3: Kernel Entity Tag (drawBotTag() in info.hpp).
+//      * Layer 4: Kernel Armor Indicator (drawSideArmorBar() in health.hpp).
 // ==============================================================================================
 
 namespace func::esp {
@@ -56,8 +56,8 @@ namespace func::esp {
             if (p.Head.z < 0.5f) continue;
             if (p.curHP <= 0) continue;
 
-            // Reject entities beyond the configured max render distance slider
-            if (p.distance > cfg::esp::max_range) continue;
+            // Reject entities beyond the configured max render distance slider (0.0f = Unlimited)
+            if (cfg::esp::max_range > 0.0f && p.distance > cfg::esp::max_range) continue;
 
             // Calculate 2D bounding box rectangle
             PlayerBox pb = computePlayerBox(p);
@@ -74,14 +74,14 @@ namespace func::esp {
 
             // Distance-based alpha fade for soft aesthetic blending at range boundaries
             ImU32 colBase = toU32(cfg::esp::box_col);
-            colBase = fadeDist(colBase, p.distance, cfg::esp::max_range);
+            colBase = fadeDist(colBase, p.distance, (cfg::esp::max_range > 0.0f ? cfg::esp::max_range.load() : 500.0f));
 
             // 1. ESP Laser Line (Tracer line originating from top of screen to head)
             if (cfg::esp::tracer) {
                 drawTracer(dl, p, pb, colBase);
             }
 
-            // 2. ESP Box (Full 2D Bounding Box — Chaturbhuj)
+            // 2. Kernel Bounding Box (Full 2D Bounding Box)
             if (cfg::esp::box) {
                 drawBox(dl, tl, br, colBase, 1); // Type 1 = Full 2D Box
             }

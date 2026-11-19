@@ -4,7 +4,7 @@
 
 // ==============================================================================================
 // FILE: src/other/addr.hpp
-// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
+// ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
 // PURPOSE: Multi-level pointer chain resolution utility with atomic base address verification.
 //
 // CROSS-FILE CALL GRAPH:

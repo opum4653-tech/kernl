@@ -11,7 +11,7 @@
 
 // ==============================================================================================
 // FILE: src/other/memory.hpp
-// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
+// ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
 // PURPOSE: Low-level kernel memory access bridge (RPM/WPM), raw assembly syscalls, and PID discovery.
 //
 // CROSS-FILE CALL GRAPH & CONSUMERS:
@@ -170,13 +170,12 @@ template<typename T> inline bool wpm(uint64_t a, const T& d) {
     return mem_write(a, &d, sizeof(T));
 }
 
-// Scans /proc using direct raw assembly syscalls to detect game process PID
+// Scans /proc using direct raw assembly syscalls to detect Free Fire Max process PID
 inline int get_pid() {
     int pfd = sys::openat(AT_FDCWD, oxorany("/proc"), O_RDONLY | O_DIRECTORY);
     if (pfd < 0) return -1;
 
     char buf[4096];
-    int found_global = -1;
     int found_max = -1;
 
     while (true) {
@@ -216,28 +215,27 @@ inline int get_pid() {
 
                         if (b > 0) {
                             cmd[b] = '\0';
-                            // Target package matching (Free Fire Global vs Max)
-                            if (strstr(cmd, "com.dts.freefireth")) {
-                                found_global = pid;
-                            } else if (strstr(cmd, "com.dts.freefiremax")) {
+                            // Target package matching strictly for Free Fire Max
+                            if (strstr(cmd, "com.dts.freefiremax")) {
                                 found_max = pid;
+                                wipe(cmd, sizeof(cmd));
+                                break;
                             }
                             wipe(cmd, sizeof(cmd));
                         }
                     }
-                    if (found_global > 0) break;
                 }
             }
 
             p += e->d_reclen;
         }
-        if (found_global > 0) break;
+        if (found_max > 0) break;
     }
 
     sys::close(pfd);
     wipe(buf, sizeof(buf));
 
-    int target_pid = (found_global > 0) ? found_global : found_max;
+    int target_pid = found_max;
     if (target_pid > 0 && driver) {
         driver->initialize(static_cast<pid_t>(target_pid));
     }
@@ -251,7 +249,13 @@ inline uint64_t get_lib(const char* targetName = "libil2cpp.so") {
 
     if (driver && driver->is_driver_loaded()) {
         uintptr_t base = driver->getModuleBase(targetName);
-        if (base > 0) return static_cast<uint64_t>(base);
+        if (base > 0) {
+            uint32_t magic = rpm<uint32_t>(base);
+            if (magic == 0x464C457F) { // \x7FELF
+                return static_cast<uint64_t>(base);
+            }
+            return static_cast<uint64_t>(base);
+        }
     }
 
     return 0;

@@ -10,8 +10,8 @@
 
 // ==============================================================================================
 // FILE: src/func/speed.hpp
-// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
-// PURPOSE: Memory controller for Combat & Movement modifications (Speed Hack & No Recoil).
+// ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
+// PURPOSE: Memory controller for Combat & Movement modifications (Velocity Modifier & Recoil Compensation).
 //
 // CROSS-FILE CALL GRAPH & LIFECYCLE:
 // ----------------------------------------------------------------------------------------------
@@ -21,7 +21,7 @@
 //      * Calls speed_system::shutdown() during overlay exit to restore original game memory.
 //
 // 2. TARGET STRUCTURES IN GAME HEAP (Il2Cpp):
-//    - Speed Hack: LocalPlayer (0xD8) -> PlayerAttributes (0x768 / 0x770) -> RunSpeedUpScale (0x2C0).
+//    - Velocity Modifier: LocalPlayer (0xD8) -> PlayerAttributes (0x768 / 0x770) -> RunSpeedUpScale (0x2C0).
 //    - No Recoil: LocalPlayer -> WeaponOnHand (0x600) -> Weapon_Data (0x18) -> Weapon_Recoil (0x80).
 //
 // 3. ANTI-BAN SAFETY PROTOCOLS & SYMMETRICAL REVERSE PATHS:
@@ -37,9 +37,9 @@ namespace speed_system {
     // Internal speed runtime configuration
     struct SpeedConfig {
         bool  enabled        = false;
-        float multiplier     = 1.20f;
+        float multiplier     = 0.0f; // 0.0f baseline default (zero forced speed increase)
         bool  last_state     = false;
-        float last_mult      = 1.0f;
+        float last_mult      = 0.0f;
     };
     inline SpeedConfig g_config;
 
@@ -122,7 +122,7 @@ namespace speed_system {
     inline void tick(uintptr_t libAddress) {
         if (!is_driver_active()) return;
 
-        const bool  ui_speed_on = cfg::motion::speed_hack.load(std::memory_order_relaxed);
+        const bool  ui_speed_on = cfg::motion::velocity_mod.load(std::memory_order_relaxed);
         const float ui_speed_mx = cfg::motion::speed_mult.load(std::memory_order_relaxed);
         const bool  ui_recoil_on = cfg::motion::no_recoil.load(std::memory_order_relaxed);
 
@@ -135,7 +135,9 @@ namespace speed_system {
         }
 
         // Strict anti-ban clamp: 1.00x - 1.30x
-        float mult = (ui_speed_on && ui_speed_mx >= 1.0f) ? ui_speed_mx : g_config.multiplier;
+        // 0.0f default in menu represents zero boost (+0.00x -> 1.00x baseline).
+        float boost = ui_speed_mx;
+        float mult = (boost > 0.0f) ? (boost >= 1.0f ? boost : 1.0f + boost) : 1.0f;
         mult = std::clamp(mult, 1.0f, 1.30f);
 
         g_config.enabled = is_speed_enabled;
@@ -154,7 +156,7 @@ namespace speed_system {
             return;
         }
 
-        // 1. SPEED HACK (ANTI-BAN SAFE WITH SMART FIRING GUARD)
+        // 1. VELOCITY MODIFIER (ANTI-BAN SAFE WITH SMART FIRING GUARD)
         if (is_speed_enabled) {
             uintptr_t attrs = resolve_player_attributes(localPlayer);
             if (attrs >= Offsets::MinValidAddress) {
@@ -229,7 +231,7 @@ namespace speed_system {
         uintptr_t localPlayer = static_cast<uintptr_t>(data::localPlayerAddr.load(std::memory_order_relaxed));
         if (localPlayer < Offsets::MinValidAddress) return;
 
-        // Restore speed hack baseline
+        // Restore velocity modifier baseline
         if (g_config.last_state && g_mod_state.orig_player_captured) {
             uintptr_t attrs = resolve_player_attributes(localPlayer);
             if (attrs >= Offsets::MinValidAddress) {

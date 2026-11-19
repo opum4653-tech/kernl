@@ -16,7 +16,7 @@
 
 // ==============================================================================================
 // FILE: src/func/esp/common.hpp
-// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
+// ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
 // PURPOSE: Common mathematical geometry, color conversions, and 2D bounding box derivations for ESP.
 //
 // CROSS-FILE CALL GRAPH & USAGE:
@@ -62,6 +62,7 @@ namespace func::esp {
 
     // Applies linear distance attenuation to fade visuals softly as enemies approach max range
     inline ImU32 fadeDist(ImU32 base, float dist, float maxRange) {
+        if (maxRange <= 0.0f) return base;
         float t = ImClamp(1.f - dist / maxRange, 0.35f, 1.f);
         return withAlpha(base, t);
     }

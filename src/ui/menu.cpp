@@ -21,7 +21,7 @@
 
 // ==============================================================================================
 // FILE: src/ui/menu.cpp
-// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
+// ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
 // PURPOSE: Interactive ImGui Graphical User Interface, Floating Logo, and Touch Scroll Controller.
 //
 // SYSTEM ARCHITECTURE & TAB STRUCTURE:
@@ -35,15 +35,15 @@
 //    - Works even when finger touches directly over sliders, buttons, or checkboxes.
 //
 // 3. THREE-TAB CONFIGURATION INTERFACE:
-//    - Tab 0 (Visuals / ESP):
-//      * Master Switch, ESP Box (Chaturbhuj), ESP Armor Bar, ESP Laser Line, ESP Bot Tag (AI),
-//        Max Render Distance Slider (50m - 500m), Fixed Purple Accent (#E10098).
-//    - Tab 1 (Combat / Aimbot):
-//      * Master Switch, Aim Silent (Unnormalized Vector), Scope Aim (Instant Head),
-//        Auto Headshot (100% Red), Ignore Knocked, Draw FOV Circle, Headshot Elevation Bias.
-//    - Tab 2 (Mods & System):
-//      * Master Switch, Speed Hack (1.00x - 1.30x safe clamp), No Recoil (0.0f recoil),
-//        Diagnostic Telemetry (PID, LibBase, Driver Mode), and EXIT OVERLAY Button.
+//    - Tab 0 (Kernel Visuals):
+//      * Master Switch, Kernel Bounding Box, Kernel Armor Indicator, Kernel Target Line, Kernel Entity Tag,
+//        Max Render Distance Slider (0m - 500m), Fixed Purple Accent (#E10098).
+//    - Tab 1 (Kernel Trajectory):
+//      * Master Switch, Kernel Silent Trajectory (Unnormalized Vector), Kernel Scope Trigger (Instant Head),
+//        Kernel Precision Vector (100% Red), Ignore Downed Entities, Kernel FOV Boundary, Elevation Bias.
+//    - Tab 2 (Kernel Motion & System):
+//      * Master Switch, Kernel Velocity Modifier (Anti-Ban Safe), Kernel Recoil Compensation,
+//        Driver Telemetry (PID, LibBase, Driver Mode), and DETACH KERNEL EXTENSION Button.
 //
 // 4. CROSS-FILE RENDER PIPELINE:
 //    - Calls func::esp::draw() (in src/func/esp/esp.hpp) to draw world ESP on background draw list.
@@ -315,7 +315,7 @@ void render() {
     // background -> all windows -> foreground, so this is what keeps the menu
     // window and the floating logo above ESP and the FOV circle.
     func::esp::draw();
-    aimbot::render_fov(ImGui::GetBackgroundDrawList());
+    trajectory::render_fov(ImGui::GetBackgroundDrawList());
 
     if (g_should_exit.load()) {
         main_thread_flag = false;
@@ -415,7 +415,7 @@ void render() {
     // window as clipped — otherwise taps in that region bled into the game.
     Touch_AddUiRect(s_menu_pos.x, s_menu_pos.y, winW, winH);
 
-    if (ImGui::Begin("##NinmodsKernelMainWindow", nullptr, winFlags)) {
+    if (ImGui::Begin("##KernelCoreMainWindow", nullptr, winFlags)) {
         ImDrawList* dl = ImGui::GetWindowDrawList();
         ImVec2 winPos = ImGui::GetWindowPos();
         ImVec2 winSize = ImGui::GetWindowSize();
@@ -468,13 +468,13 @@ void render() {
             s_menu_pos.y = std::clamp(s_menu_pos.y, 0.0f, std::max(0.0f, realH - winH));
         }
 
-        // Header Branding ("NINMODS" + "KERNEL CORE")
+        // Header Branding ("KERNEL" + "CORE EXTENSION")
         ImFont* brandFont = g_BoldFont ? g_BoldFont : ImGui::GetFont();
         float brandFontSize = 20.0f * ui_scale;
         ImVec2 brandPos(winPos.x + 18.0f * ui_scale, winPos.y + (headerH - brandFontSize) * 0.5f);
-        dl->AddText(brandFont, brandFontSize, brandPos, theme_orchid::ColWhite, "NINMODS");
+        dl->AddText(brandFont, brandFontSize, brandPos, theme_orchid::ColWhite, "KERNEL");
 
-        float brandTextW = brandFont->CalcTextSizeA(brandFontSize, FLT_MAX, 0.0f, "NINMODS").x;
+        float brandTextW = brandFont->CalcTextSizeA(brandFontSize, FLT_MAX, 0.0f, "KERNEL").x;
         // Sub-label and badge draw at 12-14px; the 14px ESP face suits them.
         // Knock the 32px menu face down to 12 and the stems go muddy.
         ImFont* smallFont = g_EspFont ? g_EspFont : ImGui::GetFont();
@@ -482,11 +482,11 @@ void render() {
         // sub-label used to run underneath the badge and the two texts stacked.
         const float subFontSize = 14.0f * ui_scale;
         const float subX = brandPos.x + brandTextW + 8.0f * ui_scale;
-        const float subW = smallFont->CalcTextSizeA(subFontSize, FLT_MAX, 0.0f, "KERNEL CORE").x;
+        const float subW = smallFont->CalcTextSizeA(subFontSize, FLT_MAX, 0.0f, "CORE EXTENSION").x;
         if (subX + subW <= bMin.x - 10.0f * ui_scale) {
             dl->AddText(smallFont, subFontSize,
                         ImVec2(subX, brandPos.y + 3.0f * ui_scale),
-                        theme_orchid::ColPrimaryLight, "KERNEL CORE");
+                        theme_orchid::ColPrimaryLight, "CORE EXTENSION");
         }
 
         // Live Connection Status Badge
@@ -592,20 +592,20 @@ void render() {
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6.0f * ui_scale, 4.0f * ui_scale));
         ImGui::PushStyleVar(ImGuiStyleVar_GrabMinSize, 14.0f * ui_scale);
 
-        // TAB 0: ESP VISUALS
+        // TAB 0: KERNEL VISUALS
         if (activeTab == 0) {
             // Left Column: Features
             ImGui::SetCursorPos(ImVec2(contentX, contentY));
             if (ImGui::BeginChild("##ColLeftESP", ImVec2(colW, contentH), true)) {
-                SectionHeader("ESP VISUALS", ui_scale);
+                SectionHeader("KERNEL VISUALS", ui_scale);
 
                 DrawToggleSwitch("Master Switch", &cfg::master_enabled, 44.0f * ui_scale, ui_scale);
                 ImGui::Dummy(ImVec2(0, 6 * ui_scale));
 
-                cfg::Checkbox("ESP Box (Chaturbhuj)", cfg::esp::box);
-                cfg::Checkbox("ESP Armor Bar", cfg::esp::armor);
-                cfg::Checkbox("ESP Laser Line", cfg::esp::tracer);
-                cfg::Checkbox("ESP Bot Tag (AI)", cfg::esp::bot_tag);
+                cfg::Checkbox("Kernel Bounding Box", cfg::esp::box);
+                cfg::Checkbox("Kernel Armor Indicator", cfg::esp::armor);
+                cfg::Checkbox("Kernel Target Line", cfg::esp::tracer);
+                cfg::Checkbox("Kernel Entity Tag", cfg::esp::bot_tag);
 
                 handleTouchScroll();
             }
@@ -617,43 +617,43 @@ void render() {
                 SectionHeader("SETTINGS & STYLING", ui_scale);
 
                 ImGui::SetNextItemWidth(-1);
-                cfg::SliderFloat("##MaxRange", cfg::esp::max_range, 50.0f, 500.0f, "%.0f m");
-                ImGui::TextDisabled("Max Render Distance");
+                cfg::SliderFloat("##MaxRange", cfg::esp::max_range, 0.0f, 500.0f, "%.0f m");
+                ImGui::TextDisabled("Max Render Distance (0m = Unlimited)");
 
                 handleTouchScroll();
             }
             ImGui::EndChild();
         }
-        // TAB 1: AIMBOT & COMBAT
+        // TAB 1: KERNEL TRAJECTORY ENGINE
         else if (activeTab == 1) {
-            // Left Column: Aimbot Engine
+            // Left Column: Trajectory Engine
             ImGui::SetCursorPos(ImVec2(contentX, contentY));
             if (ImGui::BeginChild("##ColLeftAim", ImVec2(colW, contentH), true)) {
-                SectionHeader("AIMBOT ENGINE", ui_scale);
+                SectionHeader("KERNEL TRAJECTORY ENGINE", ui_scale);
 
                 DrawToggleSwitch("Master Switch", &cfg::master_enabled, 44.0f * ui_scale, ui_scale);
                 ImGui::Dummy(ImVec2(0, 6 * ui_scale));
 
-                cfg::Checkbox("Aim Silent", cfg::aim::silent);
-                cfg::Checkbox("Scope Aim (Instant Head)", cfg::aim::scope_aim);
-                cfg::Checkbox("Auto Headshot (100% Red)", cfg::aim::auto_headshot);
-                cfg::Checkbox("Ignore Knocked", cfg::aim::ignore_knocked);
+                cfg::Checkbox("Kernel Silent Trajectory", cfg::aim::silent);
+                cfg::Checkbox("Kernel Scope Trigger", cfg::aim::scope_aim);
+                cfg::Checkbox("Kernel Precision Vector", cfg::aim::auto_headshot);
+                cfg::Checkbox("Ignore Downed Entities", cfg::aim::ignore_knocked);
 
                 handleTouchScroll();
             }
             ImGui::EndChild();
 
-            // Right Column: Trajectory & FOV
+            // Right Column: Trajectory & FOV Boundary
             ImGui::SetCursorPos(ImVec2(contentX + colW + colGap, contentY));
             if (ImGui::BeginChild("##ColRightAim", ImVec2(colW, contentH), true)) {
-                SectionHeader("TRAJECTORY & FOV", ui_scale);
+                SectionHeader("TRAJECTORY & FOV BOUNDARY", ui_scale);
 
-                cfg::Checkbox("Draw FOV Circle", cfg::aim::show_fov);
+                cfg::Checkbox("Kernel FOV Boundary", cfg::aim::show_fov);
                 if (cfg::aim::show_fov.load(std::memory_order_relaxed)) {
                     ImGui::Dummy(ImVec2(0, 4 * ui_scale));
                     ImGui::SetNextItemWidth(-1);
-                    cfg::SliderFloat("##FovRangeSlider", cfg::aim::aim_fov, 10.0f, 180.0f, "FOV Range: %.0f deg");
-                    ImGui::TextDisabled("%s", "Adjust kill zone circle radius");
+                    cfg::SliderFloat("##FovRangeSlider", cfg::aim::aim_fov, 0.0f, 180.0f, "FOV Range: %.0f deg");
+                    ImGui::TextDisabled("%s", "Adjust kill zone circle radius (0 deg = Screen Target)");
                 }
 
                 ImGui::Dummy(ImVec2(0, 6 * ui_scale));
@@ -665,25 +665,25 @@ void render() {
             }
             ImGui::EndChild();
         }
-        // TAB 2: MODS & SYSTEM
+        // TAB 2: KERNEL MOTION & SYSTEM
         else if (activeTab == 2) {
-            // Left Column: Movement & Combat Mods
+            // Left Column: Movement & Velocity Controller
             ImGui::SetCursorPos(ImVec2(contentX, contentY));
             if (ImGui::BeginChild("##ColLeftMisc", ImVec2(colW, contentH), true)) {
-                SectionHeader("COMBAT & SPEED MODS", ui_scale);
+                SectionHeader("KERNEL MOTION CONTROLLER", ui_scale);
 
                 DrawToggleSwitch("Master Switch", &cfg::master_enabled, 44.0f * ui_scale, ui_scale);
                 ImGui::Dummy(ImVec2(0, 6 * ui_scale));
 
-                cfg::Checkbox("Speed Hack (Anti-Ban Safe)", cfg::motion::speed_hack);
-                if (cfg::motion::speed_hack) {
+                cfg::Checkbox("Kernel Velocity Modifier", cfg::motion::velocity_mod);
+                if (cfg::motion::velocity_mod) {
                     ImGui::SetNextItemWidth(-1);
-                    cfg::SliderFloat("##SpeedMult", cfg::motion::speed_mult, 1.0f, 1.30f, "%.2fx");
-                    ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.4f, 1.0f), "SAFE: 1.00x - 1.30x (Server Protected)");
+                    cfg::SliderFloat("##SpeedMult", cfg::motion::speed_mult, 0.0f, 0.30f, "+%.2fx Speed Boost");
+                    ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.4f, 1.0f), "SAFE: +0.00x - +0.30x (Server Protected)");
                 }
 
                 ImGui::Dummy(ImVec2(0, 4 * ui_scale));
-                cfg::Checkbox("No Recoil", cfg::motion::no_recoil);
+                cfg::Checkbox("Kernel Recoil Compensation", cfg::motion::no_recoil);
 
                 handleTouchScroll();
             }
@@ -692,7 +692,7 @@ void render() {
             // Right Column: System Diagnostics & Exit
             ImGui::SetCursorPos(ImVec2(contentX + colW + colGap, contentY));
             if (ImGui::BeginChild("##ColRightMisc", ImVec2(colW, contentH), true)) {
-                SectionHeader("SYSTEM & EXIT", ui_scale);
+                SectionHeader("KERNEL DRIVER TELEMETRY", ui_scale);
 
                 const char* dName = driver ? driver->get_driver_name() : "ARMED";
 
@@ -720,7 +720,7 @@ void render() {
                 ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(200, 40, 60, 200));
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(240, 60, 80, 240));
                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(180, 20, 40, 255));
-                if (ImGui::Button("EXIT OVERLAY", ImVec2(-1, 38.0f * ui_scale))) {
+                if (ImGui::Button("DETACH KERNEL EXTENSION", ImVec2(-1, 38.0f * ui_scale))) {
                     g_should_exit = true;
                 }
                 ImGui::PopStyleColor(3);

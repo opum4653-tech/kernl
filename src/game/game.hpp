@@ -4,7 +4,7 @@
 
 // ==============================================================================================
 // FILE: src/game/game.hpp
-// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
+// ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
 // PURPOSE: Unity 3D engine matrix representations (Camera ViewMatrix & Bone TransformMatrix).
 //
 // CROSS-FILE CALL GRAPH & CONSUMERS:

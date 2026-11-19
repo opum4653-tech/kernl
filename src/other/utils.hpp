@@ -5,7 +5,7 @@
 
 // ==============================================================================================
 // FILE: src/other/utils.hpp
-// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
+// ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
 // PURPOSE: High-speed batch traversal parser for Il2Cpp System.Collections.Generic.Dictionary.
 //
 // CROSS-FILE CALL GRAPH & CONSUMERS:

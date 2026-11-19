@@ -3,7 +3,7 @@
 
 // ==============================================================================================
 // FILE: src/func/esp/info.hpp
-// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
+// ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
 // PURPOSE: Server Bot AI Tag ([BOT]) indicator rendered above enemy head boxes.
 //
 // CROSS-FILE CALL GRAPH & CONTRACTS:

@@ -4,7 +4,7 @@
 
 // ==============================================================================================
 // FILE: src/offsets/offsets.hpp
-// ARCHITECTURE: NinMods Kernel Game Engine (ARM64 / Out-of-Process Native Surface)
+// ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
 // TARGET BUILD: Free Fire OB55 / Version 1.132.1 (ARM64 Il2Cpp)
 // PURPOSE: Central verified offset registry. Encapsulates all object graph traversal displacements,
 //          Unity transform internal layouts, and Il2Cpp structure field offsets.
@@ -15,7 +15,7 @@
 //    - Uses Base::GameFacade, BaseGame_Match, Match_PlayerDict, Match_LocalPlayer.
 //    - Uses Player::HP, Player::Avatar, Player::Bone_Head, Player::Bone_LeftToe.
 //    - Uses Avatar::Uma, Avatar::Uma_Data, Avatar::UmaData_Teammate.
-// 2. COMBAT & AIMBOT (src/func/aim/):
+// 2. COMBAT & KERNEL TRAJECTORY (src/func/aim/):
 //    - Uses Aim::Direction (0x40), Aim::StartPosition (0x4C) in silent.hpp.
 //    - Uses Player::AimInfo (0xE58), Player::IsFiring (0x850), Player::Camera (0x690) in target.hpp.
 // 3. MOTION & COMBAT MODS (src/func/speed.hpp):
@@ -28,10 +28,10 @@
 namespace Offsets {
 
 // ----------------------------------------------------------------------------------------------
-// 1. BASE CHAIN RESOLUTION: libil2cpp.so -> GameFacade -> BaseGame -> Match
+// 1. BASE CHAIN RESOLUTION: libil2cpp.so -> GameFacade -> BaseGame -> Match (Free Fire Max ARM64)
 // ----------------------------------------------------------------------------------------------
     namespace Base {
-        constexpr uintptr_t GameFacade           = 0xA72E4E0; // Global Il2Cpp GameFacade class cell
+        constexpr uintptr_t GameFacade           = 0xAD68E18; // Free Fire Max Il2Cpp GameFacade cell
         constexpr uintptr_t GameFacade_P2        = 0xB8;      // Static fields pointer displacement (0xB8)
         constexpr uintptr_t BaseGame_Match       = 0x90;      // Current Match instance pointer displacement
         constexpr uintptr_t BaseGame_Timer       = 0x20;      // Game timer instance
@@ -73,22 +73,22 @@ namespace Offsets {
 // ----------------------------------------------------------------------------------------------
     namespace Player {
         constexpr uintptr_t Rotation             = 0x614;     // Entity rotation Vector3
-        constexpr uintptr_t HeadTF               = 0x6A0;     // Primary Head ITransformNode (OB55 / 1.132.1 verified)
-        constexpr uintptr_t HeadTF_Alt           = 0;         // Guarded against false hip-latching
-        constexpr uintptr_t HipTF                = 0x6A8;     // Hip / Waist ITransformNode
+        constexpr uintptr_t HeadTF               = 0x6A8;     // Free Fire Max Head ITransformNode
+        constexpr uintptr_t HeadTF_Alt           = 0x6A0;     // Fallback
+        constexpr uintptr_t HipTF                = 0x6B0;     // Free Fire Max Hip / Waist ITransformNode
         constexpr uintptr_t SpineTF              = 0x6B8;     // Spine ITransformNode
         constexpr uintptr_t RootTF               = 0x6C8;     // Root / Pelvis ITransformNode
-        constexpr uintptr_t FootTF               = 0x6E8;     // Foot / Left Toe ITransformNode
-        constexpr uintptr_t FootTF_Alt           = 0x6F0;     // Auxiliary Foot / Right Toe TF
+        constexpr uintptr_t FootTF               = 0x6F0;     // Free Fire Max Left Toe ITransformNode
+        constexpr uintptr_t FootTF_Alt           = 0x6F8;     // Right Toe TF
         constexpr uintptr_t HeadCollider         = 0x740;     // Head Collider pointer
         constexpr uintptr_t HeadCollider_Alt     = 0x738;     // Auxiliary Head Collider pointer
-        constexpr uintptr_t LockedAimingCollider = 0x80;      // Primary collider on AttackableEntity
-        constexpr uintptr_t LockedAimingCollider_Alt = 0x78;  // Auxiliary collider on AttackableEntity
+        constexpr uintptr_t LockedAimingCollider = 0x80;      // Primary collider (READ-ONLY)
+        constexpr uintptr_t LockedAimingCollider_Alt = 0x78;  // Auxiliary collider (READ-ONLY)
         constexpr uintptr_t AimingTarget         = 0xE68;     // LastAimingTargetFromWeapon
         constexpr uintptr_t AimingAdjusted       = 0xE60;     // LastAimingInfoFromWeaponAdjusted
-        constexpr uintptr_t Camera               = 0x690;     // FollowCamera pointer
-        constexpr uintptr_t Camera_Alt           = 0x698;     // FollowCamera auxiliary
-        constexpr uintptr_t FollowCamera_Sub     = 0x690;     // FollowCamera auxiliary pointer
+        constexpr uintptr_t Camera               = 0x698;     // Free Fire Max FollowCamera pointer
+        constexpr uintptr_t Camera_Alt           = 0x690;     // FollowCamera auxiliary
+        constexpr uintptr_t FollowCamera_Sub     = 0x698;     // FollowCamera auxiliary pointer
         constexpr uintptr_t IsFiring             = 0x850;     // Primary isFiring integer flag
         constexpr uintptr_t IsFiring_Alt         = 0x848;     // Auxiliary isFiring integer flag
         constexpr uintptr_t HP                   = 0x70;      // m_PRIDataPool pointer
@@ -107,9 +107,9 @@ namespace Offsets {
         constexpr uintptr_t Velocity             = 0xF0;      // Velocity Vector3
         constexpr uintptr_t IsGrounded           = 0x11C;     // Boolean: isGrounded flag
         constexpr uintptr_t FOVOffset            = 0x84;      // Scope FOV offset float inside FollowCamera
-        constexpr uintptr_t Weapon               = 0x600;     // WeaponOnHand pointer
-        constexpr uintptr_t Attributes           = 0x768;     // PlayerAttributes (Global Primary)
-        constexpr uintptr_t Attributes_Max       = 0x770;     // PlayerAttributes Max (Max Fallback)
+        constexpr uintptr_t Weapon               = 0x608;     // Free Fire Max WeaponOnHand pointer
+        constexpr uintptr_t Attributes           = 0x770;     // PlayerAttributes Max
+        constexpr uintptr_t Attributes_Max       = 0x778;
 
         // Physical Constants
         constexpr int       StandardBaseHP       = 200;       // Standard base HP
@@ -206,27 +206,27 @@ namespace Offsets {
     }
 
 // ----------------------------------------------------------------------------------------------
-// 12. SKELETON BONES (ITransformNode Pointers)
+// 12. SKELETON BONES (ITransformNode Pointers - Free Fire Max ARM64)
 // ----------------------------------------------------------------------------------------------
     namespace Bone {
-        constexpr uintptr_t Head                 = 0x6A0;     // Head node (Primary OB55 verified)
-        constexpr uintptr_t Head_Alt             = 0;         // Fallback disabled to prevent false waist latching
-        constexpr uintptr_t Hip                  = 0x6A8;     // Hip / Waist node
-        constexpr uintptr_t Breast               = 0x6B0;     // Upper chest
+        constexpr uintptr_t Head                 = 0x6A8;     // Free Fire Max Head node
+        constexpr uintptr_t Head_Alt             = 0x6A0;     // Fallback
+        constexpr uintptr_t Hip                  = 0x6B0;     // Free Fire Max Hip / Waist node
+        constexpr uintptr_t Breast               = 0x6B8;     // Upper chest / Spine
         constexpr uintptr_t Spine                = 0x6B8;     // Spine node
         constexpr uintptr_t Root                 = 0x6C8;     // Root / Pelvis node
         constexpr uintptr_t Root_Alt             = 0x6D0;     // Root fallback
         constexpr uintptr_t LeftAnkle            = 0x6D8;     // Left ankle
         constexpr uintptr_t RightAnkle           = 0x6E0;     // Right ankle
-        constexpr uintptr_t LeftToe              = 0x6E8;     // Left toe sole node (Primary)
-        constexpr uintptr_t LeftToe_Alt          = 0x6F0;     // Left toe fallback / RightToe
-        constexpr uintptr_t RightToe             = 0x6F0;     // Right toe sole node
-        constexpr uintptr_t LeftShoulder         = 0x708;     // Left shoulder
-        constexpr uintptr_t RightShoulder        = 0x710;     // Right shoulder
-        constexpr uintptr_t RightHand            = 0x718;     // Right hand
-        constexpr uintptr_t LeftHand             = 0x720;     // Left hand
-        constexpr uintptr_t RightForeArm         = 0x728;     // Right forearm
-        constexpr uintptr_t LeftForeArm          = 0x730;     // Left forearm
+        constexpr uintptr_t LeftToe              = 0x6F0;     // Free Fire Max Left toe sole node
+        constexpr uintptr_t LeftToe_Alt          = 0x6F8;     // RightToe fallback
+        constexpr uintptr_t RightToe             = 0x6F8;     // Right toe sole node
+        constexpr uintptr_t LeftShoulder         = 0x710;     // Left shoulder
+        constexpr uintptr_t RightShoulder        = 0x718;     // Right shoulder
+        constexpr uintptr_t RightHand            = 0x720;     // Right hand
+        constexpr uintptr_t LeftHand             = 0x728;     // Left hand
+        constexpr uintptr_t RightForeArm         = 0x730;     // Right forearm
+        constexpr uintptr_t LeftForeArm          = 0x738;     // Left forearm
         constexpr float     SkullElevation       = 0.12f;     // Head center elevation (meters)
     }
 
