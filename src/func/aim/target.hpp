@@ -23,11 +23,12 @@ namespace aimbot {
             return result;
         }
 
-        // Firing & Scoping state
-        bool isFiring = rpm<bool>(localPlayer + Offsets::Player::IsFiring);
-        if (!isFiring) {
-            isFiring = rpm<bool>(localPlayer + Offsets::Player::IsFiring_Alt);
+        // Firing & Scoping state (4-byte integer alignment matching pewpew)
+        int fireVal = rpm<int>(localPlayer + Offsets::Player::IsFiring);
+        if (fireVal <= 0) {
+            fireVal = rpm<int>(localPlayer + Offsets::Player::IsFiring_Alt);
         }
+        bool isFiring = (fireVal > 0);
         result.isFiring = isFiring;
 
         // FollowCamera is at localPlayer + 0x690. Inside FollowCamera, FOVOffset is at 0x84

@@ -156,26 +156,36 @@ namespace data {
             }
             return;
         }
-        auto GfClass = rpm<uint64_t>(GfCell);
-        if (!GfClass) {
-            if (logger::should_log("err_gfclass", 2500)) {
-                logger::log_not_found("GameFacade Class (Dereferencing GfCell 0x%lX)", (unsigned long)GfCell);
-            }
-            return;
+
+        uint64_t BaseGame = 0;
+        uint64_t StaticFields = 0;
+
+        // Path A: GfCell is GameFacade Il2CppClass directly (pewpew hook.h: P2 = Read(GameFacade_c + 0xB8); BaseGame = Read(P2))
+        uint64_t sf1 = rpm<uint64_t>(GfCell + Offsets::GameFacade_P2);
+        if (is_valid_ptr(sf1)) {
+            uint64_t curGame1 = rpm<uint64_t>(sf1 + 0x0);
+            uint64_t curMatch1 = rpm<uint64_t>(sf1 + 0x8);
+            if (is_valid_ptr(curGame1)) { BaseGame = curGame1; StaticFields = sf1; }
+            else if (is_valid_ptr(curMatch1)) { BaseGame = curMatch1; StaticFields = sf1; }
         }
 
-        auto StaticFields = rpm<uint64_t>(GfClass + Offsets::GameFacade_P2);
-        if (!StaticFields) {
-            if (logger::should_log("err_sf", 2500)) {
-                logger::log_not_found("StaticFields (Offset +0x%lX from GfClass 0x%lX)", Offsets::GameFacade_P2, (unsigned long)GfClass);
+        // Path B: GfCell is a pointer to GameFacade Il2CppClass (pointer indirection fallback)
+        if (!is_valid_ptr(BaseGame)) {
+            uint64_t GfClass = rpm<uint64_t>(GfCell);
+            if (is_valid_ptr(GfClass)) {
+                uint64_t sf2 = rpm<uint64_t>(GfClass + Offsets::GameFacade_P2);
+                if (is_valid_ptr(sf2)) {
+                    uint64_t curGame2 = rpm<uint64_t>(sf2 + 0x0);
+                    uint64_t curMatch2 = rpm<uint64_t>(sf2 + 0x8);
+                    if (is_valid_ptr(curGame2)) { BaseGame = curGame2; StaticFields = sf2; }
+                    else if (is_valid_ptr(curMatch2)) { BaseGame = curMatch2; StaticFields = sf2; }
+                }
             }
-            return;
         }
 
-        auto BaseGame = rpm<uint64_t>(StaticFields + Offsets::StaticFields_Instance);
-        if (!BaseGame) {
+        if (!is_valid_ptr(BaseGame)) {
             if (logger::should_log("err_bg", 2500)) {
-                logger::log_not_found("BaseGame Instance (Offset +0x%lX from StaticFields 0x%lX)", Offsets::StaticFields_Instance, (unsigned long)StaticFields);
+                logger::log_not_found("BaseGame Instance (Dual-Path Failed from GfCell 0x%lX)", (unsigned long)GfCell);
             }
             return;
         }
@@ -288,9 +298,12 @@ namespace data {
 
         // PLAYERS
         uint64_t dictAddr = rpm<uint64_t>(BaseGame + Offsets::Match_PlayerDict);
+        if (!is_valid_ptr(dictAddr) && is_valid_ptr(m_Match)) {
+            dictAddr = rpm<uint64_t>(m_Match + Offsets::Match_PlayerDict);
+        }
         if (!dictAddr) {
             if (logger::should_log("err_dict_addr", 2500)) {
-                logger::log_not_found("Player Dictionary Address (Offset +0x%lX from BaseGame 0x%lX)", Offsets::Match_PlayerDict, (unsigned long)BaseGame);
+                logger::log_not_found("Player Dictionary Address (Offset +0x%lX from BaseGame 0x%lX / Match 0x%lX)", Offsets::Match_PlayerDict, (unsigned long)BaseGame, (unsigned long)m_Match);
             }
             std::lock_guard<std::mutex> lk(players_mutex);
             players.clear();

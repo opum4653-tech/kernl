@@ -97,7 +97,11 @@ namespace aimbot {
             uint64_t lp = data::localPlayerAddr.load(std::memory_order_relaxed);
             bool isFiring = false;
             if (lp) {
-                isFiring = rpm<bool>(lp + Offsets::Player::IsFiring) || rpm<bool>(lp + Offsets::Player::IsFiring_Alt);
+                int fireVal = rpm<int>(lp + Offsets::Player::IsFiring);
+                if (fireVal <= 0) {
+                    fireVal = rpm<int>(lp + Offsets::Player::IsFiring_Alt);
+                }
+                isFiring = (fireVal > 0);
             }
 
             if (isFiring) {

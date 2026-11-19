@@ -108,7 +108,8 @@ static inline void wipe(void* p, size_t n) {
 }
 
 inline bool is_valid_ptr(uint64_t a) {
-    return (a >= 0x10000000ULL && a <= 0x7FFFFFFFFFFFULL);
+    uint64_t p = a & 0x0000FFFFFFFFFFFFULL;
+    return (p >= 0x10000ULL && p <= 0x00007FFFFFFFFFFFULL);
 }
 
 inline bool addr_valid(uint64_t a) { return is_valid_ptr(a); }
