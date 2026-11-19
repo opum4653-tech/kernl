@@ -3,3 +3,4 @@ libs/
 *.log
 *.tmp
 .DS_Store
+ninmods_real_offsets.h
