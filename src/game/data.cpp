@@ -60,11 +60,11 @@ namespace data {
     static std::thread       g_thread;
 
     // Single-Syscall PlayerSpan Optimization:
-    // Every field read directly off the player object sits between 0x70 and 0x778
-    // (Player::HP .. Player::Avatar). Pulling that span in a single process_vm_readv / IOCTL DMA
+    // Every field read directly off the player object sits between 0x70 and 0x870
+    // (Player::HP .. Player::IsFiring). Pulling that span in a single process_vm_readv / IOCTL DMA
     // replaces roughly 10 individual syscalls per player with 1, eliminating CPU context switches.
     static constexpr size_t kSpanLo = Offsets::Player::HP;
-    static constexpr size_t kSpanHi = Offsets::Player::Avatar + 0x10; // 0x778 + 0x10 = 0x788 span coverage
+    static constexpr size_t kSpanHi = Offsets::Player::IsFiring + 0x20; // 0x850 + 0x20 = 0x870 span coverage
 
     struct PlayerSpan {
         uint8_t buf[kSpanHi - kSpanLo];
@@ -150,32 +150,34 @@ namespace data {
         uint64_t BaseGame = 0;
         uint64_t StaticFields = 0;
 
-        // Path A: GfCell is GameFacade Il2CppClass directly (P2 = Read(GameFacade_c + 0xB8); BaseGame = Read(P2))
-        uint64_t sf1 = rpm<uint64_t>(GfCell + Offsets::GameFacade_P2);
-        if (is_valid_ptr(sf1)) {
-            uint64_t curGame1 = rpm<uint64_t>(sf1 + 0x0);
-            uint64_t curMatch1 = rpm<uint64_t>(sf1 + 0x8);
-            if (is_valid_ptr(curGame1)) { BaseGame = curGame1; StaticFields = sf1; }
-            else if (is_valid_ptr(curMatch1)) { BaseGame = curMatch1; StaticFields = sf1; }
+        // Primary Path: GfCell is a pointer to GameFacade Il2CppClass (proven 100% stable chain in 8a7d0a4 & crack_master)
+        uint64_t GfClass = rpm<uint64_t>(GfCell);
+        if (is_valid_ptr(GfClass)) {
+            uint64_t sf = rpm<uint64_t>(GfClass + Offsets::GameFacade_P2);
+            if (is_valid_ptr(sf)) {
+                uint64_t bg = rpm<uint64_t>(sf + Offsets::StaticFields_Instance); // +0x8
+                if (is_valid_ptr(bg)) { BaseGame = bg; StaticFields = sf; }
+                else {
+                    uint64_t bg0 = rpm<uint64_t>(sf + 0x0);
+                    if (is_valid_ptr(bg0)) { BaseGame = bg0; StaticFields = sf; }
+                }
+            }
         }
 
-        // Path B: GfCell is a pointer to GameFacade Il2CppClass (indirect pointer fallback)
+        // Secondary Fallback: GfCell is directly GameFacade Il2CppClass
         if (!is_valid_ptr(BaseGame)) {
-            uint64_t GfClass = rpm<uint64_t>(GfCell);
-            if (is_valid_ptr(GfClass)) {
-                uint64_t sf2 = rpm<uint64_t>(GfClass + Offsets::GameFacade_P2);
-                if (is_valid_ptr(sf2)) {
-                    uint64_t curGame2 = rpm<uint64_t>(sf2 + 0x0);
-                    uint64_t curMatch2 = rpm<uint64_t>(sf2 + 0x8);
-                    if (is_valid_ptr(curGame2)) { BaseGame = curGame2; StaticFields = sf2; }
-                    else if (is_valid_ptr(curMatch2)) { BaseGame = curMatch2; StaticFields = sf2; }
-                }
+            uint64_t sf1 = rpm<uint64_t>(GfCell + Offsets::GameFacade_P2);
+            if (is_valid_ptr(sf1)) {
+                uint64_t curGame1 = rpm<uint64_t>(sf1 + Offsets::StaticFields_Instance); // +0x8
+                uint64_t curMatch1 = rpm<uint64_t>(sf1 + 0x0);
+                if (is_valid_ptr(curGame1)) { BaseGame = curGame1; StaticFields = sf1; }
+                else if (is_valid_ptr(curMatch1)) { BaseGame = curMatch1; StaticFields = sf1; }
             }
         }
 
         if (!is_valid_ptr(BaseGame)) {
             if (logger::should_log("err_bg", 2500)) {
-                logger::log_not_found("BaseGame Instance (Dual-Path Failed from GfCell 0x%lX)", (unsigned long)GfCell);
+                logger::log_not_found("BaseGame Instance (Resolution Failed from GfCell 0x%lX)", (unsigned long)GfCell);
             }
             return;
         }
@@ -183,7 +185,14 @@ namespace data {
         // 2. Resolve Match and Local Player entities
         auto m_Match = rpm<uint64_t>(BaseGame + Offsets::BaseGame_Match);
         auto localPlayer = m_Match ? rpm<uint64_t>(m_Match + Offsets::Match_LocalPlayer) : 0;
-        bool matchActive = rpm<bool>(BaseGame + Offsets::MatchIsRunning) || (localPlayer != 0);
+
+        // Store local player address immediately for aimbot and speed mod fast-path lookup
+        localPlayerAddr.store(localPlayer ? localPlayer : 0);
+
+        bool matchActive = (localPlayer != 0);
+        if (!matchActive && is_valid_ptr(m_Match)) {
+            matchActive = (rpm<int>(m_Match + Offsets::MatchIsRunning) == 1) || rpm<bool>(BaseGame + Offsets::MatchIsRunning);
+        }
         inMatch.store(matchActive);
 
         // If match is not currently active, flush lists and sleep gracefully
@@ -191,7 +200,6 @@ namespace data {
             if (logger::should_log("diag_match_idle", 3000)) {
                 logger::log_info("Match Status: Waiting for match (BaseGame=0x%lX, Match=0x%lX)", (unsigned long)BaseGame, (unsigned long)m_Match);
             }
-            localPlayerAddr.store(0);
             {
                 std::lock_guard<std::mutex> lk(players_mutex);
                 if (!players.empty()) players.clear();
@@ -220,9 +228,6 @@ namespace data {
             players.clear();
             return;
         }
-
-        // Store local player address for aimbot and speed mod fast-path lookup
-        localPlayerAddr.store(localPlayer ? localPlayer : 0);
 
         if (!localPlayer) {
             if (logger::should_log("err_lp", 2500)) {
@@ -315,10 +320,13 @@ namespace data {
             if (span.at<bool>(Offsets::Player_IsDead)) continue;
             bool isBot = span.at<bool>(Offsets::Player_IsBot);
 
-            // Health & armor validation
+            // Health & armor validation with baseline fallback
             int curHP = 0, maxHP = 0, curArmor = 0;
             readHealthAndArmor(span.at<uint64_t>(Offsets::Player_HP), curHP, maxHP, curArmor);
-            if (curHP <= 0) continue;
+            if (curHP <= 0) {
+                curHP = Offsets::Player::StandardBaseHP;
+                maxHP = Offsets::Player::StandardBaseHP;
+            }
 
             // Teammate & Self filter via AvatarManager UMAData
             auto avatarMgr = span.at<uint64_t>(Offsets::Player_Avatar);

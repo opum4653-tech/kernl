@@ -32,8 +32,8 @@
 // ==============================================================================================
 
 namespace cfg {
-    // Master System Switch: master enable gate for all drawing and aim features
-    inline std::atomic<bool> master_enabled{false};
+    // Master System Switch: master enable gate for all drawing and aim features (default active)
+    inline std::atomic<bool> master_enabled{true};
 
 // ----------------------------------------------------------------------------------------------
 // TAB 0: VISUALS (ESP) CONFIGURATION
@@ -113,6 +113,9 @@ inline bool Checkbox(const char* label, std::atomic<bool>& v) {
     bool tmp = v.load(std::memory_order_relaxed);
     if (ImGui::Checkbox(label, &tmp)) {
         v.store(tmp, std::memory_order_relaxed);
+        if (tmp) {
+            master_enabled.store(true, std::memory_order_relaxed);
+        }
         return true;
     }
     return false;
