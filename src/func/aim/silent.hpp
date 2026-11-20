@@ -1,23 +1,27 @@
 #pragma once
 #include "common.hpp"
 #include <atomic>
+#include <cstdlib>
 
 // ==============================================================================================
 // FILE: src/func/aim/silent.hpp
 // ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
-// PURPOSE: 3D Silent Aim & Bullet Trajectory Steering Engine (Natural Game Cadence).
+// PURPOSE: 3D Silent Aim & Bullet Trajectory Steering Engine with Humanized Headshot Rate.
 //
-// ANTI-BAN HARDENING PROTOCOL:
+// ANTI-BAN & HUMANIZED TELEMETRY PROTOCOL:
 // ----------------------------------------------------------------------------------------------
-// 1. NATURAL GAME CADENCE:
-//    - Operates synchronously with the natural game frame cadence.
-//    - Redundant background writer thread and artificial tight-loop sleep (usleep(500)) eliminated.
-// 2. STRICT NORMALIZATION & ZERO FORCED WRITES:
-//    - Writes strictly normalized unit direction vector (||v|| == 1.0f) to AimInfo + 0x40.
-//    - Strictly active ONLY while weapon is actively discharging (isFiring == true) on alive targets.
+// 1. PROBABILISTIC HITGROUP & BONE DECISION:
+//    - Headshot Rate == 100%: 100% of bullets strictly target Head (HitGroup = 1), zero to body.
+//    - Headshot Rate < 100%: Probabilistic roll (rand() % 100 < headshot_rate).
+//      * Successful roll: Targets Head (HitGroup = 1, HeadWorld + head_bias).
+//      * Failed roll: Targets Chest / Body (HitGroup = 2, Spine level), producing natural spray telemetry.
+//    - Headshot Rate == 0%: All bullets target Body (HitGroup = 2).
+// 2. NATURAL GAME CADENCE:
+//    - Operates synchronously with natural game frame cadence.
+//    - Redundant background writer thread and artificial tight loops eliminated.
 // 3. ZERO PERSISTENT FOOTPRINT:
-//    - Once trigger is released or target is dead, writing ceases immediately.
-//    - Game's native weapon controller takes over memory naturally on next frame tick.
+//    - Active strictly while weapon is actively discharging (isFiring == true) on alive targets.
+//    - Once trigger is released, writing ceases immediately and naturally.
 // ==============================================================================================
 
 namespace trajectory {
@@ -86,10 +90,39 @@ namespace silent {
             return;
         }
 
-        // 3. Resolve Target World Position with elevation adjustment
+        // 3. Humanized Headshot Rate & Target Selection Decision
+        int hsRate = cfg::aim::headshot_rate.load(std::memory_order_relaxed);
+        if (hsRate < 0) hsRate = 0;
+        if (hsRate > 100) hsRate = 100;
+
+        bool targetIsHead = true;
+        if (hsRate >= 100) {
+            // 100% Rate: ALL shots strictly to head, zero to body
+            targetIsHead = true;
+        } else if (hsRate <= 0) {
+            // 0% Rate: ALL shots strictly to body
+            targetIsHead = false;
+        } else {
+            // Probabilistic evaluation: roll between 0 and 99
+            int roll = rand() % 100;
+            targetIsHead = (roll < hsRate);
+        }
+
         float headBias = cfg::aim::head_bias.load(std::memory_order_relaxed);
         if (headBias < -0.30f || headBias > 0.30f) headBias = 0.00f;
-        Vector3 targetWorld = target.getTargetWorld(0, headBias);
+
+        Vector3 targetWorld = Vector3::Zero();
+        int32_t targetHitGroup = Offsets::Aim::HitGroup_Body; // 2 (Body)
+
+        if (targetIsHead) {
+            // Target Head (Skull center + user vertical elevation trim)
+            targetWorld = target.getTargetWorld(0, headBias);
+            targetHitGroup = Offsets::Aim::HitGroup_Head; // 1 (Head)
+        } else {
+            // Target Body (Chest / Spine center)
+            targetWorld = target.getTargetWorld(1, 0.0f);
+            targetHitGroup = Offsets::Aim::HitGroup_Body; // 2 (Body)
+        }
 
         if (targetWorld == Vector3::Zero() || !std::isfinite(targetWorld.x)) {
             return;
@@ -107,11 +140,14 @@ namespace silent {
         }
 
         // Smooth single-pass write on natural game frame tick:
-        // No redundant tight loops, no multi-thread mutex contention.
-        wpm<Vector3>(hitObjAddress + Offsets::Aim::Direction, normDir); // 0x40 (Direction)
-        if (cfg::aim::auto_headshot.load(std::memory_order_relaxed)) {
-            wpm<int32_t>(hitObjAddress + Offsets::Aim::HitGroup, Offsets::Aim::HitGroup_Head); // 0x64 (Headshot HitGroup)
-        }
+        // Direct raycast direction vector steering (0x40)
+        wpm<Vector3>(hitObjAddress + Offsets::Aim::Direction, normDir);
+
+        // Inject HitGroup: 1 for Headshot, 2 for Body
+        wpm<int32_t>(hitObjAddress + Offsets::Aim::HitGroup, targetHitGroup);
+
+        // Reset ViewBlocked flag (0x71) to ensure valid physics raycast hit registration
+        wpm<bool>(hitObjAddress + Offsets::Aim::ViewBlocked, false);
     }
 
 } // namespace silent

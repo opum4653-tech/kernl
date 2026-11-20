@@ -635,8 +635,20 @@ void render() {
 
                 cfg::Checkbox("Aim Silent", cfg::aim::silent);
                 cfg::Checkbox("Scope Aim (Instant Head)", cfg::aim::scope_aim);
-                cfg::Checkbox("Auto Headshot (100% Red)", cfg::aim::auto_headshot);
+                cfg::Checkbox("Auto Headshot", cfg::aim::auto_headshot);
                 cfg::Checkbox("Ignore Knocked", cfg::aim::ignore_knocked);
+
+                ImGui::Dummy(ImVec2(0, 4 * ui_scale));
+                ImGui::TextDisabled("HEADSHOT RATE:");
+                ImGui::SetNextItemWidth(-1);
+                cfg::SliderInt("##HeadshotRate", cfg::aim::headshot_rate, 0, 100, "%d%% Headshot Rate");
+
+                int hsRate = cfg::aim::headshot_rate.load(std::memory_order_relaxed);
+                if (hsRate > 70) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.25f, 0.25f, 1.0f), "[RISK] >70%% Ban Risk (ML Outlier)");
+                } else {
+                    ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.4f, 1.0f), "[SAFE] %d%% Natural Player Rate", hsRate);
+                }
 
                 handleTouchScroll();
             }

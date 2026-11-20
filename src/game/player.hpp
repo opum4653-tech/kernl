@@ -69,8 +69,13 @@ struct PlayerData {
           curHP(0), maxHP(200), curArmor(0)
     {}
 
+    // Resolves 3D target coordinates: targetPos == 0 for Head, targetPos == 1 for Body/Chest
     Vector3 getTargetWorld(int targetPos = 0, float headBias = 0.0f) const {
-        (void)targetPos;
+        if (targetPos == 1) {
+            // Chest / Body center: sternum level (0.40m below skull center)
+            return Vector3(headWorld.x, headWorld.y - 0.40f, headWorld.z);
+        }
+        // Head / Skull center: headWorld + vertical elevation trim
         return (headBias != 0.0f) ? Vector3(headWorld.x, headWorld.y + headBias, headWorld.z) : headWorld;
     }
 };

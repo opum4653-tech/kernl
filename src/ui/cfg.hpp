@@ -61,7 +61,8 @@ namespace aim {
     inline std::atomic<int>   read_interval_ms {16};    // Natural game frame polling cadence (16ms = ~60Hz baseline)
     inline std::atomic<bool>  silent           {false}; // Feature 8: Aim Silent
     inline std::atomic<bool>  scope_aim        {false}; // Feature 9: Scope Aim (Instant Head)
-    inline std::atomic<bool>  auto_headshot    {false}; // Feature 10: Auto Headshot (100% Red)
+    inline std::atomic<bool>  auto_headshot    {false}; // Feature 10: Auto Headshot
+    inline std::atomic<int>   headshot_rate    {50};    // Headshot Rate: 0% to 100% (>70% High Risk)
     inline std::atomic<bool>  ignore_knocked   {false}; // Feature 11: Ignore Knocked
     inline std::atomic<bool>  show_fov         {false}; // Feature 12: Draw FOV Circle
     inline std::atomic<float> head_bias        {0.00f}; // Feature 13: Elevation Bias (0.00 default)
