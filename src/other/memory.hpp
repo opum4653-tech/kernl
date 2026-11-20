@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <cstdio>
 #include <atomic>
 #include <fcntl.h>
 #include <unistd.h>
@@ -56,15 +57,15 @@ namespace sys {
     static constexpr long SYS_close             = 57;
     static constexpr long SYS_read              = 63;
     static constexpr long SYS_getdents64        = 61;
-    static constexpr long SYS_process_vm_readv  = 270;
-    static constexpr long SYS_process_vm_writev = 271;
+    static constexpr long SYS_vm_read           = 270;
+    static constexpr long SYS_vm_write          = 271;
     #elif defined(__x86_64__)
     static constexpr long SYS_openat            = 257;
     static constexpr long SYS_close             = 3;
     static constexpr long SYS_read              = 0;
     static constexpr long SYS_getdents64        = 217;
-    static constexpr long SYS_process_vm_readv  = 310;
-    static constexpr long SYS_process_vm_writev = 311;
+    static constexpr long SYS_vm_read           = 310;
+    static constexpr long SYS_vm_write          = 311;
     #endif
 
     #ifndef AT_FDCWD
@@ -103,6 +104,12 @@ namespace sys {
     static inline int  close (int fd)                        { return static_cast<int>(sc6(SYS_close, fd, 0, 0, 0, 0, 0)); }
     static inline long read  (int fd, void* b, size_t c)     { return sc6(SYS_read, fd, reinterpret_cast<long>(b), c, 0, 0, 0); }
     static inline long getdents64(int fd, void* d, size_t c) { return sc6(SYS_getdents64, fd, reinterpret_cast<long>(d), c, 0, 0, 0); }
+    static inline long vm_read (int pid, struct iovec* l, unsigned long lc, struct iovec* r, unsigned long rc) {
+        return sc6(SYS_vm_read, pid, reinterpret_cast<long>(l), lc, reinterpret_cast<long>(r), rc, 0);
+    }
+    static inline long vm_write(int pid, struct iovec* l, unsigned long lc, struct iovec* r, unsigned long rc) {
+        return sc6(SYS_vm_write, pid, reinterpret_cast<long>(l), lc, reinterpret_cast<long>(r), rc, 0);
+    }
 }
 
 struct linux_dirent64 {
@@ -140,7 +147,7 @@ inline bool mem_read(uint64_t a, void* b, size_t l) {
         }
     }
 
-    // Fail-safe Invariant: Direct ARM64 Assembly Syscall 270 (SYS_process_vm_readv)
+    // Fail-safe Invariant: Direct ARM64 Assembly Syscall 270 (SYS_vm_read)
     int curPid = proc::pid.load(std::memory_order_relaxed);
     if (curPid > 0) {
         struct iovec loc[1], rem[1];
@@ -148,9 +155,7 @@ inline bool mem_read(uint64_t a, void* b, size_t l) {
         loc[0].iov_len  = l;
         rem[0].iov_base = reinterpret_cast<void*>(a);
         rem[0].iov_len  = l;
-        long r = sys::sc6(sys::SYS_process_vm_readv, curPid,
-                          reinterpret_cast<long>(loc), 1,
-                          reinterpret_cast<long>(rem), 1, 0);
+        long r = sys::vm_read(curPid, loc, 1, rem, 1);
         if (r == static_cast<long>(l)) return true;
     }
 
@@ -160,7 +165,7 @@ inline bool mem_read(uint64_t a, void* b, size_t l) {
 
 // Universal Memory Write (WPM): Dual-Engine Architecture
 // 1. Primary: Ring-0 Kernel Driver Dispatch
-// 2. Fail-Safe: Direct ARM64 Assembly Syscall (SYS_process_vm_writev = 271)
+// 2. Fail-Safe: Direct ARM64 Assembly Syscall (SYS_vm_write = 271)
 inline bool mem_write(uint64_t a, const void* b, size_t l) {
     if (!is_valid_ptr(a) || l == 0 || b == nullptr) return false;
 
@@ -171,7 +176,7 @@ inline bool mem_write(uint64_t a, const void* b, size_t l) {
         }
     }
 
-    // Fail-safe Invariant: Direct ARM64 Assembly Syscall 271 (SYS_process_vm_writev)
+    // Fail-safe Invariant: Direct ARM64 Assembly Syscall 271 (SYS_vm_write)
     int curPid = proc::pid.load(std::memory_order_relaxed);
     if (curPid > 0) {
         struct iovec loc[1], rem[1];
@@ -179,9 +184,7 @@ inline bool mem_write(uint64_t a, const void* b, size_t l) {
         loc[0].iov_len  = l;
         rem[0].iov_base = reinterpret_cast<void*>(a);
         rem[0].iov_len  = l;
-        long r = sys::sc6(sys::SYS_process_vm_writev, curPid,
-                          reinterpret_cast<long>(loc), 1,
-                          reinterpret_cast<long>(rem), 1, 0);
+        long r = sys::vm_write(curPid, loc, 1, rem, 1);
         if (r == static_cast<long>(l)) return true;
     }
 

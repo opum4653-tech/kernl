@@ -24,8 +24,10 @@ jobs:
 
       - name: Build with ndk-build
         run: |
+          set +e
           ndk-build NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=jni/Android.mk NDK_APPLICATION_MK=jni/Application.mk -j"$(nproc)" > build.log 2>&1
           status=$?
+          set -e
           echo "=== ndk-build exit: $status ==="
           echo "=== build.log lines: $(wc -l < build.log) ==="
           if [ "$status" -ne 0 ]; then
