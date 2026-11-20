@@ -38,13 +38,11 @@ namespace cfg {
 // ----------------------------------------------------------------------------------------------
 // TAB 0: VISUALS (ESP) CONFIGURATION
 // ----------------------------------------------------------------------------------------------
-// TAB 0: KERNEL VISUALS CONFIGURATION
-// ----------------------------------------------------------------------------------------------
 namespace esp {
-    inline std::atomic<bool>  box              {false}; // Feature 2: Kernel Bounding Box
-    inline std::atomic<bool>  armor            {false}; // Feature 3: Kernel Armor Indicator
-    inline std::atomic<bool>  tracer           {false}; // Feature 4: Kernel Target Line
-    inline std::atomic<bool>  bot_tag          {false}; // Feature 5: Kernel Entity Tag
+    inline std::atomic<bool>  box              {false}; // Feature 2: ESP Box
+    inline std::atomic<bool>  armor            {false}; // Feature 3: ESP Armor Bar
+    inline std::atomic<bool>  tracer           {false}; // Feature 4: ESP Laser Line
+    inline std::atomic<bool>  bot_tag          {false}; // Feature 5: ESP Bot Tag
     inline std::atomic<float> max_range        {0.0f};  // 0.0f default: unlimited / fully controlled from menu slider
 
     // Visual geometry and style parameters
@@ -54,20 +52,20 @@ namespace esp {
     inline std::atomic<float> tracer_thickness {1.0f};  // Laser line stroke thickness
     inline std::atomic<int>   tracer_pos       {0};     // 0 = Screen Top
 
-    // Feature 7: Kernel Visual Accent Color (Unified Signature Purple #E10098)
+    // Feature 7: Visual Accent Color (Unified Signature Purple #E10098)
     inline ImVec4 box_col                      = ImVec4(0.882f, 0.000f, 0.596f, 1.0f);
 }
 
 // ----------------------------------------------------------------------------------------------
-// TAB 1: KERNEL TRAJECTORY CONFIGURATION
+// TAB 1: AIMBOT & COMBAT CONFIGURATION
 // ----------------------------------------------------------------------------------------------
 namespace aim {
     inline std::atomic<int>   read_interval_ms {16};    // Natural game frame polling cadence (16ms = ~60Hz baseline)
-    inline std::atomic<bool>  silent           {false}; // Feature 8: Kernel Silent Trajectory (Strictly Normalized Vector)
-    inline std::atomic<bool>  scope_aim        {false}; // Feature 9: Kernel Scope Trigger (Instant Head)
-    inline std::atomic<bool>  auto_headshot    {false}; // Feature 10: Kernel Precision Vector (100% Red)
-    inline std::atomic<bool>  ignore_knocked   {false}; // Feature 11: Ignore Downed Entities
-    inline std::atomic<bool>  show_fov         {false}; // Feature 12: Kernel FOV Boundary
+    inline std::atomic<bool>  silent           {false}; // Feature 8: Aim Silent
+    inline std::atomic<bool>  scope_aim        {false}; // Feature 9: Scope Aim (Instant Head)
+    inline std::atomic<bool>  auto_headshot    {false}; // Feature 10: Auto Headshot (100% Red)
+    inline std::atomic<bool>  ignore_knocked   {false}; // Feature 11: Ignore Knocked
+    inline std::atomic<bool>  show_fov         {false}; // Feature 12: Draw FOV Circle
     inline std::atomic<float> head_bias        {0.00f}; // Feature 13: Elevation Bias (0.00 default)
     inline std::atomic<float> aim_fov          {0.0f};  // 0.0f default: fully controlled from menu slider
     inline std::atomic<float> fov_radius       {0.0f};  // 0.0f default
@@ -87,10 +85,11 @@ namespace aim {
 }
 
 // ----------------------------------------------------------------------------------------------
-// TAB 2: KERNEL MOTION & SYSTEM CONFIGURATION
+// ----------------------------------------------------------------------------------------------
+// TAB 2: COMBAT & SPEED MODS
 // ----------------------------------------------------------------------------------------------
 namespace motion {
-    inline std::atomic<bool>  velocity_mod     {false}; // Feature 14: Kernel Velocity Modifier (Anti-Ban Safe)
+    inline std::atomic<bool>  velocity_mod     {false}; // Feature 14: Speed Hack (Anti-Ban Safe)
     inline std::atomic<float> speed_mult       {0.0f};  // 0.0f default: zero forced speed boost (100% menu controlled)
 }
 
