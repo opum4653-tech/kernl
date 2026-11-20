@@ -49,16 +49,22 @@ namespace trajectory {
             return result;
         }
 
-        // 2. Firing state evaluation (Reads 4-byte integer from localPlayer + 0x850 / 0x848)
-        int fireVal = rpm<int>(localPlayer + Offsets::Player::IsFiring);
-        if (fireVal <= 0) {
-            fireVal = rpm<int>(localPlayer + Offsets::Player::IsFiring_Alt);
+        // 2. Firing state evaluation (Checks bool flag at 0x850 / 0x848)
+        bool isFiring = rpm<bool>(localPlayer + Offsets::Player::IsFiring);
+        if (!isFiring) {
+            isFiring = rpm<bool>(localPlayer + Offsets::Player::IsFiring_Alt);
         }
-        bool isFiring = (fireVal > 0);
+        if (!isFiring) {
+            int fireVal = rpm<int>(localPlayer + Offsets::Player::IsFiring);
+            if (fireVal > 0) isFiring = true;
+        }
         result.isFiring = isFiring;
 
-        // 3. Scoping state evaluation (FollowCamera 0x690 -> FOVOffset 0x84)
+        // 3. Scoping state evaluation (FollowCamera 0x698 / 0x690 -> FOVOffset 0x84)
         uint64_t followCam = rpm<uint64_t>(localPlayer + Offsets::Player::Camera);
+        if (!is_valid_ptr(followCam)) {
+            followCam = rpm<uint64_t>(localPlayer + Offsets::Player::Camera_Alt);
+        }
         float camFovOffset = 0.0f;
         if (is_valid_ptr(followCam)) {
             camFovOffset = rpm<float>(followCam + Offsets::Player::FOVOffset);
@@ -100,7 +106,7 @@ namespace trajectory {
         if (s_lockedTargetAddr != 0) {
             for (const auto& enemy : enemies) {
                 if (enemy.addr == s_lockedTargetAddr) {
-                    if (enemy.curHP > 0 && enemy.Head.z >= 0.05f && enemy.isVisible &&
+                    if (enemy.curHP > 0 && enemy.Head.z >= 0.05f &&
                         (!cfg::aim::ignore_knocked || enemy.curHP > 1)) {
                         float dxHead = enemy.Head.x - screenCx;
                         float dyHead = enemy.Head.y - screenCy;
@@ -136,8 +142,8 @@ namespace trajectory {
             const PlayerData* bestEnemy = nullptr;
 
             for (const auto& enemy : enemies) {
-                // Reject invalid screen depths, dead enemies, or occluded/invisible targets (anti-ban)
-                if (enemy.Head.z < 0.05f || enemy.curHP <= 0 || !enemy.isVisible) continue;
+                // Reject invalid screen depths or dead enemies
+                if (enemy.Head.z < 0.05f || enemy.curHP <= 0) continue;
 
                 // Filter knocked players (HP <= 1) if toggle is enabled
                 if (cfg::aim::ignore_knocked && enemy.curHP <= 1) continue;

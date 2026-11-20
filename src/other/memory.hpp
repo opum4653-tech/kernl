@@ -299,7 +299,13 @@ inline uint64_t get_lib(const char* targetName = "libil2cpp.so") {
             if (magic == 0x464C457F) { // \x7FELF
                 return static_cast<uint64_t>(base);
             }
-            return static_cast<uint64_t>(base);
+            // Even if magic isn't read via driver, test if it resolves GameFacade
+            uint64_t gf1 = rpm<uint64_t>(base + 0xAD68E18);
+            uint64_t gf2 = rpm<uint64_t>(base + 0xAD6DC18);
+            uint64_t gf3 = rpm<uint64_t>(base + 0xA72E4E0);
+            if (gf1 > 0x10000000 || gf2 > 0x10000000 || gf3 > 0x10000000) {
+                return static_cast<uint64_t>(base);
+            }
         }
     }
 
@@ -313,6 +319,8 @@ inline uint64_t get_lib(const char* targetName = "libil2cpp.so") {
 
     char buf[8192];
     long tr = 0;
+    uint64_t candidates[8] = {0};
+    int candCount = 0;
     uint64_t firstMatch = 0;
 
     while (true) {
@@ -337,14 +345,24 @@ inline uint64_t get_lib(const char* targetName = "libil2cpp.so") {
             }
 
             if (*pt == '-') {
-                if (strstr(ls, targetName) && strstr(ls, "r-xp")) {
-                    uint32_t magic = rpm<uint32_t>(st);
-                    if (magic == 0x464C457F) {
-                        sys::close(mfd);
-                        wipe(buf, sizeof(buf));
-                        return st;
+                pt++;
+                // Skip end address
+                while (*pt && ((*pt >= '0' && *pt <= '9') || (*pt >= 'a' && *pt <= 'f') || (*pt >= 'A' && *pt <= 'F'))) pt++;
+                while (*pt == ' ') pt++;
+
+                // Check permissions: readable private mapping (r--p or r-xp)
+                if (pt[0] == 'r' && pt[3] == 'p') {
+                    if (strstr(ls, targetName)) {
+                        if (firstMatch == 0) firstMatch = st;
+
+                        // Verify ELF magic header: 0x7F 'E' 'L' 'F' (0x464C457F)
+                        uint32_t magic = rpm<uint32_t>(st);
+                        if (magic == 0x464C457F) {
+                            if (candCount < 8) {
+                                candidates[candCount++] = st;
+                            }
+                        }
                     }
-                    if (firstMatch == 0) firstMatch = st;
                 }
             }
 
@@ -362,5 +380,19 @@ inline uint64_t get_lib(const char* targetName = "libil2cpp.so") {
 
     sys::close(mfd);
     wipe(buf, sizeof(buf));
+
+    // Forensic validation: test if candidate base directly resolves GameFacade static pointer
+    for (int i = 0; i < candCount; i++) {
+        uint64_t cand = candidates[i];
+        if (cand == 0) continue;
+        uint64_t gf1 = rpm<uint64_t>(cand + 0xAD68E18); // Free Fire Max (maxff.h primary)
+        if (gf1 > 0x10000000) return cand;
+        uint64_t gf2 = rpm<uint64_t>(cand + 0xAD6DC18); // Free Fire Max (STORM_MODS alt)
+        if (gf2 > 0x10000000) return cand;
+        uint64_t gf3 = rpm<uint64_t>(cand + 0xA72E4E0); // Free Fire Global (1.132.x primary)
+        if (gf3 > 0x10000000) return cand;
+    }
+
+    if (candCount > 0) return candidates[0];
     return firstMatch;
 }

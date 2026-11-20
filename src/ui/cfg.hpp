@@ -43,7 +43,7 @@ namespace esp {
     inline std::atomic<bool>  armor            {false}; // Feature 3: ESP Armor Bar
     inline std::atomic<bool>  tracer           {false}; // Feature 4: ESP Laser Line
     inline std::atomic<bool>  bot_tag          {false}; // Feature 5: ESP Bot Tag
-    inline std::atomic<float> max_range        {0.0f};  // 0.0f default: unlimited / fully controlled from menu slider
+    inline std::atomic<float> max_range        {300.0f}; // 300.0f default: standard render range slider baseline
 
     // Visual geometry and style parameters
     inline std::atomic<int>   box_type         {0};     // 0 = Default
@@ -67,8 +67,8 @@ namespace aim {
     inline std::atomic<bool>  ignore_knocked   {false}; // Feature 11: Ignore Knocked
     inline std::atomic<bool>  show_fov         {false}; // Feature 12: Draw FOV Circle
     inline std::atomic<float> head_bias        {0.00f}; // Feature 13: Elevation Bias (0.00 default)
-    inline std::atomic<float> aim_fov          {0.0f};  // 0.0f default: fully controlled from menu slider
-    inline std::atomic<float> fov_radius       {0.0f};  // 0.0f default
+    inline std::atomic<float> aim_fov          {60.0f}; // 60.0f default: standard FOV angle slider baseline
+    inline std::atomic<float> fov_radius       {0.0f};
 
     // Calculates screen pixel radius corresponding to current FOV degree angle
     inline float get_fov_radius() {

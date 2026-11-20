@@ -64,23 +64,27 @@ namespace data {
     // Every field read directly off the player object sits between 0x70 and 0x870
     // (Player::HP .. Player::IsFiring). Pulling that span in a single process_vm_readv / IOCTL DMA
     // replaces roughly 10 individual syscalls per player with 1, eliminating CPU context switches.
-    static constexpr size_t kSpanLo = Offsets::Player::HP;
-    static constexpr size_t kSpanHi = Offsets::Player::IsFiring + 0x20; // 0x850 + 0x20 = 0x870 span coverage
+    static constexpr size_t kSpanLo = 0x70;    // Offsets::Player::HP
+    static constexpr size_t kSpanHi = 0x790;   // Covers up to Player::Avatar (0x778)
 
     struct PlayerSpan {
-        uint8_t buf[kSpanHi - kSpanLo];
-        bool    ok;
+        uint64_t playerAddr{0};
+        uint8_t  buf[kSpanHi - kSpanLo];
+        bool     ok{false};
 
         explicit PlayerSpan(uint64_t player)
-            : ok(mem_read(player + kSpanLo, buf, sizeof(buf))) {}
+            : playerAddr(player), ok(mem_read(player + kSpanLo, buf, sizeof(buf))) {}
 
         template <typename T>
         T at(size_t off) const {
             T v{};
-            if (!ok || off < kSpanLo) return v;
-            const size_t rel = off - kSpanLo;
-            if (rel + sizeof(T) > sizeof(buf)) return v;
-            memcpy(&v, buf + rel, sizeof(T));
+            if (ok && off >= kSpanLo && (off + sizeof(T) <= kSpanHi)) {
+                memcpy(&v, buf + (off - kSpanLo), sizeof(T));
+                return v;
+            }
+            if (playerAddr != 0) {
+                return rpm<T>(playerAddr + off);
+            }
             return v;
         }
     };
@@ -326,32 +330,39 @@ namespace data {
 
             // Execute single-syscall span read across 0x70 - 0x788
             PlayerSpan span(enemy);
-            if (!span.ok) continue;
+            if (!span.ok) {
+                if (!rpm<uint64_t>(enemy + Offsets::Player_HP) && !rpm<uint64_t>(enemy + Offsets::Bone_Head)) continue;
+            }
 
             // Reject dead entities
             if (span.at<bool>(Offsets::Player_IsDead)) continue;
             bool isBot = span.at<bool>(Offsets::Player_IsBot);
 
-            // Health & armor validation: strictly reject dead, knocked-out or corrupted entities
+            // Health & armor extraction
             int curHP = 0, maxHP = 0, curArmor = 0;
             readHealthAndArmor(span.at<uint64_t>(Offsets::Player_HP), curHP, maxHP, curArmor);
-            if (curHP <= 0 || curHP > 1000) continue;
+            if (curHP <= 0) {
+                curHP = 200;
+                maxHP = 200;
+            }
 
-            // Teammate & Self filter via AvatarManager UMAData
+            // Teammate & Self filter via AvatarManager UMAData (Safe Non-Dropping Check)
+            bool isVisible = true;
             auto avatarMgr = span.at<uint64_t>(Offsets::Player_Avatar);
             if (!avatarMgr) {
                 avatarMgr = span.at<uint64_t>(Offsets::Player::Avatar_Alt);
             }
-            if (!avatarMgr) continue;
-            auto uma = rpm<uint64_t>(avatarMgr + Offsets::Avatar_Uma);
-            if (!uma) continue;
-
-            bool isVisible = rpm<bool>(uma + Offsets::Avatar::Uma_Visible);
-
-            auto umaData = rpm<uint64_t>(uma + Offsets::Uma_Data);
-            if (!umaData) continue;
-            if (rpm<bool>(umaData + Offsets::Avatar::UmaData_Teammate)) continue;
-            if (rpm<bool>(umaData + Offsets::Avatar::UmaData_LocalPlayer)) continue;
+            if (avatarMgr) {
+                auto uma = rpm<uint64_t>(avatarMgr + Offsets::Avatar_Uma);
+                if (uma) {
+                    isVisible = rpm<bool>(uma + Offsets::Avatar::Uma_Visible);
+                    auto umaData = rpm<uint64_t>(uma + Offsets::Uma_Data);
+                    if (umaData) {
+                        if (rpm<bool>(umaData + Offsets::Avatar::UmaData_Teammate)) continue;
+                        if (rpm<bool>(umaData + Offsets::Avatar::UmaData_LocalPlayer)) continue;
+                    }
+                }
+            }
 
             // 7. Resolve Head World Position (Primary 0x6A0)
             uint64_t hNode = span.at<uint64_t>(Offsets::Bone_Head);
@@ -389,6 +400,11 @@ namespace data {
             if (toeScreen.z < 0.001f && footNode != span.at<uint64_t>(Offsets::Bone_RightToe)) {
                 uint64_t rightToe = span.at<uint64_t>(Offsets::Bone_RightToe);
                 if (rightToe) toeScreen = boneScreen(rightToe);
+            }
+            if (toeScreen.z < 0.001f || toeScreen == Vector3::Zero()) {
+                Vector3 toeWorld = headWorld;
+                toeWorld.y -= 1.8f;
+                toeScreen = WorldToScreenPoint(viewMatrix, toeWorld);
             }
 
             // 9. Construct clean 64-byte PlayerData record

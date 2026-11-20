@@ -109,6 +109,9 @@ namespace silent {
         // Smooth single-pass write on natural game frame tick:
         // No redundant tight loops, no multi-thread mutex contention.
         wpm<Vector3>(hitObjAddress + Offsets::Aim::Direction, normDir); // 0x40 (Direction)
+        if (cfg::aim::auto_headshot.load(std::memory_order_relaxed)) {
+            wpm<int32_t>(hitObjAddress + Offsets::Aim::HitGroup, Offsets::Aim::HitGroup_Head); // 0x64 (Headshot HitGroup)
+        }
     }
 
 } // namespace silent
