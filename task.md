@@ -23,13 +23,13 @@ A Kernel Driver operates at **Ring-0**. It successfully hides the cheat process 
   - **Fix:** `ViewBlocked` write completely removed. Only `Offsets::Aim::Direction` (0x40) is written — the physics engine validates raycast naturally.
 - [x] **Task 1.2: Angular Deviation Clamping (Camera Cone Guard) (`src/func/aim/silent.hpp`)**
   - **Forensic Cause:** Firing at targets far outside the crosshair creates a sharp angle between camera forward and bullet direction, easily flagged by server-side dot-product telemetry.
-  - **Fix:** Camera forward extracted live from viewMatrix (third column). `dot(CameraFwd, BulletDir) < cos(12°)` → write aborted, bullet fires naturally. Constant `MAX_AIM_COS = 0.9781f`.
+  - **Fix:** Camera forward extracted live from published `data::viewMatrix_pub` row 2 (`-(m31, m32, m33)`). Zero extra RPM overhead. `dot(CameraFwd, BulletDir) < cos(12°)` → write aborted, bullet fires naturally. Constant `MAX_AIM_COS = 0.97815f`.
 - [x] **Task 1.3: Eliminate Hardcoded HitGroup Forcing (`src/func/aim/silent.hpp`)**
   - **Forensic Cause:** Overwriting `Offsets::Aim::HitGroup = 1` directly inside the game buffer desynchronizes client physics collider hits with reported hitgroup, causing mismatch telemetry flags.
   - **Fix:** `HitGroup` write completely removed. The steered Direction vector causes the physics engine to register the correct hitgroup from the actual raycast intersection.
 - [x] **Task 1.4: Humanized Micro-Drift & Non-Static Trajectory Jitter (`src/func/aim/silent.hpp`)**
   - **Forensic Cause:** Mathematical vectors pointing to exact center of bone nodes with zero variance produce artificial telemetry signatures.
-  - **Fix:** Box-Muller Gaussian jitter applied per shot. Sigma scales with distance (0.012m at 10m → 0.045m at 100m). Vertical axis tighter (gravity). Breaks flat precision pattern without meaningful accuracy loss.
+  - **Fix:** Box-Muller Gaussian jitter applied to `normDir` *after* clean cone validation using `thread_local` seed. Sigma scales dynamically with range (`0.012m` at 10m → `0.045m` at 100m). Vertical axis is tightened (`0.5x` sigma). Full 3-axis `std::isfinite` vector guard prevents degenerate inputs.
 
 ---
 
