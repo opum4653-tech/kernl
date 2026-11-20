@@ -105,7 +105,7 @@ namespace trajectory {
         }
     }
 
-    // Continuous trajectory worker loop with adaptive 2ms/10ms rate throttling
+    // Steady natural trajectory coordinator loop
     inline void loop() {
         while (aim_thread_running().load(std::memory_order_relaxed)) {
             if (cfg::master_enabled && (cfg::aim::silent || cfg::aim::auto_headshot || cfg::aim::scope_aim)) {
@@ -115,23 +115,10 @@ namespace trajectory {
                 clear_silent_data();
             }
 
-            // Inspect local firing status to dynamically throttle loop sleep time
-            uint64_t lp = data::localPlayerAddr.load(std::memory_order_relaxed);
-            bool isFiring = false;
-            if (lp) {
-                int fireVal = rpm<int>(lp + Offsets::Player::IsFiring);
-                if (fireVal <= 0) {
-                    fireVal = rpm<int>(lp + Offsets::Player::IsFiring_Alt);
-                }
-                isFiring = (fireVal > 0);
-            }
-
-            // High-frequency polling (2ms) during firing bursts; relaxed polling (10ms) when idle
-            if (isFiring) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(2));
-            } else {
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            }
+            // Natural game frame cadence (steady natural pacing, zero artificial millisecond forcing)
+            int interval = cfg::aim::read_interval_ms.load(std::memory_order_relaxed);
+            int sleepMs = (interval >= 8 && interval <= 33) ? interval : 16;
+            std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
         }
     }
 

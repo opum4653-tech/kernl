@@ -52,10 +52,10 @@
 //    - Launches data::thread_start() (in data.cpp) and trajectory::thread_start() (in aim.hpp).
 //    - Detects game exit/crash via /proc/<pid> access test; cleans up and halts workers gracefully.
 //
-// 4. MAIN RENDER LOOP (~60 FPS / 16ms sleep):
+// 4. MAIN RENDER LOOP (Native hardware display refresh rate / VSYNC):
 //    - Rebuilds touchable UI rectangle hit-boxes (Touch_ClearUiRects / Touch_CommitUiRects).
 //    - Calls ui::menu::render() (in menu.cpp) which renders ESP visuals and ImGui interactive menus.
-//    - Calls speed_system::tick(libBase) (in speed.hpp) for Velocity Modifier and Recoil Compensation patches.
+//    - Calls speed_system::tick(libBase) (in speed.hpp) for safe mod status evaluation.
 //
 // 5. CLEAN REVERSE SHUTDOWN:
 //    - Restores patched game memory via speed_system::shutdown().
@@ -234,7 +234,7 @@ static int start_overlay() {
     printf("[*] Running interactive render loop...\n");
     fflush(stdout);
 
-    // 4. MAIN RENDER LOOP (~60 FPS)
+    // 4. MAIN RENDER LOOP (Native hardware display refresh rate / VSYNC)
     while (main_thread_flag) {
         static auto lastProcessCheck = std::chrono::steady_clock::now();
         auto currentCheckTime = std::chrono::steady_clock::now();
@@ -297,7 +297,9 @@ static int start_overlay() {
             }
         }
         drawEnd();
-        usleep(16000); // Frame cadence sleep (~60 FPS)
+        // Native hardware display refresh rate: drawEnd() invokes eglSwapBuffers()
+        // which synchronizes naturally with SurfaceFlinger VSYNC (60/90/120/144Hz).
+        // Zero artificial frame cadence sleep or millisecond forcing.
     }
 
     // 5. Clean symmetrical shutdown sequence

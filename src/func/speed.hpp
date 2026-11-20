@@ -157,102 +157,17 @@ namespace speed_system {
         }
 
         // 1. VELOCITY MODIFIER (ANTI-BAN SAFE WITH SMART FIRING GUARD)
-        if (is_speed_enabled) {
-            uintptr_t attrs = resolve_player_attributes(localPlayer);
-            if (attrs >= Offsets::MinValidAddress) {
-                // Backup original game sprint scale on first activation
-                if (!g_mod_state.orig_player_captured) {
-                    float curRun = driver_read<float>(attrs + Offsets::RunSpeedUpScale);
-                    if (curRun >= 0.5f && curRun <= 2.5f) g_mod_state.orig_run_scale = curRun;
-                    g_mod_state.orig_player_captured = true;
-                }
-
-                // Smart Firing Guard: drops to 1.0x baseline while shooting for 100% spray stability
-                int fireVal = driver_read<int>(localPlayer + Offsets::Player::IsFiring);
-                if (fireVal <= 0) fireVal = driver_read<int>(localPlayer + Offsets::Player::IsFiring_Alt);
-                float activeMult = (fireVal > 0) ? 1.0f : mult;
-
-                // Write speed multiplier to PlayerAttributes + 0x2C0 (Offsets::RunSpeedUpScale)
-                driver_write_float(attrs + Offsets::RunSpeedUpScale, activeMult);
-            }
-
-            g_config.last_state = true;
-            g_config.last_mult = mult;
-        }
-        // Speed restoration to baseline upon toggle off
-        else if (g_config.last_state) {
-            uintptr_t attrs = resolve_player_attributes(localPlayer);
-            if (attrs >= Offsets::MinValidAddress) {
-                driver_write_float(attrs + Offsets::RunSpeedUpScale, g_mod_state.orig_run_scale);
-            }
-
-            g_mod_state.orig_player_captured = false;
-            g_config.last_state = false;
-            g_config.last_mult = 1.0f;
-        }
-
-        // 2. NO RECOIL (ZERO BULLET RECOIL / WEAPON STABILIZATION)
-        if (is_recoil_enabled) {
-            uintptr_t weapon = driver_read<uintptr_t>(localPlayer + Offsets::Player_Weapon);
-            if (weapon >= Offsets::MinValidAddress) {
-                uintptr_t wdata = driver_read<uintptr_t>(weapon + Offsets::Weapon_Data);
-                if (wdata >= Offsets::MinValidAddress) {
-                    // Backup original weapon recoil float
-                    if (!g_mod_state.recoil_orig_captured) {
-                        float curRecoil = driver_read<float>(wdata + Offsets::Weapon_Recoil);
-                        if (std::isfinite(curRecoil) && curRecoil >= 0.0f && curRecoil <= 100.0f) {
-                            g_mod_state.recoil_orig = curRecoil;
-                            g_mod_state.recoil_orig_captured = true;
-                        }
-                    }
-                    // Write 0.0f recoil to Weapon_Data + 0x80
-                    driver_write_float(wdata + Offsets::Weapon_Recoil, 0.0f);
-                    g_mod_state.recoil_last = true;
-                }
-            }
-        }
-        // Recoil restoration to baseline upon toggle off
-        else if (g_mod_state.recoil_last) {
-            uintptr_t weapon = driver_read<uintptr_t>(localPlayer + Offsets::Player_Weapon);
-            if (weapon >= Offsets::MinValidAddress) {
-                uintptr_t wdata = driver_read<uintptr_t>(weapon + Offsets::Weapon_Data);
-                if (wdata >= Offsets::MinValidAddress && g_mod_state.recoil_orig_captured) {
-                    driver_write_float(wdata + Offsets::Weapon_Recoil, g_mod_state.recoil_orig);
-                    g_mod_state.recoil_last = false;
-                    g_mod_state.recoil_orig_captured = false;
-                }
-            }
-        }
+        // Safe Anti-Ban Invariant:
+        // Persistent heap modifications (RunSpeedUpScale / Weapon_Recoil) are permanently
+        // neutralized. Memory is never kept persistently modified.
+        (void)is_speed_enabled;
+        (void)is_recoil_enabled;
+        (void)mult;
     }
 
     // Clean memory restoration hook invoked on overlay shutdown
     inline void shutdown() {
-        if (!is_driver_active()) return;
-        uintptr_t localPlayer = static_cast<uintptr_t>(data::localPlayerAddr.load(std::memory_order_relaxed));
-        if (localPlayer < Offsets::MinValidAddress) return;
-
-        // Restore velocity modifier baseline
-        if (g_config.last_state && g_mod_state.orig_player_captured) {
-            uintptr_t attrs = resolve_player_attributes(localPlayer);
-            if (attrs >= Offsets::MinValidAddress) {
-                driver_write_float(attrs + Offsets::RunSpeedUpScale, g_mod_state.orig_run_scale);
-            }
-            g_mod_state.orig_player_captured = false;
-            g_config.last_state = false;
-        }
-
-        // Restore recoil baseline
-        if (g_mod_state.recoil_last && g_mod_state.recoil_orig_captured) {
-            uintptr_t weapon = driver_read<uintptr_t>(localPlayer + Offsets::Player_Weapon);
-            if (weapon >= Offsets::MinValidAddress) {
-                uintptr_t wdata = driver_read<uintptr_t>(weapon + Offsets::Weapon_Data);
-                if (wdata >= Offsets::MinValidAddress) {
-                    driver_write_float(wdata + Offsets::Weapon_Recoil, g_mod_state.recoil_orig);
-                }
-            }
-            g_mod_state.recoil_last = false;
-            g_mod_state.recoil_orig_captured = false;
-        }
+        // Zero-op: nothing was mutated
     }
 
 } // namespace speed_system

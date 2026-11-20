@@ -62,8 +62,8 @@ namespace esp {
 // TAB 1: KERNEL TRAJECTORY CONFIGURATION
 // ----------------------------------------------------------------------------------------------
 namespace aim {
-    inline std::atomic<int>   read_interval_ms {4};     // Real-time high-refresh polling cadence (4ms = 120Hz+)
-    inline std::atomic<bool>  silent           {false}; // Feature 8: Kernel Silent Trajectory (Unnormalized Vector)
+    inline std::atomic<int>   read_interval_ms {16};    // Natural game frame polling cadence (16ms = ~60Hz baseline)
+    inline std::atomic<bool>  silent           {false}; // Feature 8: Kernel Silent Trajectory (Strictly Normalized Vector)
     inline std::atomic<bool>  scope_aim        {false}; // Feature 9: Kernel Scope Trigger (Instant Head)
     inline std::atomic<bool>  auto_headshot    {false}; // Feature 10: Kernel Precision Vector (100% Red)
     inline std::atomic<bool>  ignore_knocked   {false}; // Feature 11: Ignore Downed Entities

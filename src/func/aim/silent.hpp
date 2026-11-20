@@ -1,91 +1,55 @@
 #pragma once
 #include "common.hpp"
 #include <atomic>
-#include <mutex>
-#include <thread>
-#include <sched.h>
-#include <unistd.h>
 
 // ==============================================================================================
 // FILE: src/func/aim/silent.hpp
 // ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
-// PURPOSE: 3D Silent Aim & Bullet Trajectory Steering Engine (100% Anti-Ban Safe).
+// PURPOSE: 3D Silent Aim & Bullet Trajectory Steering Engine (Natural Game Cadence).
 //
 // ANTI-BAN HARDENING PROTOCOL:
 // ----------------------------------------------------------------------------------------------
-// 1. HIGH-SPEED WRITER THREAD (writer_loop):
-//    - Continuously writes g_targetDir to g_hitObj + Offsets::AimInfo_Direction (0x40)
-//      strictly during active firing with usleep(500).
-// 2. ZERO FOREIGN OBJECT MUTATION:
-//    - NEVER writes to enemy entity memory, HeadCollider, or HitCollider (0% footprint).
-//    - ZERO bogus memory writes to ViewBlocked (0x71), HitGroup (0x64), HitPoint, HitNormal,
-//      AimingAdjusted (0xE60), or AimingTarget (0xE68).
-// 3. ZERO FIRING LEAK:
-//    - Trajectory steering is only active when isFiring is true.
+// 1. NATURAL GAME CADENCE:
+//    - Operates synchronously with the natural game frame cadence.
+//    - Redundant background writer thread and artificial tight-loop sleep (usleep(500)) eliminated.
+// 2. STRICT NORMALIZATION & ZERO FORCED WRITES:
+//    - Writes strictly normalized unit direction vector (||v|| == 1.0f) to AimInfo + 0x40.
+//    - Strictly active ONLY while weapon is actively discharging (isFiring == true) on alive targets.
+// 3. ZERO PERSISTENT FOOTPRINT:
+//    - Once trigger is released or target is dead, writing ceases immediately.
+//    - Game's native weapon controller takes over memory naturally on next frame tick.
 // ==============================================================================================
 
 namespace trajectory {
 namespace silent {
 
-    inline std::atomic<bool> g_run{false};
-    inline std::thread       g_writer_thread;
-
-    inline std::mutex        g_silent_lock;
-    inline uint64_t          g_hitObj = 0;
-    inline Vector3           g_targetDir = {0.f, 0.f, 0.f};
-    inline std::atomic<bool> g_hasData{false};
-
     inline void clear_silent_data() {
-        if (g_hasData.load(std::memory_order_relaxed) || g_hitObj != 0) {
-            std::lock_guard<std::mutex> lock(g_silent_lock);
-            g_hasData.store(false, std::memory_order_relaxed);
-            g_hitObj = 0;
-        }
-    }
-
-    // High-speed writer thread — continuously writes trajectory during active firing
-    static void writer_loop() {
-        while (g_run.load(std::memory_order_relaxed)) {
-            if (!g_hasData.load(std::memory_order_relaxed) || g_hitObj == 0) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(2));
-                continue;
-            }
-
-            // Continuous memory write strictly during active firing
-            {
-                std::lock_guard<std::mutex> lock(g_silent_lock);
-                if (g_hasData.load(std::memory_order_relaxed) && g_hitObj != 0) {
-                    wpm<Vector3>(g_hitObj + Offsets::Aim::Direction, g_targetDir); // 0x40 (Direction)
-                }
-            }
-            usleep(500); // 2,000 writes/sec: clean 500us throttle, zero CPU spin locks
-        }
+        // Natural release: ceases external writes, allowing game's native
+        // weapon controller to take over memory naturally on the next frame tick.
     }
 
     inline void start_silent_writer() {
-        if (g_run.exchange(true)) return;
-        g_writer_thread = std::thread(writer_loop);
+        // Zero-op: redundant background writer thread eliminated for pure smooth execution
     }
 
     inline void stop_silent_writer() {
-        if (!g_run.exchange(false)) return;
         clear_silent_data();
-        if (g_writer_thread.joinable()) {
-            g_writer_thread.join();
-        }
     }
 
-    // Computes the 3D trajectory vector and publishes to high-speed writer
+    // Smooth trajectory steering: synchronized directly with game frame cadence
     inline void apply_trajectory(uint64_t localPlayer, const PlayerData& target, bool lockToHead, bool isFiring) {
         (void)lockToHead;
         if (!is_valid_ptr(localPlayer) || !is_valid_ptr(target.addr)) {
-            clear_silent_data();
             return;
         }
 
         // Anti-Ban Invariant: Strictly write trajectory ONLY when weapon is actively firing
         if (!isFiring) {
-            clear_silent_data();
+            return;
+        }
+
+        // Target alive check
+        if (target.curHP <= 0) {
             return;
         }
 
@@ -93,17 +57,15 @@ namespace silent {
         if (!cfg::aim::silent.load(std::memory_order_relaxed) &&
             !cfg::aim::auto_headshot.load(std::memory_order_relaxed) &&
             !cfg::aim::scope_aim.load(std::memory_order_relaxed)) {
-            clear_silent_data();
             return;
         }
 
         // 1. Resolve Weapon AimInfo buffer pointer (Offsets::Player::AimInfo = 0xE58)
         uint64_t hitObjAddress = rpm<uint64_t>(localPlayer + Offsets::Player::AimInfo);
         if (!is_valid_ptr(hitObjAddress)) {
-            hitObjAddress = rpm<uint64_t>(localPlayer + Offsets::Player::AimInfo_Alt);
+            hitObjAddress = rpm<uint64_t>(localPlayer + Offsets::Player_AimInfo_Alt);
         }
         if (!is_valid_ptr(hitObjAddress)) {
-            clear_silent_data();
             return;
         }
 
@@ -116,7 +78,6 @@ namespace silent {
         }
 
         if (ammoBase == Vector3::Zero() || !std::isfinite(ammoBase.x)) {
-            clear_silent_data();
             return;
         }
 
@@ -126,24 +87,23 @@ namespace silent {
         Vector3 targetWorld = target.getTargetWorld(0, headBias);
 
         if (targetWorld == Vector3::Zero() || !std::isfinite(targetWorld.x)) {
-            clear_silent_data();
             return;
         }
 
-        // Full displacement ray vector: targetWorld - ammoBase
+        // 4. Compute and strictly normalize 3D trajectory unit vector
         Vector3 dir = targetWorld - ammoBase;
         if (dir.sqrMagnitude() <= 1e-4f) {
-            clear_silent_data();
             return;
         }
 
-        // Publish to high-speed writer thread
-        {
-            std::lock_guard<std::mutex> lock(g_silent_lock);
-            g_hitObj = hitObjAddress;
-            g_targetDir = dir;
-            g_hasData.store(true, std::memory_order_relaxed);
+        Vector3 normDir = SafeNormalize(dir);
+        if (!std::isfinite(normDir.x) || normDir == Vector3::Zero()) {
+            return;
         }
+
+        // Smooth single-pass write on natural game frame tick:
+        // No redundant tight loops, no multi-thread mutex contention.
+        wpm<Vector3>(hitObjAddress + Offsets::Aim::Direction, normDir); // 0x40 (Direction)
     }
 
 } // namespace silent
