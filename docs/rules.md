@@ -159,3 +159,25 @@ This document establishes the mandatory design, architecture, and coding rules f
 10. **Universal Process Shielding (Air-Gap Protection):**
     - The engine must set `prctl(PR_SET_DUMPABLE, 0)` at process initialization to forbid all userland ptrace attachments and `/proc/self/mem` inspection from any security thread or sandboxed app.
     - Process cmdline memory (`argv[0]`) and thread comm must remain permanently camouflaged as `"kworker/u16:1"`.
+
+---
+
+## 7. Menu Architecture & Single Master Switch Doctrine (একক মাস্টার বাটন নীতি)
+
+1. **Strictly One Master Switch Policy (একক মাস্টার বাটন আইন):**
+   - The global Master Switch (`DrawToggleSwitch("Master Switch", &cfg::master_enabled, ...)`) **MUST EXIST EXCLUSIVELY ON TAB 2 (SYSTEM CONTROLS)**.
+   - It is **STRICTLY FORBIDDEN** to duplicate or place a Master Switch on Tab 0 (ESP Visuals), Tab 1 (Aimbot Engine), or any other tab.
+   - When the user toggles the Master Switch on Tab 2:
+     - `cfg::master_enabled = true` activates all features configured across Tab 0 and Tab 1.
+     - `cfg::master_enabled = false` acts as a global killswitch, completely halting all ESP drawing, aimbot calculation, FOV circle rendering, and trajectory memory writes.
+
+2. **Feature Tab Hygiene & Purity:**
+   - Tab 0 (ESP Visuals) must contain strictly ESP feature checkboxes (ESP Box, Armor Bar, Laser Line, Bot Tag) and styling/distance sliders.
+   - Tab 1 (Aimbot Engine) must contain strictly Aimbot feature checkboxes (Aim Silent, Scope Aim, Auto Headshot, Ignore Knocked) and aim sliders/options (Headshot Rate, FOV Circle, Head Bias).
+   - Neither Tab 0 nor Tab 1 may contain any master toggle switch or redundant global toggles.
+
+3. **Menu Header & Close Button Geometry:**
+   - Header height is maintained at a compact `headerH = 48.0f * ui_scale`.
+   - The close button ('X') must be inset from the right window border with comfortable padding (`18.0f * ui_scale`), avoiding right-edge screen clipping.
+   - The close button must trigger immediately on touch-down (`io.MouseClicked[0]`).
+

@@ -194,3 +194,12 @@ When active trigger is detected (`isFiring > 0` or scoping trigger):
 * **Zero Local Compilers:** Never attempt local compilation with local toolchains.
 * Stage all code cleanly in git and push to GitHub.
 * Remote GitHub Actions workflow compiles the ARM64 binary with the Android NDK and emits the signed release artifact (`ninmods-kernel.zip`).
+
+---
+
+## 8. Menu UI Invariants: Single Master Switch Doctrine
+
+* **Strictly Single Master Switch:** The global Master Switch (`cfg::master_enabled`) belongs strictly and exclusively on Tab 2 (System Controls).
+* **Zero Duplication on Feature Tabs:** Never place a Master Switch or redundant toggle on Tab 0 (ESP Visuals) or Tab 1 (Aimbot Engine). Feature tabs must contain only their dedicated feature checkboxes and configuration sliders.
+* **Global Control:** When toggled on Tab 2, `cfg::master_enabled` governs the entire engine across all features.
+

@@ -590,9 +590,6 @@ void render() {
             if (ImGui::BeginChild("##ColLeftESP", ImVec2(colW, contentH), true)) {
                 SectionHeader("ESP VISUALS", ui_scale);
 
-                DrawToggleSwitch("Master Switch", &cfg::master_enabled, 44.0f * ui_scale, ui_scale);
-                ImGui::Dummy(ImVec2(0, 6 * ui_scale));
-
                 cfg::Checkbox("ESP Box", cfg::esp::box);
                 cfg::Checkbox("ESP Armor Bar", cfg::esp::armor);
                 cfg::Checkbox("ESP Laser Line", cfg::esp::tracer);
@@ -621,9 +618,6 @@ void render() {
             ImGui::SetCursorPos(ImVec2(contentX, contentY));
             if (ImGui::BeginChild("##ColLeftAim", ImVec2(colW, contentH), true)) {
                 SectionHeader("AIMBOT ENGINE", ui_scale);
-
-                DrawToggleSwitch("Master Switch", &cfg::master_enabled, 44.0f * ui_scale, ui_scale);
-                ImGui::Dummy(ImVec2(0, 6 * ui_scale));
 
                 cfg::Checkbox("Aim Silent", cfg::aim::silent);
                 cfg::Checkbox("Scope Aim (Instant Head)", cfg::aim::scope_aim);
