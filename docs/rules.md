@@ -42,9 +42,11 @@ This document establishes the mandatory design, architecture, and coding rules f
    - A gesture that begins inside a rect stays swallowed until the finger lifts.
    - Touches within the logo or menu bounds must never penetrate into the underlying game canvas.
 
-3. **Menu Dimensions & Aspect Ratio:**
-   - Sidebar width and header height must maintain a strict 1:1 aspect ratio (`headerH = sidebarW`) for visual symmetry.
-   - Total menu window size must account for both sidebar and content areas dynamically scaled via `ui_scale`.
+3. **Menu Dimensions & Compact Header:**
+   - Header height is sleek and compact (`headerH = 48.0f * ui_scale`), reduced from legacy 96px for modern proportion.
+   - Close button ('X') is padded safely (`18.0f * ui_scale`) from the right window border to prevent clipping.
+   - Close button hit region has enlarged padding (`6.0f * ui_scale`) and responds instantly on touch-down (`io.MouseClicked[0]`).
+   - Total menu window size dynamically scales via `ui_scale`.
 
 4. **Draw-List Layer Order (menu is always on top):**
    - The menu window and the floating logo draw with `ImGui::GetWindowDrawList()`.

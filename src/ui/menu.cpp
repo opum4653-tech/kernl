@@ -421,19 +421,15 @@ void render() {
         ImVec2 winSize = ImGui::GetWindowSize();
 
         // --------------------------------------------------------------------
-        // 1. TOP HEADER (HEIGHT MATCHES SIDEBAR WIDTH 1:1)
+        // 1. TOP HEADER (COMPACT HEIGHT & BALANCED GEOMETRY)
         // --------------------------------------------------------------------
-        const float sidebarW = std::max(88.0f, 96.0f * ui_scale);
-        const float headerH = sidebarW; // Header Height is identical to Sidebar Width
+        const float sidebarW = std::max(76.0f, 84.0f * ui_scale);
+        const float headerH = 48.0f * ui_scale; // Compact header height (reduced from ~96px)
         const float bodyH = winSize.y - headerH;
-        const float closeBtnSize = 36.0f * ui_scale;
-        // Half-extent of the X glyph. It used to be a fixed 6*ui_scale while the
-        // hit button was 36*ui_scale, so the icon read as a tiny x floating in a
-        // large invisible box. Tying it to the button size keeps the glyph and
-        // the touch target proportional at every ui_scale.
-        const float xHalf = closeBtnSize * 0.26f;
-        const float badgeH = 24.0f * ui_scale;
-        const float badgeW = 76.0f * ui_scale;
+        const float closeBtnSize = 28.0f * ui_scale;
+        const float xHalf = closeBtnSize * 0.28f;
+        const float badgeH = 22.0f * ui_scale;
+        const float badgeW = 70.0f * ui_scale;
 
         ImVec2 hMin = winPos;
         ImVec2 hMax(winPos.x + winSize.x, winPos.y + headerH);
@@ -442,50 +438,39 @@ void render() {
         dl->AddRectFilled(hMin, hMax, theme_orchid::ColHeaderBg, 12.0f * ui_scale, ImDrawFlags_RoundCornersTop);
         dl->AddLine(ImVec2(hMin.x, hMax.y), ImVec2(hMax.x, hMax.y), IM_COL32(40, 30, 56, 255), 1.0f);
 
-        // Right-hand cluster is laid out first so the branding block can find
-        // out how much room is left. Close button is the outer control; the
-        // status badge sits to its left with a fixed gutter.
-        const ImVec2 cMin(winPos.x + winSize.x - closeBtnSize - 8.0f * ui_scale,
+        // Right-hand cluster: close button padded comfortably from right window border (18px)
+        const float closeRightPad = 18.0f * ui_scale;
+        const ImVec2 cMin(winPos.x + winSize.x - closeBtnSize - closeRightPad,
                           winPos.y + (headerH - closeBtnSize) * 0.5f);
         const ImVec2 bMin(cMin.x - badgeW - 12.0f * ui_scale,
                           winPos.y + (headerH - badgeH) * 0.5f);
         const ImVec2 bMax(bMin.x + badgeW, bMin.y + badgeH);
 
-        // Header Drag Zone (Excludes close button & status badge).
-        // Floored: on a window narrow enough that the right cluster eats the
-        // whole header, the width would go negative and InvisibleButton would
-        // resolve a negative size against the content region - a drag strip
-        // wider than the window.
+        // Header Drag Zone (Excludes close button & status badge)
         const float dragW = std::max(32.0f * ui_scale, bMin.x - winPos.x - 10.0f * ui_scale);
         ImGui::SetCursorPos(ImVec2(0, 0));
         ImGui::InvisibleButton("##HeaderDragZone", ImVec2(dragW, headerH));
         if (ImGui::IsItemActive()) {
             s_menu_pos.x += io.MouseDelta.x;
             s_menu_pos.y += io.MouseDelta.y;
-            // Same floored upper bound as the placement clamp: a window wider
-            // than the screen pins at the top-left instead of going negative.
             s_menu_pos.x = std::clamp(s_menu_pos.x, 0.0f, std::max(0.0f, realW - winW));
             s_menu_pos.y = std::clamp(s_menu_pos.y, 0.0f, std::max(0.0f, realH - winH));
         }
 
         // Header Branding ("NINMODS" + "KERNEL CORE")
         ImFont* brandFont = g_BoldFont ? g_BoldFont : ImGui::GetFont();
-        float brandFontSize = 20.0f * ui_scale;
-        ImVec2 brandPos(winPos.x + 18.0f * ui_scale, winPos.y + (headerH - brandFontSize) * 0.5f);
+        float brandFontSize = 18.0f * ui_scale;
+        ImVec2 brandPos(winPos.x + 16.0f * ui_scale, winPos.y + (headerH - brandFontSize) * 0.5f);
         dl->AddText(brandFont, brandFontSize, brandPos, theme_orchid::ColWhite, "NINMODS");
 
         float brandTextW = brandFont->CalcTextSizeA(brandFontSize, FLT_MAX, 0.0f, "NINMODS").x;
-        // Sub-label and badge draw at 12-14px; the 14px ESP face suits them.
-        // Knock the 32px menu face down to 12 and the stems go muddy.
         ImFont* smallFont = g_EspFont ? g_EspFont : ImGui::GetFont();
-        // Only drawn when it still clears the badge. On a narrow window the
-        // sub-label used to run underneath the badge and the two texts stacked.
-        const float subFontSize = 14.0f * ui_scale;
+        const float subFontSize = 12.0f * ui_scale;
         const float subX = brandPos.x + brandTextW + 8.0f * ui_scale;
         const float subW = smallFont->CalcTextSizeA(subFontSize, FLT_MAX, 0.0f, "KERNEL CORE").x;
-        if (subX + subW <= bMin.x - 10.0f * ui_scale) {
+        if (subX + subW <= bMin.x - 8.0f * ui_scale) {
             dl->AddText(smallFont, subFontSize,
-                        ImVec2(subX, brandPos.y + 3.0f * ui_scale),
+                        ImVec2(subX, winPos.y + (headerH - subFontSize) * 0.5f),
                         theme_orchid::ColPrimaryLight, "KERNEL CORE");
         }
 
@@ -497,24 +482,30 @@ void render() {
         dl->AddRect(bMin, bMax, badgeBorder, 6.0f * ui_scale, 0, 1.0f);
 
         const char* stTxt = connected ? "ARMED" : "STANDBY";
-        ImVec2 ssz = smallFont->CalcTextSizeA(12.0f * ui_scale, FLT_MAX, 0.0f, stTxt);
+        ImVec2 ssz = smallFont->CalcTextSizeA(11.0f * ui_scale, FLT_MAX, 0.0f, stTxt);
         ImVec2 stPos(bMin.x + (badgeW - ssz.x) * 0.5f, bMin.y + (badgeH - ssz.y) * 0.5f);
-        dl->AddText(smallFont, 12.0f * ui_scale, stPos, theme_orchid::ColWhite, stTxt);
+        dl->AddText(smallFont, 11.0f * ui_scale, stPos, theme_orchid::ColWhite, stTxt);
 
-        // Close Button (Smooth 'X')
-        ImGui::SetCursorScreenPos(cMin);
-        if (ImGui::InvisibleButton("##CloseMenuBtn", ImVec2(closeBtnSize, closeBtnSize))) {
+        // Close Button (Smooth 'X' with instant-touch response)
+        const float hitPad = 6.0f * ui_scale;
+        const ImVec2 hitMin(cMin.x - hitPad, cMin.y - hitPad);
+        const ImVec2 hitSize(closeBtnSize + hitPad * 2.0f, closeBtnSize + hitPad * 2.0f);
+
+        ImGui::SetCursorScreenPos(hitMin);
+        bool closePressed = ImGui::InvisibleButton("##CloseMenuBtn", hitSize);
+        bool closeHovered = ImGui::IsItemHovered();
+
+        // Instant close on release OR on touch-down (MouseClicked[0])
+        if (closePressed || (closeHovered && io.MouseClicked[0])) {
             g_ShowMenu = false;
         }
-        bool closeHovered = ImGui::IsItemHovered();
+
         ImVec2 cCenter(cMin.x + closeBtnSize * 0.5f, cMin.y + closeBtnSize * 0.5f);
-        // Hover disc: the invisible button had no feedback at all, so the only
-        // cue that the corner was tappable was the tiny glyph itself.
         if (closeHovered) {
-            dl->AddCircleFilled(cCenter, closeBtnSize * 0.5f,
+            dl->AddCircleFilled(cCenter, (closeBtnSize * 0.5f) + 2.0f,
                                 (theme_orchid::ColPrimary & 0x00FFFFFF) | (60u << 24), 32);
-            dl->AddCircle(cCenter, closeBtnSize * 0.5f,
-                          (theme_orchid::ColPrimary & 0x00FFFFFF) | (170u << 24), 32, 1.5f);
+            dl->AddCircle(cCenter, (closeBtnSize * 0.5f) + 2.0f,
+                          theme_orchid::ColPrimary, 32, 1.5f);
         }
         ImU32 closeCol = closeHovered ? theme_orchid::ColPrimaryLight : IM_COL32(200, 195, 215, 230);
         dl->AddLine(ImVec2(cCenter.x - xHalf, cCenter.y - xHalf),

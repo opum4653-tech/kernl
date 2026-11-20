@@ -24,36 +24,29 @@
 
 namespace func::esp {
 
-    // Renders the laser tracer line on the ImGui draw list
-    inline void drawTracer(ImDrawList* dl, const PlayerData& p, const PlayerBox& pb, ImU32 colBase) {
-        if (!cfg::esp::tracer || !pb.valid) return;
+    // Renders the laser tracer line on the ImGui draw list (matching crack_master pattern)
+    inline void drawTracer(ImDrawList* dl, const PlayerData& p, ImU32 colBase) {
+        if (!cfg::esp::tracer) return;
 
-        // Viewport culling guard
-        if (pb.br.x < -30.f || pb.tl.x > g_sw + 30.f ||
-            pb.br.y < -30.f || pb.tl.y > g_sh + 30.f) {
+        // Strictly draw tracer ONLY when head point is in front of camera and inside screen bounds
+        if (p.Head.z < 0.05f || p.Head.x < 0.f || p.Head.x > g_sw ||
+            p.Head.y < 0.f || p.Head.y > g_sh) {
             return;
         }
 
-        float midX = (pb.tl.x + pb.br.x) * 0.5f;
-        float topY = pb.tl.y;
-        float botY = pb.br.y;
-
         ImVec2 lineStart;
-        ImVec2 target;
-
         if (cfg::esp::tracer_pos == 1) {
-            // Mode 1: Screen Center Origin -> snaps to Chest (middle of bounding box)
+            // Mode 1: Screen Center Origin -> snaps to Center / Chest
             lineStart = ImVec2(g_sw * 0.5f, g_sh * 0.5f);
-            target = ImVec2(midX, (topY + botY) * 0.5f);
         } else if (cfg::esp::tracer_pos == 2) {
-            // Mode 2: Screen Bottom Origin -> snaps to Feet (bottom of bounding box)
+            // Mode 2: Screen Bottom Origin -> snaps to Feet / Ground
             lineStart = ImVec2(g_sw * 0.5f, g_sh);
-            target = ImVec2(midX, botY);
         } else {
             // Mode 0: Screen Top Origin (Default) -> snaps directly to Head coordinates
             lineStart = ImVec2(g_sw * 0.5f, 0.f);
-            target = ImVec2(p.Head.x, p.Head.y);
         }
+
+        ImVec2 target = ImVec2(p.Head.x, p.Head.y);
 
         // Distance-based alpha fade (closer enemies have more intense laser lines)
         float maxR = (cfg::esp::max_range.load() > 0.0f) ? cfg::esp::max_range.load() : 500.0f;

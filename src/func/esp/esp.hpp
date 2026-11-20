@@ -59,6 +59,15 @@ namespace func::esp {
             // Reject entities beyond the configured max render distance slider (0.0f = Unlimited)
             if (cfg::esp::max_range > 0.0f && p.distance > cfg::esp::max_range) continue;
 
+            // Distance-based alpha fade for soft aesthetic blending at range boundaries
+            ImU32 colBase = toU32(cfg::esp::box_col);
+            colBase = fadeDist(colBase, p.distance, (cfg::esp::max_range > 0.0f ? cfg::esp::max_range.load() : 500.0f));
+
+            // 1. ESP Laser Line (Tracer line originating from top of screen to head - decoupled from box validity)
+            if (cfg::esp::tracer) {
+                drawTracer(dl, p, colBase);
+            }
+
             // Calculate 2D bounding box rectangle
             PlayerBox pb = computePlayerBox(p);
             if (!pb.valid) continue;
@@ -71,15 +80,6 @@ namespace func::esp {
             if (br.y < -30.f || tl.y > g_sh + 30.f) continue;
 
             float cx = (tl.x + br.x) * 0.5f;
-
-            // Distance-based alpha fade for soft aesthetic blending at range boundaries
-            ImU32 colBase = toU32(cfg::esp::box_col);
-            colBase = fadeDist(colBase, p.distance, (cfg::esp::max_range > 0.0f ? cfg::esp::max_range.load() : 500.0f));
-
-            // 1. ESP Laser Line (Tracer line originating from top of screen to head)
-            if (cfg::esp::tracer) {
-                drawTracer(dl, p, pb, colBase);
-            }
 
             // 2. Kernel Bounding Box (Full 2D Bounding Box)
             if (cfg::esp::box) {
