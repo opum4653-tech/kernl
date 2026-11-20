@@ -32,6 +32,8 @@ namespace Offsets {
 // ----------------------------------------------------------------------------------------------
     namespace Base {
         constexpr uintptr_t GameFacade           = 0xAD68E18; // Free Fire Max Il2Cpp GameFacade cell
+        constexpr uintptr_t GameFacade_Alt       = 0xAD6DC18; // Free Fire Max alt candidate (STORM_MODS)
+        constexpr uintptr_t GameFacade_Global    = 0xA72E4E0; // Free Fire Global 1.132.x primary
         constexpr uintptr_t GameFacade_P2        = 0xB8;      // Static fields pointer displacement (0xB8)
         constexpr uintptr_t BaseGame_Match       = 0x90;      // Current Match instance pointer displacement
         constexpr uintptr_t BaseGame_Timer       = 0x20;      // Game timer instance

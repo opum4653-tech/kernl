@@ -27,6 +27,7 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/src/game
     ${CMAKE_CURRENT_SOURCE_DIR}/src/other
     ${CMAKE_CURRENT_SOURCE_DIR}/src/protect
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/offsets
 )
 
 file(GLOB_RECURSE SRC_FILES

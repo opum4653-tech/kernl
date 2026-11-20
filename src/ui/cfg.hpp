@@ -97,7 +97,7 @@ namespace motion {
 inline bool any_feature_enabled() {
     if (!master_enabled) return false;
     return esp::box || esp::armor || esp::tracer || esp::bot_tag ||
-           aim::silent || aim::scope_aim || aim::auto_headshot ||
+           aim::silent || aim::scope_aim || aim::auto_headshot || aim::show_fov ||
            motion::velocity_mod;
 }
 

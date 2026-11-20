@@ -156,9 +156,9 @@ namespace data {
 
         // 1. Resolve GameFacade Cell from libil2cpp.so base (Multi-Candidate: Max + Global)
         const uintptr_t gfCandidates[] = {
-            0xAD68E18, // Free Fire Max (maxff.h primary)
-            0xAD6DC18, // Free Fire Max (STORM_MODS alt)
-            0xA72E4E0  // Free Fire Global (1.132.x primary)
+            Offsets::Base::GameFacade,        // 0xAD68E18 (Free Fire Max maxff.h primary)
+            Offsets::Base::GameFacade_Alt,    // 0xAD6DC18 (Free Fire Max STORM_MODS alt)
+            Offsets::Base::GameFacade_Global  // 0xA72E4E0 (Free Fire Global 1.132.x primary)
         };
 
         uint64_t BaseGame = 0;

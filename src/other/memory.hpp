@@ -300,9 +300,9 @@ inline uint64_t get_lib(const char* targetName = "libil2cpp.so") {
                 return static_cast<uint64_t>(base);
             }
             // Even if magic isn't read via driver, test if it resolves GameFacade
-            uint64_t gf1 = rpm<uint64_t>(base + 0xAD68E18);
-            uint64_t gf2 = rpm<uint64_t>(base + 0xAD6DC18);
-            uint64_t gf3 = rpm<uint64_t>(base + 0xA72E4E0);
+            uint64_t gf1 = rpm<uint64_t>(base + Offsets::Base::GameFacade);
+            uint64_t gf2 = rpm<uint64_t>(base + Offsets::Base::GameFacade_Alt);
+            uint64_t gf3 = rpm<uint64_t>(base + Offsets::Base::GameFacade_Global);
             if (gf1 > 0x10000000 || gf2 > 0x10000000 || gf3 > 0x10000000) {
                 return static_cast<uint64_t>(base);
             }
@@ -385,11 +385,11 @@ inline uint64_t get_lib(const char* targetName = "libil2cpp.so") {
     for (int i = 0; i < candCount; i++) {
         uint64_t cand = candidates[i];
         if (cand == 0) continue;
-        uint64_t gf1 = rpm<uint64_t>(cand + 0xAD68E18); // Free Fire Max (maxff.h primary)
+        uint64_t gf1 = rpm<uint64_t>(cand + Offsets::Base::GameFacade); // Free Fire Max (maxff.h primary)
         if (gf1 > 0x10000000) return cand;
-        uint64_t gf2 = rpm<uint64_t>(cand + 0xAD6DC18); // Free Fire Max (STORM_MODS alt)
+        uint64_t gf2 = rpm<uint64_t>(cand + Offsets::Base::GameFacade_Alt); // Free Fire Max (STORM_MODS alt)
         if (gf2 > 0x10000000) return cand;
-        uint64_t gf3 = rpm<uint64_t>(cand + 0xA72E4E0); // Free Fire Global (1.132.x primary)
+        uint64_t gf3 = rpm<uint64_t>(cand + Offsets::Base::GameFacade_Global); // Free Fire Global (1.132.x primary)
         if (gf3 > 0x10000000) return cand;
     }
 
