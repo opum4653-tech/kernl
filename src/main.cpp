@@ -10,7 +10,6 @@
 #include "game/data.hpp"
 #include "func/esp.hpp"
 #include "func/aim/aim.hpp"
-#include "func/speed.hpp"
 #include "FONTS/MAIN_FONT.h"
 #include <cstdio>
 #include <cstring>
@@ -55,10 +54,8 @@
 // 4. MAIN RENDER LOOP (Native hardware display refresh rate / VSYNC):
 //    - Rebuilds touchable UI rectangle hit-boxes (Touch_ClearUiRects / Touch_CommitUiRects).
 //    - Calls ui::menu::render() (in menu.cpp) which renders ESP visuals and ImGui interactive menus.
-//    - Calls speed_system::tick(libBase) (in speed.hpp) for safe mod status evaluation.
 //
 // 5. CLEAN REVERSE SHUTDOWN:
-//    - Restores patched game memory via speed_system::shutdown().
 //    - Halts and joins background worker threads (data::thread_stop(), trajectory::thread_stop()).
 //    - Closes touch device handles and native surface window.
 // ==============================================================================================
@@ -289,12 +286,6 @@ static int start_overlay() {
             Touch_ClearUiRects();
             ui::menu::render(); // Renders ESP drawings, floating logo, and ImGui menu
             Touch_CommitUiRects();
-
-            // Execute Velocity Modifier evaluation (Weapon Recoil is 100% official/unmodified)
-            uint64_t libBase = proc::lib.load(std::memory_order_acquire);
-            if (proc::pid.load(std::memory_order_acquire) > 0 && libBase > 0) {
-                speed_system::tick(libBase);
-            }
         }
         drawEnd();
         // Native hardware display refresh rate: drawEnd() invokes eglSwapBuffers()
@@ -303,7 +294,6 @@ static int start_overlay() {
     }
 
     // 5. Clean symmetrical shutdown sequence
-    speed_system::shutdown();
     data::thread_stop();
     trajectory::thread_stop();
     ui::menu::save_logo_pos();

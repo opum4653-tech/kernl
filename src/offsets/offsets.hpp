@@ -18,10 +18,7 @@
 // 2. COMBAT & KERNEL TRAJECTORY (src/func/aim/):
 //    - Uses Aim::Direction (0x40), Aim::StartPosition (0x4C) in silent.hpp.
 //    - Uses Player::AimInfo (0xE58), Player::IsFiring (0x850), Player::Camera (0x690) in target.hpp.
-// 3. MOTION & COMBAT MODS (src/func/speed.hpp):
-//    - Uses Player::Attributes (0x768), Speed::RunSpeedUpScale (0x2C0).
-//    - Uses Player::Weapon (0x600), Weapon::Data (0x18), Weapon::Recoil (0x80).
-// 4. MATH & ENGINE TRANSFORMS (src/game/math.hpp):
+// 3. MATH & ENGINE TRANSFORMS (src/game/math.hpp):
 //    - Uses Transform::Obj (0x10), Transform::MatrixPtr (0x38), Matrices (0x18), Indices (0x20).
 // ==============================================================================================
 
@@ -156,10 +153,6 @@ namespace Offsets {
         constexpr uintptr_t Weapon_ID            = 0x64;      // Weapon identifier int
         constexpr uintptr_t Recoil               = 0x80;      // Weapon Recoil float (0.0f = zero recoil)
         constexpr uintptr_t IsSight              = 0x8A0;     // Active Weapon Sight pointer (0x8A0 STORM_MODS)
-    }
-
-    namespace Speed {
-        constexpr uintptr_t RunSpeedUpScale      = 0x2C0;     // RunSpeedUpScale float on PlayerAttributes (0x2C0 verified in ninmods_real_offsets.h)
     }
 
 // ----------------------------------------------------------------------------------------------
@@ -345,10 +338,5 @@ namespace Offsets {
     constexpr float     ESP_BoxWidthRatio        = ESP::BoxWidthRatio;
     constexpr float     ESP_BoxPadTopPercent     = ESP::BoxPadTopPercent;
     constexpr float     ESP_BoxPadBotPercent     = ESP::BoxPadBotPercent;
-
-    // Movement & Speed Attributes
-    constexpr uintptr_t PlayerAttributes         = Player::Attributes;     // 0x768 (Global Primary)
-    constexpr uintptr_t PlayerAttributes_Max     = Player::Attributes_Max; // 0x770 (Max Fallback)
-    constexpr uintptr_t RunSpeedUpScale          = Speed::RunSpeedUpScale; // 0x2C0 on PlayerAttributes (ninmods_real_offsets.h)
 
 } // namespace Offsets

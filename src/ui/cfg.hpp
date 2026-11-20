@@ -25,8 +25,6 @@
 //      * src/func/aim/target.hpp -> Reads ignore_knocked, get_fov_radius(), scope_aim.
 //      * src/func/aim/silent.hpp -> Reads head_bias, silent, auto_headshot, scope_aim.
 //      * src/func/aim/fov.hpp    -> Reads show_fov, get_fov_radius().
-//    - Motion & Memory Mods:
-//      * src/func/speed.hpp      -> Reads velocity_mod, speed_mult.
 //    - Memory Scraper Engine:
 //      * src/game/data.cpp       -> Reads any_feature_enabled() and cfg::esp::max_range.
 // ==============================================================================================
@@ -85,20 +83,13 @@ namespace aim {
 }
 
 // ----------------------------------------------------------------------------------------------
+// FEATURE DETECTION GATE
 // ----------------------------------------------------------------------------------------------
-// TAB 2: COMBAT & SPEED MODS
-// ----------------------------------------------------------------------------------------------
-namespace motion {
-    inline std::atomic<bool>  velocity_mod     {false}; // Feature 14: Speed Hack (Anti-Ban Safe)
-    inline std::atomic<float> speed_mult       {0.0f};  // 0.0f default: zero forced speed boost (100% menu controlled)
-}
-
 // Returns true if at least one drawing or memory modification feature is toggled on
 inline bool any_feature_enabled() {
     if (!master_enabled) return false;
     return esp::box || esp::armor || esp::tracer || esp::bot_tag ||
-           aim::silent || aim::scope_aim || aim::auto_headshot || aim::show_fov ||
-           motion::velocity_mod;
+           aim::silent || aim::scope_aim || aim::auto_headshot || aim::show_fov;
 }
 
 // ----------------------------------------------------------------------------------------------

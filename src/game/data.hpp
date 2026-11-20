@@ -25,8 +25,6 @@
 //      * Acquires data::players_mutex to copy data::players snapshot for rendering.
 //    - src/func/aim/target.hpp:
 //      * Acquires data::players_mutex to scan enemies for optimal trajectory target locking.
-//    - src/func/speed.hpp:
-//      * Reads data::localPlayerAddr to directly apply velocity modifier & recoil compensation without extra RPM.
 //    - src/func/aim/aim.hpp:
 //      * Reads data::inMatch and data::localPlayerAddr to govern trajectory calculations.
 // ==============================================================================================

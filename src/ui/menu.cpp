@@ -10,7 +10,6 @@
 #include "../other/memory.hpp"
 #include "../func/esp.hpp"
 #include "../func/aim/aim.hpp"
-#include "../func/speed.hpp"
 #include <string>
 #include <cmath>
 #include <algorithm>
@@ -665,22 +664,22 @@ void render() {
             }
             ImGui::EndChild();
         }
-        // TAB 2: COMBAT & SPEED MODS
+        // TAB 2: SYSTEM & SETTINGS
         else if (activeTab == 2) {
-            // Left Column: Movement & Velocity Controller
+            // Left Column: Master Settings & Safe Operation
             ImGui::SetCursorPos(ImVec2(contentX, contentY));
             if (ImGui::BeginChild("##ColLeftMisc", ImVec2(colW, contentH), true)) {
-                SectionHeader("COMBAT & SPEED MODS", ui_scale);
+                SectionHeader("SYSTEM CONTROLS", ui_scale);
 
                 DrawToggleSwitch("Master Switch", &cfg::master_enabled, 44.0f * ui_scale, ui_scale);
-                ImGui::Dummy(ImVec2(0, 6 * ui_scale));
+                ImGui::Dummy(ImVec2(0, 10 * ui_scale));
 
-                cfg::Checkbox("Speed Hack (Anti-Ban Safe)", cfg::motion::velocity_mod);
-                if (cfg::motion::velocity_mod) {
-                    ImGui::SetNextItemWidth(-1);
-                    cfg::SliderFloat("##SpeedMult", cfg::motion::speed_mult, 0.0f, 0.30f, "+%.2fx Speed Boost");
-                    ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.4f, 1.0f), "SAFE: +0.00x - +0.30x (Server Protected)");
-                }
+                ImGui::TextDisabled("Kernel Mod Engine");
+                ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.4f, 1.0f), "Zero-Footprint Anti-Ban Safe");
+                ImGui::Dummy(ImVec2(0, 4 * ui_scale));
+                ImGui::TextDisabled("Movement Model:");
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(0.3f, 0.8f, 1.0f, 1.0f), "100%% Official Stock");
 
                 handleTouchScroll();
             }
