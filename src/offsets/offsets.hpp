@@ -154,52 +154,6 @@ namespace Offsets {
         constexpr uintptr_t Position             = 0x90;
     }
 
-// ----------------------------------------------------------------------------------------------
-// 8. WEAPON & COMBAT DATA (Offsetsmax.h)
-// ----------------------------------------------------------------------------------------------
-    namespace Weapon {
-        constexpr uintptr_t Data                 = Offsets::Weapon_Data; // 0x98
-        constexpr uintptr_t Data_Alt             = 0x18;
-        constexpr uintptr_t Weapon_ID            = Offsets::WeaponData_Type; // 0x64
-        constexpr uintptr_t Recoil               = Offsets::NoRecoil; // 0x18
-        constexpr uintptr_t Recoil_Alt           = Offsets::WeaponComponent; // 0x80
-        constexpr uintptr_t IsSight              = 0x8A0;
-        constexpr uintptr_t InventoryManager     = Offsets::InventoryManager; // 0x748
-        constexpr uintptr_t WeaponOnHand         = Offsets::Player_WeaponOnHand; // 0x17E8
-        constexpr uintptr_t Item                 = Offsets::Item; // 0xA0
-        constexpr uintptr_t WeaponComponent      = Offsets::WeaponComponent; // 0x80
-        constexpr uintptr_t ItemData             = Offsets::ItemData; // 0x28
-        constexpr uintptr_t ItemData_WeaponId    = Offsets::ItemData_WeaponId; // 0x40
-        constexpr uintptr_t WeaponData_Type      = Offsets::WeaponData_Type; // 0x64
-        constexpr uintptr_t WeaponData_AimType   = Offsets::WeaponData_AimType; // 0xC8
-        constexpr int       WeaponType_Sniper    = Offsets::WeaponType_Sniper; // 1
-    }
-
-// ----------------------------------------------------------------------------------------------
-// 9. AVATAR & TEAMMATE FILTERING (Offsetsmax.h)
-// ----------------------------------------------------------------------------------------------
-    namespace Avatar {
-        constexpr uintptr_t Uma                  = Offsets::Avatar; // 0x138
-        constexpr uintptr_t Uma_Visible          = Offsets::Avatar_IsVisible; // 0x101
-        constexpr uintptr_t Uma_Data             = Offsets::Avatar_Data; // 0x28
-        constexpr uintptr_t UmaData_LocalPlayer  = 0x80;
-        constexpr uintptr_t UmaData_Teammate     = Offsets::Avatar_Data_IsTeam; // 0x81
-    }
-
-// ----------------------------------------------------------------------------------------------
-// 10. CAMERA & VIEW MATRIX (Offsetsmax.h)
-// ----------------------------------------------------------------------------------------------
-    namespace Camera {
-        constexpr uintptr_t CameraBase           = Offsets::CameraBase; // 0xD8
-        constexpr uintptr_t CameraOffset         = Offsets::Camera; // 0x20
-        constexpr uintptr_t Follow               = Offsets::Camera; // 0x20
-        constexpr uintptr_t IntPtr               = Offsets::IntPtrCam; // 0x10
-        constexpr uintptr_t Matrix               = Offsets::Matrix; // 0x100
-        constexpr uintptr_t FollowCamera         = Offsets::FollowCamera; // 0x698
-        constexpr uintptr_t MainCameraTransform  = Offsets::MainCameraTransform; // 0x3F0
-        constexpr uintptr_t Follow_Alt           = 0x28;
-        constexpr uintptr_t IntPtr_Alt           = Offsets::IntPtrCam;
-    }
 
 // ----------------------------------------------------------------------------------------------
 // 11. WEAPON AIM / RAYCAST BUFFER (Offsetsmax.h)
@@ -297,19 +251,19 @@ namespace Offsets {
     constexpr uintptr_t Transform_IndexStride    = Transform::IndexStride;
     constexpr uintptr_t Transform_Position       = Transform::Position;
 
-    constexpr uintptr_t Avatar_Uma               = Avatar::Uma;
-    constexpr uintptr_t Uma_Visible              = Avatar::Uma_Visible;
-    constexpr uintptr_t Uma_Data                 = Avatar::Uma_Data;
+    constexpr uintptr_t Avatar_Uma               = Offsets::Avatar;
+    constexpr uintptr_t Uma_Visible              = Offsets::Avatar_IsVisible;
+    constexpr uintptr_t Uma_Data                 = Offsets::Avatar_Data;
 
-    constexpr uintptr_t Camera_Follow            = Camera::Follow;
-    constexpr uintptr_t Camera_IntPtr            = Camera::IntPtr;
-    constexpr uintptr_t Camera_Matrix            = Camera::Matrix;
+    constexpr uintptr_t Camera_Follow            = Offsets::Camera;
+    constexpr uintptr_t Camera_IntPtr            = Offsets::IntPtrCam;
+    constexpr uintptr_t Camera_Matrix            = Offsets::Matrix;
 
     constexpr uintptr_t HP_List                  = Offsets::GetCur; // 0x10
     constexpr uintptr_t HP_Entry                 = Offsets::HP;     // 0x20
     constexpr uintptr_t HP_Value                 = Offsets::Health; // 0x18
 
-    constexpr uintptr_t Weapon_Recoil            = Weapon::Recoil;
+    constexpr uintptr_t Weapon_Recoil            = Offsets::NoRecoil;
 
     constexpr uintptr_t AimInfo_HitCollider      = Aim::HitCollider;
     constexpr uintptr_t AimInfo_HitPoint         = Aim::HitPoint;

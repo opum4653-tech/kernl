@@ -74,7 +74,7 @@ namespace trajectory {
             uint64_t weapon = rpm<uint64_t>(localPlayer + Offsets::Player::Weapon);
             if (!is_valid_ptr(weapon)) weapon = rpm<uint64_t>(localPlayer + Offsets::Player::Weapon_Alt);
             if (is_valid_ptr(weapon)) {
-                uint64_t sightPtr = rpm<uint64_t>(weapon + Offsets::Weapon::IsSight);
+                uint64_t sightPtr = rpm<uint64_t>(weapon + 0x8A0); // Active Weapon Sight pointer
                 if (sightPtr != 0) result.isScoping = true;
             }
         }
