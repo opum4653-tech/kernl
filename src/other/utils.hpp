@@ -85,7 +85,22 @@ public:
         RawEntry raw[kBlockSize];
         // Read full 1536-byte block from target memory
         if (!mem_read(entries_head + start_idx * sizeof(RawEntry), raw, to_read * sizeof(RawEntry))) {
-            return false;
+            // Fail-safe: read slot-by-slot if contiguous 1536-byte block hits an unmapped page boundary
+            bool any_read = false;
+            for (size_t b = 0; b < kBlockSize; ++b) {
+                if (b < to_read) {
+                    RawEntry single{};
+                    if (mem_read(entries_head + (start_idx + b) * sizeof(RawEntry), &single, sizeof(RawEntry))) {
+                        if (single.hashCode >= 0 && is_valid_ptr(single.value)) {
+                            out_blk.value[b] = single.value;
+                            any_read = true;
+                            continue;
+                        }
+                    }
+                }
+                out_blk.value[b] = 0;
+            }
+            return any_read;
         }
 
         // Filter valid entries (hashCode >= 0 indicates active, occupied slot in Il2Cpp Dictionary)

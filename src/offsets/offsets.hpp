@@ -110,6 +110,7 @@ namespace Offsets {
         constexpr uintptr_t IsGrounded           = 0x11C;     // Boolean: isGrounded flag
         constexpr uintptr_t FOVOffset            = 0x84;      // Scope FOV offset float inside FollowCamera
         constexpr uintptr_t Weapon               = 0x608;     // Free Fire Max WeaponOnHand pointer
+        constexpr uintptr_t Weapon_Alt           = 0x600;     // Free Fire Global WeaponOnHand pointer
         constexpr uintptr_t Attributes           = 0x770;     // PlayerAttributes Max
         constexpr uintptr_t Attributes_Max       = 0x778;
 
@@ -154,6 +155,7 @@ namespace Offsets {
         constexpr uintptr_t Data                 = 0x18;      // Weapon_Data pointer displacement
         constexpr uintptr_t Weapon_ID            = 0x64;      // Weapon identifier int
         constexpr uintptr_t Recoil               = 0x80;      // Weapon Recoil float (0.0f = zero recoil)
+        constexpr uintptr_t IsSight              = 0x8A0;     // Active Weapon Sight pointer (0x8A0 STORM_MODS)
     }
 
     namespace Speed {

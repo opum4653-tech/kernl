@@ -324,7 +324,12 @@ namespace data {
 
         // 6. Iterate dictionary entries in 64-slot batch blocks (zero per-element syscall overhead)
         for (int i = 0; i < nv; i++) {
-            if (i % MonoDictionary::kBlockSize == 0 && !dict.read_block(i, blk)) break;
+            if (i % MonoDictionary::kBlockSize == 0) {
+                if (!dict.read_block(i, blk)) {
+                    i += MonoDictionary::kBlockSize - 1;
+                    continue;
+                }
+            }
             uint64_t enemy = blk.value[i % MonoDictionary::kBlockSize];
             if (!is_valid_ptr(enemy) || enemy == localPlayer) continue;
 

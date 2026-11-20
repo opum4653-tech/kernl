@@ -70,6 +70,14 @@ namespace trajectory {
             camFovOffset = rpm<float>(followCam + Offsets::Player::FOVOffset);
         }
         result.isScoping = (camFovOffset < -0.5f || camFovOffset > 0.5f);
+        if (!result.isScoping) {
+            uint64_t weapon = rpm<uint64_t>(localPlayer + Offsets::Player::Weapon);
+            if (!is_valid_ptr(weapon)) weapon = rpm<uint64_t>(localPlayer + Offsets::Player::Weapon_Alt);
+            if (is_valid_ptr(weapon)) {
+                uint64_t sightPtr = rpm<uint64_t>(weapon + Offsets::Weapon::IsSight);
+                if (sightPtr != 0) result.isScoping = true;
+            }
+        }
 
         // 4. Trigger state coordination (Scope Aim triggers trajectory on scope without firing)
         bool triggerActive = isFiring;
