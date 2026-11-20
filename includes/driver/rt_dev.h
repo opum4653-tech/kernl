@@ -11,72 +11,59 @@ private:
     pid_t pid = -1;
 
     static char* scan_driver_path() {
-        const char *dev_path = "/dev";
-        DIR *dir = opendir(dev_path);
-        if (dir == NULL) {
-            printf("无法打开/dev目录\n");
-            return NULL;
+        // Priority 1: Direct known node validation deployed by NinMods loader
+        const char* known_nodes[] = {
+            "/dev/RTkernel",
+            "/dev/RT_Monitor",
+            "/dev/wanbai",
+            "/dev/BYNb",
+            "/dev/mem_tool",
+            "/dev/nh",
+            "/dev/suvhwvwrtnb",
+            "/dev/rtnb",
+            "/dev/RTdrivers"
+        };
+        for (const char* node : known_nodes) {
+            struct stat st;
+            if (stat(node, &st) == 0 && (S_ISCHR(st.st_mode) || S_ISBLK(st.st_mode))) {
+                int test_fd = open(node, O_RDWR);
+                if (test_fd >= 0) {
+                    close(test_fd);
+                    return strdup(node);
+                }
+            }
         }
 
-        struct dirent *entry;
-        char *file_path = NULL;
-        while ((entry = readdir(dir)) != NULL) {
-            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
-                continue;
-            }
+        // Priority 2: Scans /dev for any character devices matching RT / driver patterns
+        const char *dev_path = "/dev";
+        DIR *dir = opendir(dev_path);
+        if (dir == NULL) return NULL;
 
-            size_t path_length = strlen(dev_path) + strlen(entry->d_name) + 2;
-            file_path = (char *)malloc(path_length);
-            if (!file_path) continue;
-            snprintf(file_path, path_length, "%s/%s", dev_path, entry->d_name);
+        struct dirent *entry;
+        while ((entry = readdir(dir)) != NULL) {
+            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
+            if (strstr(entry->d_name, "gpiochip") != NULL || strstr(entry->d_name, "std") != NULL) continue;
+
+            bool is_rt_name = (strncmp(entry->d_name, "RT", 2) == 0 || strncmp(entry->d_name, "rt", 2) == 0);
+
+            char file_path[256];
+            snprintf(file_path, sizeof(file_path), "%s/%s", dev_path, entry->d_name);
 
             struct stat file_info;
-            if (stat(file_path, &file_info) < 0) {
-                free(file_path);
-                file_path = NULL;
-                continue;
-            }
+            if (stat(file_path, &file_info) < 0) continue;
 
-            if (strstr(entry->d_name, "gpiochip") != NULL) {
-                free(file_path);
-                file_path = NULL;
-                continue;
-            }
-
-            if ((S_ISCHR(file_info.st_mode) || S_ISBLK(file_info.st_mode))
-                && strchr(entry->d_name, '_') == NULL && strchr(entry->d_name, '-') == NULL && strchr(entry->d_name, ':') == NULL) {
-                if (strcmp(entry->d_name, "stdin") == 0 || strcmp(entry->d_name, "stdout") == 0
-                    || strcmp(entry->d_name, "stderr") == 0) {
-                    free(file_path);
-                    file_path = NULL;
-                    continue;
-                }
-
-                size_t file_name_length = strlen(entry->d_name);
-                struct tm* tm_ctime = localtime(&file_info.st_ctime);
-                int file_year = tm_ctime ? (tm_ctime->tm_year + 1900) : 0;
-                time_t now_ts = time(nullptr);
-                struct tm* tm_now = localtime(&now_ts);
-                int cur_year = tm_now ? (tm_now->tm_year + 1900) : 2026;
-                if (cur_year > 1980 && file_year > 0 && file_year <= 1980) {
-                    free(file_path);
-                    file_path = NULL;
-                    continue;
-                }
-
-                time_t atime = file_info.st_atime;
-                time_t ctime = file_info.st_ctime;
-                if (atime == ctime) {
-                    if ((file_info.st_mode & S_IFMT) == 8192 && file_info.st_size == 0
-                        && file_info.st_gid == 0 && file_info.st_uid == 0 && file_name_length <= 9) {
-                        printf("驱动文件：%s\n", file_path);
-                        closedir(dir);
-                        return file_path;
+            if (S_ISCHR(file_info.st_mode) || S_ISBLK(file_info.st_mode)) {
+                if (file_info.st_uid == 0 && file_info.st_gid == 0) {
+                    if (is_rt_name || (strlen(entry->d_name) >= 5 && strlen(entry->d_name) <= 12)) {
+                        int test_fd = open(file_path, O_RDWR);
+                        if (test_fd >= 0) {
+                            close(test_fd);
+                            closedir(dir);
+                            return strdup(file_path);
+                        }
                     }
                 }
             }
-            free(file_path);
-            file_path = NULL;
         }
         closedir(dir);
         return NULL;
@@ -85,18 +72,23 @@ private:
 public:
     c_rt_dev() : fd(-1), pid(-1) {}
 
-    bool init() {
+    bool init(bool verbose = true) {
         char *device_name = scan_driver_path();
         if (device_name == NULL) {
-            printf("\033[41m\033[37m[FATAL] RT DEV driver not found! Exiting...\033[0m\n");
+            if (verbose) {
+                printf("[RT DEV] Driver node not found in /dev\n");
+            }
             return false;
         }
         fd = open(device_name, O_RDWR);
         if (fd == -1) {
-            printf("\033[41m\033[37m[FATAL] Driver not loaded! Exiting...\033[0m\n");
+            if (verbose) {
+                printf("[RT DEV] Cannot open device: %s\n", device_name);
+            }
             free(device_name);
             return false;
         }
+        printf("[+] Driver connected: RT DEV (%s)\n", device_name);
         free(device_name);
         return true;
     }

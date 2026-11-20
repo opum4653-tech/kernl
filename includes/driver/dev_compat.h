@@ -11,10 +11,32 @@ private:
     pid_t pid = -1;
 
     static char* scan_compat_dev() {
+        // Priority 1: Direct known node validation
+        const char* known_nodes[] = {
+            "/dev/RTkernel",
+            "/dev/RT_Monitor",
+            "/dev/wanbai",
+            "/dev/BYNb",
+            "/dev/mem_tool",
+            "/dev/nh",
+            "/dev/suvhwvwrtnb",
+            "/dev/rtnb",
+            "/dev/RTdrivers"
+        };
+        for (const char* node : known_nodes) {
+            struct stat st;
+            if (stat(node, &st) == 0 && (S_ISCHR(st.st_mode) || S_ISBLK(st.st_mode))) {
+                int test_fd = open(node, O_RDWR);
+                if (test_fd >= 0) {
+                    close(test_fd);
+                    return strdup(node);
+                }
+            }
+        }
+
         const char *dev_path = "/dev";
         DIR *dir = opendir(dev_path);
         if (dir == NULL) {
-            printf("无法打开/dev目录\n");
             return NULL;
         }
 
@@ -43,15 +65,16 @@ private:
             if (cur_year > 1980 && file_year > 0 && file_year <= 1980)
                 continue;
 
-            if (strlen(entry->d_name) > 7 || strlen(entry->d_name) < 5)
+            if (strlen(entry->d_name) > 16 || strlen(entry->d_name) < 4)
                 continue;
 
             if (file_info.st_gid != 0 || file_info.st_uid != 0)
                 continue;
 
             if (S_ISCHR(file_info.st_mode) || S_ISBLK(file_info.st_mode)) {
-                if (file_info.st_gid == 0 && file_info.st_uid == 0) {
-                    printf("%s\n", file_path);
+                int test_fd = open(file_path, O_RDWR);
+                if (test_fd >= 0) {
+                    close(test_fd);
                     char *devpath = strdup(file_path);
                     closedir(dir);
                     return devpath;
@@ -65,18 +88,23 @@ private:
 public:
     c_dev_compat() : fd(-1), pid(-1) {}
 
-    bool init() {
+    bool init(bool verbose = true) {
         char *device_name = scan_compat_dev();
         if (device_name == NULL) {
-            printf("\033[41m\033[37m[FATAL] DEV driver not found! Exiting...\033[0m\n");
+            if (verbose) {
+                printf("[DEV COMPAT] Compatible device node not found in /dev\n");
+            }
             return false;
         }
         fd = open(device_name, O_RDWR);
         if (fd == -1) {
-            printf("\033[41m\033[37m[FATAL] Driver not loaded! Exiting...\033[0m\n");
+            if (verbose) {
+                printf("[DEV COMPAT] Cannot open device: %s\n", device_name);
+            }
             free(device_name);
             return false;
         }
+        printf("[+] Driver connected: DEV COMPAT (%s)\n", device_name);
         free(device_name);
         return true;
     }

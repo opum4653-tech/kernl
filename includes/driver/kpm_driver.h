@@ -89,12 +89,12 @@ public:
         return (r == 0);
     }
 
-    bool init() {
+    bool init(bool verbose = true) {
         // Priority 1: Check TB KPM (TongBao / TianBao - fastest, direct pointer single-call)
         if (probe_tb()) {
             engine = KPM_ENGINE_TB;
             active = true;
-            printf("\033[42m\033[37m[KPM] TB KPM (TongBao prctl 0x63687501) active\033[0m\n");
+            printf("[+] Driver connected: KPM (TB prctl 0x63687501)\n");
             return true;
         }
 
@@ -102,15 +102,15 @@ public:
         if (probe_neo()) {
             engine = KPM_ENGINE_NEO;
             active = true;
-            printf("\033[42m\033[37m[KPM] Neo KPM (prctl 0x4E41) active\033[0m\n");
+            printf("[+] Driver connected: KPM (Neo prctl 0x4E41)\n");
             return true;
         }
 
-        // Pure Ring-0 Invariant: KPM kernel module MUST be active.
-        // Userspace syscall fallbacks are strictly prohibited to maintain 100% Ring-0 stealth.
         active = false;
         engine = KPM_ENGINE_NONE;
-        printf("\033[41m\033[37m[FATAL] KPM kernel module not loaded! Pure Ring-0 driver inactive.\033[0m\n");
+        if (verbose) {
+            printf("[KPM] Kernel patch module not responding\n");
+        }
         return false;
     }
 

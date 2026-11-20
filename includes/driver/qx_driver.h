@@ -87,12 +87,14 @@ private:
 public:
     c_qx_driver() : fd(-1), pid(-1) {}
 
-    bool init() {
+    bool init(bool verbose = true) {
         char filePath[256] = {0};
         char target_pid[56] = {0};
 
         if (!find_deleted_qx_target(filePath, sizeof(filePath), target_pid, sizeof(target_pid))) {
-            printf("\033[41m\033[37m[FATAL] QX driver not found! Exiting...\033[0m\n");
+            if (verbose) {
+                printf("[QX] Driver process target not detected\n");
+            }
             return false;
         }
 
@@ -104,7 +106,9 @@ public:
 
         regex_t regex;
         if (regcomp(&regex, pattern, 0) != 0) {
-            fprintf(stderr, "[FATAL] Failed to compile regex! Exiting...\n");
+            if (verbose) {
+                fprintf(stderr, "[QX] Failed to compile regex\n");
+            }
             return false;
         }
 
@@ -120,12 +124,16 @@ public:
                 }
             }
             if (major_number <= 0) {
-                printf("\033[41m\033[37m[FATAL] Driver major number not found! Exiting...\033[0m\n");
+                if (verbose) {
+                    printf("[QX] Driver major number resolution failed\n");
+                }
                 regfree(&regex);
                 return false;
             }
         } else {
-            printf("\033[41m\033[37m[FATAL] Driver not loaded! Exiting...\033[0m\n");
+            if (verbose) {
+                printf("[QX] No matching fd found for target\n");
+            }
             regfree(&regex);
             return false;
         }
@@ -136,16 +144,21 @@ public:
             fd = open(filePath, O_RDWR);
             if (fd == -1) {
                 removeDeviceNode(filePath);
-                printf("\033[41m\033[37m[FATAL] Driver not loaded! Exiting...\033[0m\n");
+                if (verbose) {
+                    printf("[QX] Unable to open created device node\n");
+                }
                 return false;
             } else {
                 removeDeviceNode(filePath);
             }
         } else {
-            printf("\033[41m\033[37m[FATAL] Driver not loaded! Exiting...\033[0m\n");
+            if (verbose) {
+                printf("[QX] Empty device node target path\n");
+            }
             return false;
         }
 
+        printf("[+] Driver connected: QX 10-11\n");
         return true;
     }
 

@@ -13,9 +13,18 @@ private:
 public:
     c_rt_hook() : fd(-1), pid(-1) {}
 
-    bool init() {
+    bool init(bool verbose = true) {
+        COPY_MEMORY test_cm = { 0, 0, nullptr, 0 };
+        errno = 0;
+        int ret = ioctl(0, HOOK_OP_READ_MEM, &test_cm);
+        if (ret == -1 && (errno == ENOTTY || errno == EBADF)) {
+            if (verbose) {
+                printf("[RT HOOK] Syscall hook interface not installed\n");
+            }
+            return false;
+        }
         fd = 0;
-        printf("\033[41m\033[37mRT loaded\033[0m\n");
+        printf("[+] Driver connected: RT HOOK\n");
         return true;
     }
 

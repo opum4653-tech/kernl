@@ -72,40 +72,42 @@ public:
 
     bool auto_probe_all() {
         printf("[Driver] Probing Ring-0 kernel drivers across all engines...\n");
-        // Priority 1: KPM Dual Engine (TB prctl 0x63687501 / Neo prctl 0x4E41)
-        if (m_kpm_driver.init()) {
-            m_selection = 5;
-            g_appConfig.driverOption = 5;
-            g_appConfig.settingsLoaded = true;
-            printf("[Driver] Successfully attached: %s (Option 5)\n", m_kpm_driver.get_engine_name());
-            return true;
-        }
-        // Priority 2: QX Driver (Dynamic major mknod)
-        if (m_qx_driver.init()) {
-            m_selection = 4;
-            g_appConfig.driverOption = 4;
-            g_appConfig.settingsLoaded = true;
-            printf("[Driver] Successfully attached: QX 10-11 (Option 4)\n");
-            return true;
-        }
-        // Priority 3: RT DEV (Direct char device)
-        if (m_rt_dev.init()) {
+        // Priority 1: RT DEV (Direct char device - /dev/RTkernel, /dev/RT_Monitor)
+        // Matches the NinMods Driver Loader "RT" driver
+        if (m_rt_dev.init(false)) {
             m_selection = 2;
             g_appConfig.driverOption = 2;
             g_appConfig.settingsLoaded = true;
             printf("[Driver] Successfully attached: RT DEV (Option 2)\n");
             return true;
         }
-        // Priority 4: DEV Compat (Random char device)
-        if (m_dev_compat.init()) {
+        // Priority 2: QX Driver (Dynamic major mknod)
+        // Matches the NinMods Driver Loader "QX" driver
+        if (m_qx_driver.init(false)) {
+            m_selection = 4;
+            g_appConfig.driverOption = 4;
+            g_appConfig.settingsLoaded = true;
+            printf("[Driver] Successfully attached: QX 10-11 (Option 4)\n");
+            return true;
+        }
+        // Priority 3: DEV COMPAT (Compatible character device in /dev)
+        if (m_dev_compat.init(false)) {
             m_selection = 3;
             g_appConfig.driverOption = 3;
             g_appConfig.settingsLoaded = true;
             printf("[Driver] Successfully attached: DEV COMPAT (Option 3)\n");
             return true;
         }
-        // Priority 5: RT Hook
-        if (m_rt_hook.init()) {
+        // Priority 4: KPM Dual Engine (TB prctl 0x63687501 / Neo prctl 0x4E41 for APatch / KernelSU)
+        if (m_kpm_driver.init(false)) {
+            m_selection = 5;
+            g_appConfig.driverOption = 5;
+            g_appConfig.settingsLoaded = true;
+            printf("[Driver] Successfully attached: %s (Option 5)\n", m_kpm_driver.get_engine_name());
+            return true;
+        }
+        // Priority 5: RT Hook (Syscall/IOCTL Hook)
+        if (m_rt_hook.init(false)) {
             m_selection = 1;
             g_appConfig.driverOption = 1;
             g_appConfig.settingsLoaded = true;
@@ -113,7 +115,8 @@ public:
             return true;
         }
 
-        printf("\033[41m\033[37m[FATAL] Zero kernel drivers responded to auto-probing! Pure Ring-0 driver offline.\033[0m\n");
+        // Emitted ONLY when all engines have failed, signaling the launcher UI to prompt driver load
+        printf("\033[41m\033[37m[FATAL] Driver not loaded! No compatible kernel driver active.\033[0m\n");
         return false;
     }
 
@@ -138,11 +141,11 @@ public:
         }
 
         bool ok = false;
-        if (m_selection == 1) ok = m_rt_hook.init();
-        else if (m_selection == 2) ok = m_rt_dev.init();
-        else if (m_selection == 3) ok = m_dev_compat.init();
-        else if (m_selection == 4) ok = m_qx_driver.init();
-        else if (m_selection == 5) ok = m_kpm_driver.init();
+        if (m_selection == 1) ok = m_rt_hook.init(true);
+        else if (m_selection == 2) ok = m_rt_dev.init(true);
+        else if (m_selection == 3) ok = m_dev_compat.init(true);
+        else if (m_selection == 4) ok = m_qx_driver.init(true);
+        else if (m_selection == 5) ok = m_kpm_driver.init(true);
 
         if (ok) return true;
 
