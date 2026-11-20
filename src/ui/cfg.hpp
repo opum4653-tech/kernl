@@ -30,8 +30,8 @@
 // ==============================================================================================
 
 namespace cfg {
-    // Master System Switch: master enable gate for all drawing and aim features (default inactive / 100% menu authority)
-    inline std::atomic<bool> master_enabled{false};
+    // Master System Switch: master enable gate for all drawing and aim features (default active)
+    inline std::atomic<bool> master_enabled{true};
 
 // ----------------------------------------------------------------------------------------------
 // TAB 0: VISUALS (ESP) CONFIGURATION

@@ -40,8 +40,8 @@ namespace func::esp {
     inline void draw() {
         if (!is_active()) return;
 
-        // Background draw list ensures visuals render beneath interactive ImGui menus & floating logo
-        ImDrawList* dl = ImGui::GetBackgroundDrawList();
+        // Foreground draw list guarantees visuals render on top of transparent surface
+        ImDrawList* dl = ImGui::GetForegroundDrawList();
 
         // Thread-safe copy of active parsed players
         std::vector<PlayerData> snap;

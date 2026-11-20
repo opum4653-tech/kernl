@@ -10,6 +10,7 @@
 #include "../other/memory.hpp"
 #include "../func/esp.hpp"
 #include "../func/aim/aim.hpp"
+#include "../game/data.hpp"
 #include <string>
 #include <cmath>
 #include <algorithm>
@@ -763,6 +764,16 @@ void render() {
                 DrawDiagTile("PID", pidStr, IM_COL32(240, 235, 255, 255));
                 DrawDiagTile("LIB BASE", libStr, IM_COL32(240, 235, 255, 255));
                 DrawDiagTile("DRIVER", dName, IM_COL32(0, 220, 235, 255));
+
+                char playCountStr[32];
+                {
+                    std::lock_guard<std::mutex> lk(data::players_mutex);
+                    snprintf(playCountStr, sizeof(playCountStr), "%zu ENEMY", data::players.size());
+                }
+                DrawDiagTile("PLAYERS", playCountStr, data::inMatch ? IM_COL32(50, 230, 100, 255) : theme_orchid::ColPrimaryLight);
+
+                const char* matchStateStr = data::inMatch.load() ? "ACTIVE" : "STANDBY";
+                DrawDiagTile("MATCH", matchStateStr, data::inMatch.load() ? IM_COL32(50, 230, 100, 255) : theme_orchid::ColTextMuted);
 
                 ImGui::Dummy(ImVec2(0, 8 * ui_scale));
                 ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(200, 40, 60, 200));

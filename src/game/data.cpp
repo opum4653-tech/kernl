@@ -191,17 +191,13 @@ namespace data {
         if (is_valid_ptr(m_Match)) {
             localPlayer = rpm<uint64_t>(m_Match + Offsets::localPlayer);
         }
+        if (!is_valid_ptr(localPlayer) && is_valid_ptr(BaseGame)) {
+            localPlayer = rpm<uint64_t>(BaseGame + Offsets::localPlayer);
+        }
 
         int matchState = is_valid_ptr(m_Match) ? rpm<int>(m_Match + Offsets::MatchIsRunning) : -1;
-        bool matchActive = (matchState == 1) || is_valid_ptr(localPlayer);
+        bool matchActive = (matchState == 1) || is_valid_ptr(localPlayer) || is_valid_ptr(BaseGame);
         inMatch.store(matchActive);
-
-        if (!matchActive) {
-            localPlayerAddr.store(0);
-            std::lock_guard<std::mutex> lk(players_mutex);
-            players.clear();
-            return;
-        }
 
         // 4. Resolve Camera ViewMatrix chain (FollowCamera 0x698, CameraBase 0xD8)
         uint64_t Camera = 0, FollowCamera = 0, IntPtrCam = 0;
@@ -209,13 +205,24 @@ namespace data {
 
         auto try_camera = [&](uint64_t candidate) -> bool {
             if (!is_valid_ptr(candidate)) return false;
+            // Case A: candidate -> IntPtrCam (0x10) -> Matrix (0x100)
             uint64_t intPtr = rpm<uint64_t>(candidate + Offsets::IntPtrCam); // 0x10
-            if (!is_valid_ptr(intPtr)) return false;
-            matrix vm = rpm<matrix>(intPtr + Offsets::Matrix); // 0x100
-            if (is_valid_matrix(vm)) {
+            if (is_valid_ptr(intPtr)) {
+                matrix vm = rpm<matrix>(intPtr + Offsets::Matrix); // 0x100
+                if (is_valid_matrix(vm)) {
+                    Camera = candidate;
+                    IntPtrCam = intPtr;
+                    viewMatrix = vm;
+                    matrix_valid = true;
+                    return true;
+                }
+            }
+            // Case B: candidate -> Matrix (0x100) directly
+            matrix direct_vm = rpm<matrix>(candidate + Offsets::Matrix); // 0x100
+            if (is_valid_matrix(direct_vm)) {
                 Camera = candidate;
-                IntPtrCam = intPtr;
-                viewMatrix = vm;
+                IntPtrCam = candidate;
+                viewMatrix = direct_vm;
                 matrix_valid = true;
                 return true;
             }
@@ -226,13 +233,18 @@ namespace data {
             FollowCamera = rpm<uint64_t>(localPlayer + Offsets::FollowCamera); // 0x698
         }
 
-        // Candidate 1: FollowCamera + 0x30
+        // Candidate 1: FollowCamera -> Camera (0x20) (matching STORM_MODS & Offsetsmax.h)
         if (is_valid_ptr(FollowCamera)) {
+            uint64_t c20 = rpm<uint64_t>(FollowCamera + Offsets::Camera); // 0x20
+            if (try_camera(c20)) goto cam_resolved;
             uint64_t c30 = rpm<uint64_t>(FollowCamera + 0x30);
             if (try_camera(c30)) goto cam_resolved;
+            uint64_t c28 = rpm<uint64_t>(FollowCamera + 0x28);
+            if (try_camera(c28)) goto cam_resolved;
+            if (try_camera(FollowCamera)) goto cam_resolved;
         }
 
-        // Candidate 2: BaseGame + 0xD8 (CameraBase) -> 0x20 / 0x28 -> 0x10 -> 0x100
+        // Candidate 2: BaseGame + CameraBase (0xD8) -> Camera (0x20)
         if (is_valid_ptr(BaseGame)) {
             uint64_t camMgr = rpm<uint64_t>(BaseGame + Offsets::CameraBase); // 0xD8
             if (is_valid_ptr(camMgr)) {
@@ -240,17 +252,18 @@ namespace data {
                 if (try_camera(c20)) goto cam_resolved;
                 uint64_t c28 = rpm<uint64_t>(camMgr + 0x28);
                 if (try_camera(c28)) goto cam_resolved;
+                if (try_camera(camMgr)) goto cam_resolved;
             }
         }
 
-        // Candidate 3: FollowCamera + 0x20 -> +0x20
-        if (is_valid_ptr(FollowCamera)) {
-            uint64_t mgr = rpm<uint64_t>(FollowCamera + Offsets::Camera); // 0x20
-            if (is_valid_ptr(mgr)) {
-                uint64_t c20 = rpm<uint64_t>(mgr + 0x20);
+        // Candidate 3: m_Match + CameraBase (0xD8) -> Camera (0x20)
+        if (is_valid_ptr(m_Match)) {
+            uint64_t camMgr = rpm<uint64_t>(m_Match + Offsets::CameraBase); // 0xD8
+            if (is_valid_ptr(camMgr)) {
+                uint64_t c20 = rpm<uint64_t>(camMgr + Offsets::Camera); // 0x20
                 if (try_camera(c20)) goto cam_resolved;
+                if (try_camera(camMgr)) goto cam_resolved;
             }
-            if (try_camera(mgr)) goto cam_resolved;
         }
 
     cam_resolved:
@@ -272,19 +285,6 @@ namespace data {
         if (!is_valid_ptr(dictionary) && is_valid_ptr(m_Match)) {
             dictionary = rpm<uint64_t>(m_Match + Offsets::Dictionary);
         }
-        if (!is_valid_ptr(dictionary)) {
-            std::lock_guard<std::mutex> lk(players_mutex);
-            players.clear();
-            return;
-        }
-
-        uint64_t entitylist = rpm<uint64_t>(dictionary + Offsets::entryAddr); // 0x18
-        if (!is_valid_ptr(entitylist)) {
-            entitylist = rpm<uint64_t>(dictionary + Offsets::enemyList); // 0x10 fallback
-        }
-        if (!is_valid_ptr(entitylist)) {
-            entitylist = dictionary;
-        }
 
         Vector3 localPos = Vector3::Zero();
         if (is_valid_ptr(localPlayer)) {
@@ -298,48 +298,65 @@ namespace data {
 
         float maxTrackingDist = cfg::esp::max_range.load(std::memory_order_relaxed);
 
-        // 6. Iterate entity array (up to 500 slots matching pewpew engine)
-        for (int i = 0; i < 500; i++) {
-            uint64_t enemy = rpm<uint64_t>(entitylist + i * sizeof(uint64_t));
-            if (!is_valid_ptr(enemy) || enemy == localPlayer) continue;
+        // 6. Entity Processing Lambda
+        auto process_enemy = [&](uint64_t enemy) {
+            if (!is_valid_ptr(enemy) || enemy == localPlayer) return;
 
-            // 1. AvatarManager & Uma validation
+            // Reject duplicates already in tmp
+            for (const auto& existing : tmp) {
+                if (existing.addr == enemy) return;
+            }
+
+            // 1. Dead check (0 = alive)
+            if (rpm<uint8_t>(enemy + Offsets::Player_IsDead) != 0) return; // 0x7C
+
+            // 2. AvatarManager & Uma validation
             auto avatarMgr = rpm<uint64_t>(enemy + Offsets::AvatarManager); // 0x778
-            if (!is_valid_ptr(avatarMgr)) continue;
+            if (!is_valid_ptr(avatarMgr)) return;
 
             auto umaSimple = rpm<uint64_t>(avatarMgr + Offsets::Avatar); // 0x138
-            if (!is_valid_ptr(umaSimple)) continue;
-
-            // 2. IsVisible check (1 = visible)
-            uint8_t isVis = rpm<uint8_t>(umaSimple + Offsets::Avatar_IsVisible); // 0x101
-            if (isVis != 1) continue;
+            if (!is_valid_ptr(umaSimple)) return;
 
             // 3. UmaData & Team check
             auto umaData = rpm<uint64_t>(umaSimple + Offsets::Avatar_Data); // 0x28
-            if (!is_valid_ptr(umaData)) continue;
-            if (rpm<uint8_t>(umaData + Offsets::Avatar_Data_IsTeam) != 0) continue; // 0x81
+            if (is_valid_ptr(umaData)) {
+                if (rpm<uint8_t>(umaData + Offsets::Avatar_Data_IsTeam) != 0) return; // 0x81 (teammate)
+            }
 
-            // 4. Dead check (0 = alive)
-            if (rpm<uint8_t>(enemy + Offsets::Player_IsDead) != 0) continue; // 0x7C
+            // 4. Bone positions (Head = 0x6A8, Root = 0x6D0)
+            auto headTF = rpm<uint64_t>(enemy + Offsets::Head); // 0x6A8
+            if (!is_valid_ptr(headTF)) return;
+            Vector3 headWorld = GetNodePosition(headTF);
+            if (headWorld == Vector3::Zero()) return;
+
+            Vector3 feetWorld = Vector3::Zero();
+            auto feetTF = rpm<uint64_t>(enemy + Offsets::Root); // 0x6D0
+            if (is_valid_ptr(feetTF)) {
+                feetWorld = GetNodePosition(feetTF);
+            }
+            if (feetWorld == Vector3::Zero()) {
+                feetWorld = Vector3(headWorld.x, headWorld.y - 1.75f, headWorld.z);
+            }
+
+            float dist = (localPos != Vector3::Zero()) ? calculate_distance(localPos, headWorld) : 10.0f;
+            if (maxTrackingDist > 0.0f && dist > maxTrackingDist) return;
+
+            Vector3 headScreen = WorldToScreenPoint(viewMatrix, headWorld);
+            if (headScreen.z < 0.05f) return;
+
+            Vector3 toeScreen = WorldToScreenPoint(viewMatrix, feetWorld);
 
             // 5. PhyXdata & Knocked check (Offsetsmax.h: PhyXdata 0x1D60 -> maybeDead 0x20 -> isKnocked 0x10)
-            auto phyxData = rpm<uint64_t>(enemy + Offsets::PhyXdata); // 0x1D60
-            if (!phyxData) continue;
-
             bool isKnocked = false;
-            auto maybeDead = rpm<uint64_t>(phyxData + Offsets::maybeDead); // 0x20
-            if (maybeDead && rpm<int>(maybeDead + Offsets::isKnocked) == 8) { // 0x10
-                isKnocked = true;
+            auto phyxData = rpm<uint64_t>(enemy + Offsets::PhyXdata); // 0x1D60
+            if (is_valid_ptr(phyxData)) {
+                auto maybeDead = rpm<uint64_t>(phyxData + Offsets::maybeDead); // 0x20
+                if (is_valid_ptr(maybeDead) && rpm<int>(maybeDead + Offsets::isKnocked) == 8) { // 0x10
+                    isKnocked = true;
+                }
             }
 
-            // 6. Camera Transform check (if present, verify non-zero)
-            auto camTF = rpm<uint64_t>(enemy + Offsets::MainCameraTransform); // 0x3F0
-            if (is_valid_ptr(camTF)) {
-                Vector3 camPos = GetPosition(camTF);
-                if (camPos == Vector3::Zero()) continue;
-            }
-
-            // 7. Health extraction
+            // 6. Health & Armor extraction
             int curHP = 0, maxHP = 200, curArmor = 0;
             readHealthAndArmor(rpm<uint64_t>(enemy + Offsets::Player_Data), curHP, maxHP, curArmor);
             if (curHP <= 0) {
@@ -348,26 +365,7 @@ namespace data {
             if (curHP <= 0) curHP = 100;
 
             bool isBot = rpm<bool>(enemy + Offsets::IsBot); // 0x4A8
-
-            // 8. Bone positions (Head = 0x6A8, Root = 0x6D0)
-            auto headTF = rpm<uint64_t>(enemy + Offsets::Head); // 0x6A8
-            if (!is_valid_ptr(headTF)) continue;
-            Vector3 headWorld = GetNodePosition(headTF);
-            if (headWorld == Vector3::Zero()) continue;
-
-            auto feetTF = rpm<uint64_t>(enemy + Offsets::Root); // 0x6D0
-            if (!is_valid_ptr(feetTF)) continue;
-            Vector3 feetWorld = GetNodePosition(feetTF);
-            if (feetWorld == Vector3::Zero()) continue;
-
-            float dist = (localPos != Vector3::Zero()) ? calculate_distance(localPos, headWorld) : 10.0f;
-            if (maxTrackingDist > 0.0f && dist > maxTrackingDist) continue;
-
-            Vector3 headScreen = WorldToScreenPoint(viewMatrix, headWorld);
-            if (headScreen.z < 0.05f || headScreen.x < 0.0f) continue;
-
-            Vector3 toeScreen = WorldToScreenPoint(viewMatrix, feetWorld);
-            if (toeScreen.z < 0.05f || toeScreen.x < 0.0f) continue;
+            uint8_t isVis = rpm<uint8_t>(umaSimple + Offsets::Avatar_IsVisible); // 0x101
 
             PlayerData pd;
             pd.addr      = enemy;
@@ -375,7 +373,7 @@ namespace data {
             pd.Toe       = toeScreen;
             pd.headWorld = headWorld;
             pd.isBot     = isBot;
-            pd.isVisible = true;
+            pd.isVisible = (isVis == 1);
             pd.isKnocked = isKnocked;
             pd.distance  = dist;
             pd.curHP     = curHP;
@@ -383,13 +381,14 @@ namespace data {
             pd.curArmor  = curArmor;
 
             tmp.push_back(pd);
-        }
+        };
 
-        // 7. Fail-safe fallback: if array iteration produced 0 enemies, try MonoDictionary slot reader
-        if (tmp.empty()) {
-            MonoDictionary dict(dictionary);
-            if (dict.valid) {
-                int nv = dict.getNumValues();
+        // 7. Multi-Tier Dictionary & Entity Extraction
+        auto read_dict_blocks = [&](uint64_t dictAddr) -> bool {
+            if (!is_valid_ptr(dictAddr)) return false;
+            MonoDictionary dict(dictAddr);
+            if (dict.valid && dict.getNumValues() > 0) {
+                int nv = std::min(dict.getNumValues(), 200);
                 MonoDictionary::EntryBlock blk{};
                 for (int i = 0; i < nv; i++) {
                     if (i % MonoDictionary::kBlockSize == 0) {
@@ -399,50 +398,67 @@ namespace data {
                         }
                     }
                     uint64_t enemy = blk.value[i % MonoDictionary::kBlockSize];
-                    if (!is_valid_ptr(enemy) || enemy == localPlayer) continue;
+                    if (is_valid_ptr(enemy)) {
+                        process_enemy(enemy);
+                    }
+                }
+                return !tmp.empty();
+            }
+            return false;
+        };
 
-                    auto avatarMgr = rpm<uint64_t>(enemy + Offsets::AvatarManager);
-                    if (!is_valid_ptr(avatarMgr)) continue;
-                    auto umaSimple = rpm<uint64_t>(avatarMgr + Offsets::Avatar);
-                    if (!is_valid_ptr(umaSimple)) continue;
-                    if (rpm<uint8_t>(umaSimple + Offsets::Avatar_IsVisible) != 1) continue;
-                    auto umaData = rpm<uint64_t>(umaSimple + Offsets::Avatar_Data);
-                    if (!is_valid_ptr(umaData) || rpm<uint8_t>(umaData + Offsets::Avatar_Data_IsTeam) != 0) continue;
-                    if (rpm<uint8_t>(enemy + Offsets::Player_IsDead) != 0) continue;
+        auto read_entries_stride = [&](uint64_t dictAddr) -> bool {
+            if (!is_valid_ptr(dictAddr)) return false;
+            uint64_t entries = rpm<uint64_t>(dictAddr + Offsets::entryAddr); // 0x18
+            if (!is_valid_ptr(entries)) return false;
 
-                    auto headTF = rpm<uint64_t>(enemy + Offsets::Head);
-                    if (!is_valid_ptr(headTF)) continue;
-                    Vector3 headWorld = GetNodePosition(headTF);
-                    if (headWorld == Vector3::Zero()) continue;
+            int count = rpm<int>(dictAddr + 0x20); // Dict._count
+            if (count <= 0 || count > 500) {
+                count = rpm<int>(entries + 0x18); // Array length
+            }
+            if (count <= 0 || count > 500) count = 100;
 
-                    auto feetTF = rpm<uint64_t>(enemy + Offsets::Root);
-                    if (!is_valid_ptr(feetTF)) continue;
-                    Vector3 feetWorld = GetNodePosition(feetTF);
-                    if (feetWorld == Vector3::Zero()) continue;
-
-                    Vector3 headScreen = WorldToScreenPoint(viewMatrix, headWorld);
-                    if (headScreen.z < 0.05f || headScreen.x < 0.0f) continue;
-                    Vector3 toeScreen = WorldToScreenPoint(viewMatrix, feetWorld);
-                    if (toeScreen.z < 0.05f || toeScreen.x < 0.0f) continue;
-
-                    float dist = (localPos != Vector3::Zero()) ? calculate_distance(localPos, headWorld) : 10.0f;
-                    if (maxTrackingDist > 0.0f && dist > maxTrackingDist) continue;
-
-                    PlayerData pd;
-                    pd.addr      = enemy;
-                    pd.Head      = headScreen;
-                    pd.Toe       = toeScreen;
-                    pd.headWorld = headWorld;
-                    pd.isBot     = rpm<bool>(enemy + Offsets::IsBot);
-                    pd.isVisible = true;
-                    pd.isKnocked = false;
-                    pd.distance  = dist;
-                    pd.curHP     = 100;
-                    pd.maxHP     = 200;
-                    pd.curArmor  = 0;
-                    tmp.push_back(pd);
+            uint64_t entries_data = entries + 0x20; // Skip Il2CppArray header
+            for (int i = 0; i < count; i++) {
+                uint64_t entryAddr = entries_data + (i * 0x18);
+                int32_t hashCode = rpm<int32_t>(entryAddr);
+                if (hashCode < 0) continue;
+                uint64_t enemy = rpm<uint64_t>(entryAddr + Offsets::enemyList); // 0x10
+                if (is_valid_ptr(enemy)) {
+                    process_enemy(enemy);
                 }
             }
+            return !tmp.empty();
+        };
+
+        auto read_flat_array = [&](uint64_t arrAddr) -> bool {
+            if (!is_valid_ptr(arrAddr)) return false;
+            for (int i = 0; i < 150; i++) {
+                uint64_t enemy = rpm<uint64_t>(arrAddr + (i * sizeof(uint64_t)));
+                if (is_valid_ptr(enemy)) {
+                    process_enemy(enemy);
+                }
+            }
+            return !tmp.empty();
+        };
+
+        const uintptr_t dictCandidates[] = {
+            dictionary,
+            is_valid_ptr(m_Match) ? rpm<uint64_t>(m_Match + Offsets::Dictionary) : 0,
+            is_valid_ptr(BaseGame) ? rpm<uint64_t>(BaseGame + Offsets::LDictionaryEntities) : 0, // 0xC8
+            is_valid_ptr(BaseGame) ? rpm<uint64_t>(BaseGame + Offsets::CurrentMatch) : 0,
+        };
+
+        for (uintptr_t cand : dictCandidates) {
+            if (!is_valid_ptr(cand)) continue;
+            if (read_dict_blocks(cand)) break;
+            if (read_entries_stride(cand)) break;
+            uint64_t innerList = rpm<uint64_t>(cand + Offsets::entryAddr);
+            if (is_valid_ptr(innerList)) {
+                if (read_flat_array(innerList + 0x20)) break;
+                if (read_flat_array(innerList)) break;
+            }
+            if (read_flat_array(cand)) break;
         }
 
         // 8. Commit to published players repository
