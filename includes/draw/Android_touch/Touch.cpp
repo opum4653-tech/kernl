@@ -7,10 +7,32 @@
 #include <cmath>
 #include <algorithm>
 #include <mutex>
+#include <atomic>
+#include <poll.h>
 #include <linux/input.h>
 #include <linux/uinput.h>
 
 #include "imgui.h"
+
+// Thread-safe atomic touch state buffer: background touch threads NEVER mutate ImGui directly
+static std::atomic<float> s_guiTouchX{-1.0f};
+static std::atomic<float> s_guiTouchY{-1.0f};
+static std::atomic<bool>  s_guiTouchDown{false};
+
+void Touch_SyncToImGui() {
+    ImGuiIO& io = ImGui::GetIO();
+    bool down = s_guiTouchDown.load(std::memory_order_acquire);
+    if (down) {
+        float x = s_guiTouchX.load(std::memory_order_relaxed);
+        float y = s_guiTouchY.load(std::memory_order_relaxed);
+        if (x >= 0.0f && y >= 0.0f) {
+            io.MousePos = ImVec2(x, y);
+        }
+        io.MouseDown[0] = true;
+    } else {
+        io.MouseDown[0] = false;
+    }
+}
 
 #define maxE 5
 #define maxF 10
@@ -278,6 +300,14 @@ static void *TypeA(void *arg) {
 
     while (Touch_initialized) {
         if (origfd[i] < 0) break;
+        struct pollfd pfd;
+        pfd.fd = origfd[i];
+        pfd.events = POLLIN;
+        int pret = poll(&pfd, 1, 100);
+        if (!Touch_initialized || origfd[i] < 0) break;
+        if (pret <= 0) continue;
+        if (!(pfd.revents & POLLIN)) continue;
+
         auto readSize = (int32_t) read(origfd[i], inputEvent, sizeof(inputEvent));
         if (!Touch_initialized || origfd[i] < 0) break;
         if (readSize <= 0 || (readSize % sizeof(input_event)) != 0) {
@@ -294,8 +324,7 @@ static void *TypeA(void *arg) {
                         Finger[i][latest].freshDown = true;
                     } else {
                         if (Finger[i][latest].swallow) {
-                            ImGuiIO &io = ImGui::GetIO();
-                            io.MouseDown[0] = false;
+                            s_guiTouchDown.store(false, std::memory_order_release);
                         }
                         Finger[i][latest].swallow = false;
                         Finger[i][latest].freshDown = false;
@@ -313,8 +342,7 @@ static void *TypeA(void *arg) {
                 if (ie.code == ABS_MT_TRACKING_ID) {
                     if (ie.value == -1) {
                         if (Finger[i][latest].swallow) {
-                            ImGuiIO &io = ImGui::GetIO();
-                            io.MouseDown[0] = false;
+                            s_guiTouchDown.store(false, std::memory_order_release);
                         }
                         Finger[i][latest].isDown = false;
                         Finger[i][latest].isTmpDown = false;
@@ -391,14 +419,13 @@ static void *TypeA(void *arg) {
 
                     // Only inject mouse input into ImGui if the touch belongs to the overlay UI
                     if (Finger[i][latest].swallow) {
-                        ImGuiIO &io = ImGui::GetIO();
-                        io.MousePos = ImVec2(x, y);
-                        io.MouseDown[0] = true;
+                        s_guiTouchX.store(x, std::memory_order_relaxed);
+                        s_guiTouchY.store(y, std::memory_order_relaxed);
+                        s_guiTouchDown.store(true, std::memory_order_release);
                     }
                 } else {
                     if (Finger[i][latest].swallow) {
-                        ImGuiIO &io = ImGui::GetIO();
-                        io.MouseDown[0] = false;
+                        s_guiTouchDown.store(false, std::memory_order_release);
                     }
                     Finger[i][latest].swallow = false;
                     Finger[i][latest].freshDown = false;
@@ -421,28 +448,22 @@ static void *TypeA(void *arg) {
 }
 
 bool Touch_Init(int w, int h, uint32_t orientation_, bool readOnly) {
-    char temp[128];
     DIR *dir = opendir("/dev/input/");
     if (!dir) return false;
     dirent *ptr = NULL;
-    int eventCount = 0;
-    while ((ptr = readdir(dir)) != NULL) {
-        if (strstr(ptr->d_name, "event"))
-            eventCount++;
-    }
-    closedir(dir);
 
     struct input_absinfo absX[maxE], absY[maxE];
-    int fd, i;
+    int i;
     float maxArea = 0.0f;
     fdNum = 0;
 
-    for (i = 0; i <= eventCount; i++) {
-        sprintf(temp, "/dev/input/event%d", i);
-        fd = open(temp, O_RDWR);
-        if (fd < 0) {
-            continue;
-        }
+    char temp[256];
+    while ((ptr = readdir(dir)) != NULL && fdNum < maxE) {
+        if (strncmp(ptr->d_name, "event", 5) != 0) continue;
+
+        snprintf(temp, sizeof(temp), "/dev/input/%s", ptr->d_name);
+        int fd = open(temp, O_RDWR);
+        if (fd < 0) continue;
 
         float devMaxX = 0.0f, devMaxY = 0.0f;
         if (checkDeviceIsTouch(fd, devMaxX, devMaxY)) {
@@ -454,9 +475,6 @@ bool Touch_Init(int w, int h, uint32_t orientation_, bool readOnly) {
                     ioctl(fd, EVIOCGRAB, GRAB);
                 }
 
-                // Keep the digitizer range of the primary screen: the device
-                // with the largest resolution area. Normalising raw coordinates
-                // against the wrong device's range skews every tap.
                 float area = devMaxX * devMaxY;
                 if (area > maxArea) {
                     maxArea = area;
@@ -465,8 +483,6 @@ bool Touch_Init(int w, int h, uint32_t orientation_, bool readOnly) {
                 }
 
                 fdNum++;
-                if (fdNum >= maxE)
-                    break;
             } else {
                 close(fd);
             }
@@ -474,6 +490,7 @@ bool Touch_Init(int w, int h, uint32_t orientation_, bool readOnly) {
             close(fd);
         }
     }
+    closedir(dir);
 
     if (fdNum == 0) {
         return false;
@@ -565,7 +582,6 @@ bool Touch_Init(int w, int h, uint32_t orientation_, bool readOnly) {
     ::screenHeight = (float)h; 
     ::orientation = orientation_;
 
-    system("chmod 000 -R /proc/bus/input/* 2>/dev/null");
     return true;
 }
 
@@ -599,6 +615,7 @@ static bool checkDeviceIsTouch(int fd, float &outMaxX, float &outMaxY) {
 void Touch_Close() {
     if (Touch_initialized) {
         Touch_initialized = false;
+        s_guiTouchDown.store(false, std::memory_order_release);
         for (int i = 0; i < maxE; ++i) {
             if (origfd[i] >= 0) {
                 if (!Touch_readOnly)

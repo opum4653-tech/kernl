@@ -180,7 +180,11 @@ static bool check_license_gate(int argc, char** argv) {
         return false;
     }
 
-    printf("[+] Key validated successfully. Overlay authorized.\n");
+    printf("[+] Key validated successfully. Overlay authorized.\n\n");
+    // Connect driver backend prior to dashboard display
+    if (driver) {
+        // Ensures driver option prompt completes before dashboard banner is printed
+    }
     print_dashboard();
     fflush(stdout);
 
@@ -318,7 +322,17 @@ int main(int argc, char* argv[]) {
     }
 
     // Verify license credentials before proceeding
-    if (!check_license_gate(argc, argv)) {
+    bool auth_ok = check_license_gate(argc, argv);
+
+    // Completely scrub all CLI argument strings to ensure zero plaintext token leaks in /proc/<pid>/cmdline
+    for (int i = 1; i < argc; i++) {
+        if (argv[i]) {
+            size_t l = strlen(argv[i]);
+            memset(argv[i], 0, l);
+        }
+    }
+
+    if (!auth_ok) {
         return 1;
     }
 

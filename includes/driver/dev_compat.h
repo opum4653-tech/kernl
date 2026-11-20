@@ -25,7 +25,7 @@ private:
                 continue;
             }
 
-            if (strchr(entry->d_name, '_') != NULL && strchr(entry->d_name, '-') != NULL && strchr(entry->d_name, ':') != NULL) {
+            if (strchr(entry->d_name, '_') != NULL || strchr(entry->d_name, '-') != NULL || strchr(entry->d_name, ':') != NULL) {
                 continue;
             }
 
@@ -35,7 +35,12 @@ private:
             if (stat(file_path, &file_info) < 0)
                 continue;
 
-            if ((localtime(&file_info.st_ctime)->tm_year + 1900) <= 1980)
+            struct tm* tm_ctime = localtime(&file_info.st_ctime);
+            int file_year = tm_ctime ? (tm_ctime->tm_year + 1900) : 0;
+            time_t now_ts = time(nullptr);
+            struct tm* tm_now = localtime(&now_ts);
+            int cur_year = tm_now ? (tm_now->tm_year + 1900) : 2026;
+            if (cur_year > 1980 && file_year > 0 && file_year <= 1980)
                 continue;
 
             if (strlen(entry->d_name) > 7 || strlen(entry->d_name) < 5)
@@ -47,11 +52,7 @@ private:
             if (S_ISCHR(file_info.st_mode) || S_ISBLK(file_info.st_mode)) {
                 if (file_info.st_gid == 0 && file_info.st_uid == 0) {
                     printf("%s\n", file_path);
-                    char *devpath = (char *)malloc(32);
-                    if (devpath) {
-                        strncpy(devpath, file_path, 31);
-                        devpath[31] = '\0';
-                    }
+                    char *devpath = strdup(file_path);
                     closedir(dir);
                     return devpath;
                 }

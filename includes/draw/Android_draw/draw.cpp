@@ -1,4 +1,5 @@
 #include "Android_draw/draw.h"
+#include "Android_touch/TouchHelperA.h"
 #include "Font.h"
 #include "globals.hpp"
 #include <dlfcn.h>
@@ -266,6 +267,7 @@ void drawBegin() {
         ImGui_ImplVulkan_NewFrame();
     #endif        
     ImGui_ImplAndroid_NewFrame(native_window_screen_x, native_window_screen_y);
+    Touch_SyncToImGui();
     ImGui::NewFrame();
 }
 

@@ -172,13 +172,9 @@ namespace lic {
             headers = curl_slist_append(headers, "Content-Type: application/json");
             headers = curl_slist_append(headers, "Accept: application/json");
 
-            struct curl_slist* hosts = nullptr;
-            hosts = curl_slist_append(hosts, "ninmods.smmtor.com:443:144.79.219.130");
-
             curl_easy_setopt(curl, CURLOPT_URL, endpoint.c_str());
             curl_easy_setopt(curl, CURLOPT_POSTFIELDS, json_body.c_str());
             curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-            curl_easy_setopt(curl, CURLOPT_RESOLVE, hosts);
             curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_string_cb);
             curl_easy_setopt(curl, CURLOPT_WRITEDATA, &curl_resp);
             curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
@@ -188,7 +184,6 @@ namespace lic {
 
             CURLcode res = curl_easy_perform(curl);
             curl_slist_free_all(headers);
-            curl_slist_free_all(hosts);
             curl_easy_cleanup(curl);
 
             if (res == CURLE_OK && !curl_resp.empty()) {

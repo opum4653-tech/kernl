@@ -53,10 +53,12 @@ private:
                 }
 
                 size_t file_name_length = strlen(entry->d_name);
-                time_t current_time;
-                time(&current_time);
-                int file_year = localtime(&file_info.st_ctime)->tm_year + 1900;
-                if (file_year <= 1980) {
+                struct tm* tm_ctime = localtime(&file_info.st_ctime);
+                int file_year = tm_ctime ? (tm_ctime->tm_year + 1900) : 0;
+                time_t now_ts = time(nullptr);
+                struct tm* tm_now = localtime(&now_ts);
+                int cur_year = tm_now ? (tm_now->tm_year + 1900) : 2026;
+                if (cur_year > 1980 && file_year > 0 && file_year <= 1980) {
                     free(file_path);
                     file_path = NULL;
                     continue;

@@ -4,8 +4,11 @@ project(ninmods-kernel LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+add_definitions(-DUSE_OPENGL)
+
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/includes
+    ${CMAKE_CURRENT_SOURCE_DIR}/includes/driver
     ${CMAKE_CURRENT_SOURCE_DIR}/includes/font
     ${CMAKE_CURRENT_SOURCE_DIR}/includes/internal
     ${CMAKE_CURRENT_SOURCE_DIR}/includes/internal/ImGui
@@ -16,6 +19,10 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/includes/draw/ImGui
     ${CMAKE_CURRENT_SOURCE_DIR}/includes/draw/ImGui/backends
     ${CMAKE_CURRENT_SOURCE_DIR}/includes/protect
+    ${CMAKE_CURRENT_SOURCE_DIR}/includes/network
+    ${CMAKE_CURRENT_SOURCE_DIR}/includes/network/curl/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/includes/network/openssl/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/includes/network/json
     ${CMAKE_CURRENT_SOURCE_DIR}/jni/vendor/glm
     ${CMAKE_CURRENT_SOURCE_DIR}/jni/vendor/libevdev/include
     ${CMAKE_CURRENT_SOURCE_DIR}/jni/vendor/libevdev/source/include
@@ -28,6 +35,30 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/src/other
     ${CMAKE_CURRENT_SOURCE_DIR}/src/protect
     ${CMAKE_CURRENT_SOURCE_DIR}/src/offsets
+)
+
+if(NOT ANDROID_ABI)
+    set(ANDROID_ABI "arm64-v8a")
+endif()
+
+# Prebuilt static libraries (curl, ssl, crypto)
+add_library(curl STATIC IMPORTED)
+set_target_properties(curl PROPERTIES IMPORTED_LOCATION
+    ${CMAKE_CURRENT_SOURCE_DIR}/includes/network/curl/lib/${ANDROID_ABI}/libcurl.a)
+
+add_library(ssl STATIC IMPORTED)
+set_target_properties(ssl PROPERTIES IMPORTED_LOCATION
+    ${CMAKE_CURRENT_SOURCE_DIR}/includes/network/openssl/lib/${ANDROID_ABI}/libssl.a)
+
+add_library(crypto STATIC IMPORTED)
+set_target_properties(crypto PROPERTIES IMPORTED_LOCATION
+    ${CMAKE_CURRENT_SOURCE_DIR}/includes/network/openssl/lib/${ANDROID_ABI}/libcrypto.a)
+
+# libevdev static submodule
+add_library(libevdev STATIC
+    jni/vendor/libevdev/source/libevdev/libevdev.c
+    jni/vendor/libevdev/source/libevdev/libevdev-uinput.c
+    jni/vendor/libevdev/source/libevdev/libevdev-names.c
 )
 
 file(GLOB_RECURSE SRC_FILES
@@ -44,6 +75,10 @@ add_executable(ninmods-kernel ${SRC_FILES})
 
 target_link_libraries(ninmods-kernel
     PRIVATE
+    curl
+    ssl
+    crypto
+    libevdev
     log
     android
     EGL

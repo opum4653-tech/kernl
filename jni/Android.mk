@@ -91,7 +91,7 @@ LOCAL_CPPFLAGS := \
     -DUSE_OPENGL \
     -std=c++17 \
     -fexceptions \
-    -frtti \
+    -fno-rtti \
     -fvisibility=hidden \
     -fvisibility-inlines-hidden \
     -Oz \
