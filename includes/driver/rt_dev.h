@@ -162,12 +162,12 @@ public:
         return false;
     }
 
-    bool write(uintptr_t addr, void* buffer, size_t size) {
+    bool write(uintptr_t addr, const void* buffer, size_t size) {
         if (fd < 0 || pid <= 0 || !buffer || size == 0) return false;
         COPY_MEMORY cm;
         cm.pid = this->pid;
         cm.addr = addr;
-        cm.buffer = buffer;
+        cm.buffer = const_cast<void*>(buffer);
         cm.size = size;
 
         if (ioctl(fd, active_write_op, &cm) == 0) return true;
