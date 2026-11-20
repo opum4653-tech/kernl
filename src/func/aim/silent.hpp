@@ -51,9 +51,8 @@
 namespace trajectory {
 namespace silent {
 
-    // ── rand_r seed — aim-thread local, no global rand() race ────────────────────
-    // Declared inline so each TU gets the same variable (ODR-safe with inline).
-    inline unsigned int s_jitter_seed = 0x4E494E4D; // "NINM" as initial seed
+    // ── rand_r seed — thread_local for complete thread isolation ─────────────────
+    inline thread_local unsigned int s_jitter_seed = 0x4E494E4D; // "NINM" as initial seed
 
     // ── Gaussian micro-jitter (Box-Muller, thread-local seed) ────────────────────
     static inline float gaussian_jitter(float sigma) {
@@ -142,11 +141,18 @@ namespace silent {
 
         // ── 2. Read muzzle start position (0x4C) ─────────────────────────────────
         Vector3 ammoBase = rpm<Vector3>(hitObjAddress + Offsets::Aim::StartPosition);
-        if (ammoBase == Vector3::Zero() || !std::isfinite(ammoBase.x)) {
+        auto is_valid_vec3 = [](const Vector3& v) -> bool {
+            return (v != Vector3::Zero() &&
+                    std::isfinite(v.x) &&
+                    std::isfinite(v.y) &&
+                    std::isfinite(v.z));
+        };
+
+        if (!is_valid_vec3(ammoBase)) {
             uint64_t localHead = rpm<uint64_t>(localPlayer + Offsets::Bone::Head);
             if (localHead) ammoBase = GetNodePosition(localHead);
         }
-        if (ammoBase == Vector3::Zero() || !std::isfinite(ammoBase.x)) return;
+        if (!is_valid_vec3(ammoBase)) return;
 
         // ── 3. Probabilistic headshot rate decision ───────────────────────────────
         int hsRate = cfg::aim::headshot_rate.load(std::memory_order_relaxed);
@@ -170,14 +176,14 @@ namespace silent {
             ? target.getTargetWorld(0, headBias)
             : target.getTargetWorld(1, 0.0f);
 
-        if (targetWorld == Vector3::Zero() || !std::isfinite(targetWorld.x)) return;
+        if (!is_valid_vec3(targetWorld)) return;
 
         // ── 4. Compute normalized direction (clean, no jitter) ───────────────────
         Vector3 dir = targetWorld - ammoBase;
         if (dir.sqrMagnitude() <= 1e-4f) return;
 
         Vector3 normDir = SafeNormalize(dir);
-        if (!std::isfinite(normDir.x) || normDir == Vector3::Zero()) return;
+        if (!std::isfinite(normDir.x) || !std::isfinite(normDir.y) || !std::isfinite(normDir.z) || normDir == Vector3::Zero()) return;
 
         // ── 5. ANGULAR DEVIATION CONE GUARD (clean vector, before jitter) ────────
         // Read the last-published view matrix — no extra RPM needed.
@@ -195,9 +201,7 @@ namespace silent {
 
         // ── 6. Gaussian micro-jitter (applied to direction AFTER cone check) ─────
         // Jitter sigma in radians equivalent: scale with range for realistic spray.
-        float dist3D = sqrtf((targetWorld.x - ammoBase.x) * (targetWorld.x - ammoBase.x) +
-                             (targetWorld.y - ammoBase.y) * (targetWorld.y - ammoBase.y) +
-                             (targetWorld.z - ammoBase.z) * (targetWorld.z - ammoBase.z));
+        float dist3D = sqrtf(dir.sqrMagnitude());
         // sigma: 0.012 at 10m → 0.045 at 100m (sub-hitbox, invisible to player)
         float jitterSigma = 0.012f + (dist3D * 0.00033f);
         Vector3 finalDir = jitter_direction(normDir, jitterSigma);
