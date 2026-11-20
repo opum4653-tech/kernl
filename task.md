@@ -1,35 +1,75 @@
-# NINMODS KERNEL — Active Feature Tracking (task.md)
+# NINMODS KERNEL — Comprehensive Anti-Ban & Stealth Architecture Roadmap
 
 ---
 
-### Core Active Features (একমাত্র সক্রিয় ১৬টি ফিচার)
+## 🎯 Executive Summary & Forensic Autopsy: Why Accounts Get Banned with Kernel Drivers
 
-#### Tab 0: Visuals (ESP)
-1. **Master Switch** — পুরো সিস্টেম চালু/বন্ধ করার মেইন সুইচ [OK]
-2. **ESP Box (Chaturbhuj)** — এনিমির চারপাশে 2D বাউন্ডিং বক্স [OK]
-3. **ESP Armor Bar** — এনিমির ভেস্ট/আর্মর স্ট্যাটাস বার [OK]
-4. **ESP Laser Line** — এনিমির দিকে লেজার ট্রেসার লাইন [OK]
-5. **ESP Bot Tag (AI)** — সার্ভার বট প্লেয়ার আলাদা করার ট্যাগ [BOT] [OK]
-6. **Max Render Distance Slider** — ইএসপি রেন্ডার রেঞ্জ (৫০ মি. - ৫০০ মি.) [OK]
-7. **ESP Accent Color** — পার্পল কালার সিস্টেমে ফিক্সড (#E10098, মেনু কালার প্যালেট অপশন রিমুভড) [OK]
+A Kernel Driver operates at **Ring-0**. It successfully hides the cheat process from userspace scanners (`ps`, `/proc/<pid>/maps`, `/proc/<pid>/status`, and `ptrace`). 
 
-#### Tab 1: Combat (Aimbot)
-8. **Aim Silent** — স্ক্রিন না ঘুরিয়েই সরাসরি বুলেটের ডিরেকশন হেডে নেওয়ার অপশন (Unnormalized Vector) [OK]
-9. **Scope Aim (Instant Head)** — স্কোপ অন করলেই ইনস্ট্যান্ট হেড লক [OK]
-10. **Auto Headshot (100% Red)** — ১০০% লাল নাম্বারে ড্যামেজ লক (LockedAimingCollider 0x80 সোয়াপ) [OK]
-11. **Ignore Knocked** — নকড প্লেয়ারদের এইম ফিল্টার করা [OK]
-12. **Draw FOV Circle** — স্ক্রিনের মাঝখানে কিল জোন সার্কেল আঁকা [OK]
-13. **Headshot Elevation Bias Slider** — হেডে হিট লাগার উচ্চতা অ্যাডজাস্টমেন্ট (০.১০মি. - ০.৩৫মি., ডিফল্ট ০.২২মি.) [OK]
-
-#### Tab 2: Mods & System
-14. **Speed Hack (Anti-Ban Safe)** — নিরাপদ স্প্রিন্ট স্পিড বুস্ট (১.০০x - ১.৩০x) [OK]
-15. **No Recoil** — বন্দুকের কাঁপুনি সম্পূর্ণ ০ করা [OK]
-16. **EXIT OVERLAY Button** — কার্নেল ওভারলে সম্পূর্ণ বন্ধ করে দেওয়ার লাল বাটন [OK]
+**However, a Kernel Driver CANNOT prevent:**
+1. **Server-Side Anomaly & Telemetry Bans:** The game server runs physics replication. If the bullet trajectory deviates 40° from camera forward, or `HitGroup` is forced to Head (1) when crosshair is pointing elsewhere, the server flags automated aimbot detection.
+2. **The `ViewBlocked = false` Magic Bullet Trap:** Overwriting `ViewBlocked` allows bullets to hit through walls. Server physics detects raycast intersection with static obstacles -> **Instant 10-year ban**.
+3. **In-Engine Heap Watchdogs:** Anti-cheat threads inside the game (`libanort.so`, `libgcloud.so`) monitor their own weapon structs (`AimInfo`) for unexpected asynchronous memory modifications.
+4. **Statistical Heuristics (100% Headshot Rate):** Unnatural kill-to-headshot ratios trigger automated machine learning flags on the backend.
+5. **Lack of Hardware Touch Aim Alternative:** Silent aim modifies game memory. A true undetectable aimbot operates externally via touch event simulation (physically moving the camera view without writing a single byte to game memory).
 
 ---
 
-### Removed & Pruned Features
-- Health Bar, Player Name, Distance, Weapon Name, Firing Indicator, Ignore Bots, Crosshair Center, Loot ESP, Box Style selector, Laser Line Width slider, Box Border Width slider.
-- Aim Assist camera drag, Sniper Headshot Lock, Target Aim Bone selector, Aim Trigger selector, Target Priority selector, Visible Check, Silent Aim Hit Rate slider, Aim Smooth Factor slider, Max Aiming Range slider, Live Target HUD.
-- Wide FOV/iPad View, High Jump, Auto-Pickup Range, Air Flight, Ghost Hack, Phantom Mode, Movement Diagnostics HUD, Hitbox Scaler, No Reload.
-- **Backup Location:** All pruned offsets, structs, and feature snippets are safely archived outside the repository in `<appDataDir>/brain/<conversation-id>/backup_removed_offsets_and_features.md`.
+## 📋 Master Task Breakdown
+
+### Phase 1: Game Server & Telemetry Anti-Ban Hardening (Silent Aim / Trajectory)
+- [x] **Task 1.1: Eliminate the `ViewBlocked = false` Wall Penetration Ban Trap (`src/func/aim/silent.hpp`)**
+  - **Forensic Cause:** `wpm<bool>(hitObjAddress + Offsets::Aim::ViewBlocked, false)` permits shooting through obstacles. When the server validates trajectory through cover, it triggers an instant server-side ban.
+  - **Fix:** `ViewBlocked` write completely removed. Only `Offsets::Aim::Direction` (0x40) is written — the physics engine validates raycast naturally.
+- [x] **Task 1.2: Angular Deviation Clamping (Camera Cone Guard) (`src/func/aim/silent.hpp`)**
+  - **Forensic Cause:** Firing at targets far outside the crosshair creates a sharp angle between camera forward and bullet direction, easily flagged by server-side dot-product telemetry.
+  - **Fix:** Camera forward extracted live from viewMatrix (third column). `dot(CameraFwd, BulletDir) < cos(12°)` → write aborted, bullet fires naturally. Constant `MAX_AIM_COS = 0.9781f`.
+- [x] **Task 1.3: Eliminate Hardcoded HitGroup Forcing (`src/func/aim/silent.hpp`)**
+  - **Forensic Cause:** Overwriting `Offsets::Aim::HitGroup = 1` directly inside the game buffer desynchronizes client physics collider hits with reported hitgroup, causing mismatch telemetry flags.
+  - **Fix:** `HitGroup` write completely removed. The steered Direction vector causes the physics engine to register the correct hitgroup from the actual raycast intersection.
+- [x] **Task 1.4: Humanized Micro-Drift & Non-Static Trajectory Jitter (`src/func/aim/silent.hpp`)**
+  - **Forensic Cause:** Mathematical vectors pointing to exact center of bone nodes with zero variance produce artificial telemetry signatures.
+  - **Fix:** Box-Muller Gaussian jitter applied per shot. Sigma scales with distance (0.012m at 10m → 0.045m at 100m). Vertical axis tighter (gravity). Breaks flat precision pattern without meaningful accuracy loss.
+
+---
+
+### Phase 2: In-Engine Memory Quarantine & Zero-WPM Safety Lock
+- [ ] **Task 2.1: Enforce Strict Zero-WPM Hardware Lock for Pure ESP (`src/other/memory.hpp`, `src/globals.hpp`)**
+  - **Forensic Cause:** Users running Pure ESP must have mathematical 100% certainty that zero bytes are ever written into the game process under any condition.
+  - **Action Plan:** Enforce an immutable hardware-like gate in `mem_write()`: if Combat/Aimbot features are disabled, `mem_write()` immediately returns false without touching kernel driver write routines.
+- [ ] **Task 2.2: Memory Write Address Quarantine Barrier (`src/other/memory.hpp`)**
+  - **Forensic Cause:** Rogue writes into executable code, metadata tables, or entity structures trigger in-engine checksum crashes and integrity bans.
+  - **Action Plan:** Strictly constrain `wpm` destination addresses. Any address outside verified weapon raycast buffers is rejected with zero execution.
+- [ ] **Task 2.3: Cadence & Flood Rate Limiter (`src/func/aim/aim.hpp`)**
+  - **Forensic Cause:** Over-flooding memory with rapid WPM cycles (500Hz) creates memory bus contention and can be captured by game watchdog sampling loops.
+  - **Action Plan:** Synchronize writes strictly with active weapon discharge cadence (single write per shot cycle).
+
+---
+
+### Phase 3: Hardware Touch Simulation Engine (100% External Non-Invasive Aimbot)
+- [ ] **Task 3.1: External Touch-Based Aimbot Architecture (`includes/draw/Android_touch/Touch.cpp`, `src/func/aim/`)**
+  - **Forensic Cause:** Memory-based aimbot modifies the game process. External touch aimbot physically turns the camera via `/dev/input/` or `uinput`, achieving 100% Zero-WPM stealth.
+  - **Action Plan:** Integrate a smooth touch drag calculator that injects delta screen swipes onto the aim/drag area to track targets without touching game memory.
+- [ ] **Task 3.2: Humanized PID / Bezier Smoothing Curves (`src/func/aim/`)**
+  - **Forensic Cause:** Linear camera movement looks robotic and flags behavioral detection.
+  - **Action Plan:** Implement cubic Bezier / PID acceleration-deceleration curves with natural overshoot and recovery.
+
+---
+
+### Phase 4: Kernel Driver Stealth & Ring-0 Sanitization
+- [ ] **Task 4.1: Driver Fallback Lockdown & Strict Validation (`includes/driver.h`, `src/other/memory.hpp`)**
+  - **Forensic Cause:** If driver fails to attach, mod silently failing or operating with incorrect device nodes can expose system footprints.
+  - **Action Plan:** Verify kernel driver communication health before any read/write cycle; display explicit error and halt gracefully if driver is unconfirmed.
+- [ ] **Task 4.2: Fileless Driver Configuration & Memory Scrubbing (`includes/driver/driver_config.h`)**
+  - **Forensic Cause:** Writing `.nin_driver.cfg` to `/data/local/tmp` leaves forensic disk artifacts visible to root-checking apps.
+  - **Action Plan:** Switch to memory-only configuration or pass parameters strictly via environment variables / CLI args.
+
+---
+
+### Phase 5: Overlay & Input Subsystem Camouflage
+- [ ] **Task 5.1: Passive Touch Interception (Zero-Grab Option) (`includes/draw/Android_touch/Touch.cpp`)**
+  - **Forensic Cause:** Calling `EVIOCGRAB` exclusively acquires the touchscreen device node. Security tools checking device grab states can identify external grabbers.
+  - **Action Plan:** Support a non-grabbing passive touch mode with seamless menu interaction.
+- [ ] **Task 5.2: SurfaceFlinger Window Identity & Screenshot Protection (`includes/draw/Android_draw/draw.cpp`)**
+  - **Forensic Cause:** Screen recorders or in-game capture APIs taking screenshots could capture ESP overlays if secure flags are absent.
+  - **Action Plan:** Enforce `ISurfaceComposer::eSecure` flags on the native surface window so ESP overlay is completely invisible to game screencaps.
