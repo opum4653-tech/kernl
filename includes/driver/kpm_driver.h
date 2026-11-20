@@ -135,7 +135,7 @@ public:
 
         if (engine == KPM_ENGINE_TB) {
             mem_operation op = { this->pid, (uint64_t)addr, buffer, (uint64_t)size };
-            return (syscall(__NR_prctl, PRCTL_MEM_READ, (unsigned long)&op, 0, 0, 0) == 0);
+            return (syscall(__NR_prctl, PRCTL_MEM_READ, (unsigned long)&op, 0, 0, 0) >= 0);
         } else if (engine == KPM_ENGINE_NEO) {
             // Chunked loop to completely fix the pewpew 4096-byte limit bug
             uint8_t *dest = static_cast<uint8_t *>(buffer);
@@ -163,12 +163,12 @@ public:
         return false;
     }
 
-    bool write(uintptr_t addr, void *buffer, size_t size) {
+    bool write(uintptr_t addr, const void *buffer, size_t size) {
         if (!active || pid <= 0 || !buffer || size == 0) return false;
 
         if (engine == KPM_ENGINE_TB) {
-            mem_operation op = { this->pid, (uint64_t)addr, buffer, (uint64_t)size };
-            return (syscall(__NR_prctl, PRCTL_MEM_WRITE, (unsigned long)&op, 0, 0, 0) == 0);
+            mem_operation op = { this->pid, (uint64_t)addr, const_cast<void*>(buffer), (uint64_t)size };
+            return (syscall(__NR_prctl, PRCTL_MEM_WRITE, (unsigned long)&op, 0, 0, 0) >= 0);
         } else if (engine == KPM_ENGINE_NEO) {
             // Chunked loop to completely fix the pewpew 4096-byte limit bug
             const uint8_t *src = static_cast<const uint8_t *>(buffer);
@@ -203,15 +203,22 @@ public:
         FILE *f = fopen(maps_path, "r");
         if (!f) return 0;
         char line[512];
-        uintptr_t base = 0;
+        uintptr_t first_base = 0;
         while (fgets(line, sizeof(line), f)) {
             if (strstr(line, name)) {
-                base = (uintptr_t)strtoull(line, nullptr, 16);
-                break;
+                uint64_t start = 0, end = 0;
+                if (sscanf(line, "%lx-%lx", &start, &end) == 2 && start > 0) {
+                    if (first_base == 0) first_base = static_cast<uintptr_t>(start);
+                    uint32_t magic = 0;
+                    if (this->read(static_cast<uintptr_t>(start), &magic, sizeof(magic)) && magic == 0x464C457F) {
+                        fclose(f);
+                        return static_cast<uintptr_t>(start);
+                    }
+                }
             }
         }
         fclose(f);
-        return base;
+        return first_base;
     }
 
     void hide_process() {

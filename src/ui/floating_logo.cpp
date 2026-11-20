@@ -62,7 +62,7 @@ void load_pos() {
 }
 
 // ----------------------------------------------------------------------------
-// CIRCULAR FLOATING LOGO DRAWING ('K' for Kernel Service)
+// CIRCULAR FLOATING LOGO DRAWING ('N' for NinMods Official Branding)
 // ----------------------------------------------------------------------------
 static void DrawCircularLogo(ImDrawList* dl, ImVec2 center, float radius) {
     ImU32 colPrimary = theme_orchid::ColPrimary;
@@ -78,9 +78,9 @@ static void DrawCircularLogo(ImDrawList* dl, ImVec2 center, float radius) {
     // 2. Clean Solid Outline Border in Active Theme Accent
     dl->AddCircle(center, radius, colPrimary, 64, 2.5f);
 
-    // 3. Center "K" Letter with subtle drop shadow
+    // 3. Center "N" Letter with subtle drop shadow
     ImFont* font = g_LogoFont ? g_LogoFont : ImGui::GetFont();
-    const char* txt = "K";
+    const char* txt = "N";
     float fontSize = radius * 1.15f;
     ImVec2 tsz = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, txt);
     ImVec2 txtPos = ImVec2(center.x - tsz.x * 0.5f, center.y - tsz.y * 0.5f);
@@ -96,7 +96,7 @@ void render(float realW, float realH, float ui_scale) {
     s_last_view_w = realW;
     s_last_view_h = realH;
 
-    const float logoRadius = 64.0f * ui_scale;
+    const float logoRadius = 38.0f * ui_scale;
     const float logoMargin = 16.0f * ui_scale;
     const float logoDiameter = logoRadius * 2.0f;
 
@@ -115,8 +115,8 @@ void render(float realW, float realH, float ui_scale) {
     s_logo_pos.x = std::clamp(s_logo_pos.x, logoMargin, maxX);
     s_logo_pos.y = std::clamp(s_logo_pos.y, logoMargin, maxY);
 
-    // Register the logo's touch zone as a circle matching the enlarged disc
-    Touch_AddUiCircle(s_logo_pos.x + logoRadius, s_logo_pos.y + logoRadius, logoRadius + 10.0f * ui_scale);
+    // Register the logo's touch zone as a circle matching the disc
+    Touch_AddUiCircle(s_logo_pos.x + logoRadius, s_logo_pos.y + logoRadius, logoRadius + 6.0f * ui_scale);
 
     ImGui::SetNextWindowPos(s_logo_pos, ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(logoDiameter, logoDiameter), ImGuiCond_Always);
@@ -131,7 +131,7 @@ void render(float realW, float realH, float ui_scale) {
                                  ImGuiWindowFlags_NoBackground |
                                  ImGuiWindowFlags_NoFocusOnAppearing;
 
-    if (ImGui::Begin("##KernelServiceIndicator", nullptr, logoFlags)) {
+    if (ImGui::Begin("##NinmodsKernelPill", nullptr, logoFlags)) {
         ImDrawList* dl = ImGui::GetWindowDrawList();
         ImVec2 winP = ImGui::GetWindowPos();
         ImVec2 center(winP.x + logoRadius, winP.y + logoRadius);
@@ -151,7 +151,7 @@ void render(float realW, float realH, float ui_scale) {
         double cur_time = ImGui::GetTime();
 
         if (ImGui::IsItemActivated()) {
-            const float hitR = logoRadius + 10.0f * ui_scale;
+            const float hitR = logoRadius + 6.0f * ui_scale;
             float ddx = mousePos.x - center.x;
             float ddy = mousePos.y - center.y;
             s_was_activated = (ddx * ddx + ddy * ddy) <= (hitR * hitR);
@@ -163,7 +163,7 @@ void render(float realW, float realH, float ui_scale) {
             float dx = mousePos.x - s_click_down_pos.x;
             float dy = mousePos.y - s_click_down_pos.y;
             // High-tolerance drag slop: prevents finger micro-jitter from swallowing single taps
-            const float dragSlop = 22.0f * ui_scale;
+            const float dragSlop = 14.0f * ui_scale;
             if (s_moved_drag || std::hypot(dx, dy) > dragSlop) {
                 s_moved_drag = true;
                 s_logo_pos = ImVec2(
@@ -175,7 +175,7 @@ void render(float realW, float realH, float ui_scale) {
 
         // Tap reliably opens the menu (immediate responsive trigger)
         if (s_was_activated && deactivated && !s_moved_drag) {
-            if (s_last_toggle_time < 0.0 || (cur_time - s_last_toggle_time > 0.15)) {
+            if (s_last_toggle_time < 0.0 || (cur_time - s_last_toggle_time > 0.20)) {
                 g_ShowMenu = true;
                 s_last_toggle_time = cur_time;
             }

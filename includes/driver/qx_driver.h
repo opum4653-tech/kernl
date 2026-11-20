@@ -188,12 +188,12 @@ public:
         return (ioctl(fd, DEV_OP_READ_MEM, &cm) == 0);
     }
 
-    bool write(uintptr_t addr, void* buffer, size_t size) {
+    bool write(uintptr_t addr, const void* buffer, size_t size) {
         if (fd < 0 || pid <= 0 || !buffer || size == 0) return false;
         COPY_MEMORY cm;
         cm.pid = this->pid;
         cm.addr = addr;
-        cm.buffer = buffer;
+        cm.buffer = const_cast<void*>(buffer);
         cm.size = size;
         return (ioctl(fd, DEV_OP_WRITE_MEM, &cm) == 0);
     }
@@ -207,10 +207,37 @@ public:
         mb.pid = this->pid;
         mb.name = buf;
         mb.base = 0;
-        if (ioctl(fd, DEV_OP_MODULE_BASE, &mb) != 0) {
-            return 0;
+        if (ioctl(fd, DEV_OP_MODULE_BASE, &mb) == 0 && mb.base > 0) {
+            uint32_t magic = 0;
+            if (this->read(mb.base, &magic, sizeof(magic)) && magic == 0x464C457F) {
+                return mb.base;
+            }
         }
-        return mb.base;
+
+        // Direct /proc/<pid>/maps scan fallback (zero-fork, zero popen)
+        char maps_path[64];
+        snprintf(maps_path, sizeof(maps_path), "/proc/%d/maps", this->pid);
+        FILE *f = fopen(maps_path, "r");
+        if (f) {
+            char line[1024];
+            uintptr_t first_base = 0;
+            while (fgets(line, sizeof(line), f)) {
+                if (strstr(line, name)) {
+                    uint64_t start = 0, end = 0;
+                    if (sscanf(line, "%lx-%lx", &start, &end) == 2 && start > 0) {
+                        if (first_base == 0) first_base = static_cast<uintptr_t>(start);
+                        uint32_t magic = 0;
+                        if (this->read(static_cast<uintptr_t>(start), &magic, sizeof(magic)) && magic == 0x464C457F) {
+                            fclose(f);
+                            return static_cast<uintptr_t>(start);
+                        }
+                    }
+                }
+            }
+            fclose(f);
+            if (first_base > 0) return first_base;
+        }
+        return 0;
     }
 
     void hide_process() {

@@ -1,560 +1,200 @@
-#pragma once
+#ifndef UNIFIED_DRIVER_H
+#define UNIFIED_DRIVER_H
 
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <cstdlib>
-#include <cstdio>
-#include <dirent.h>
-#include <unistd.h>
-#include <cctype>
-#include <ctime>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <sys/ioctl.h>
-#include <sys/mman.h>
-#include <cstring>
-#include <iostream>
-#include <string>
-#include <sys/utsname.h>
-#include <sys/system_properties.h>
-#include <sys/prctl.h>
-#include <cstdint>
-#include <cerrno>
-#include <sys/syscall.h>
-
-inline int select_driver_option = 0;
-
-// ==================== TB KPM STRUCTURES ====================
-struct mem_operation {
-    pid_t target_pid;
-    uint64_t addr;
-    void *buffer;
-    uint64_t size;
-};
-
-#define PRCTL_MEM_READ  0x63687501
-#define PRCTL_MEM_WRITE 0x63687502
-
-// ==================== NEO KPM STRUCTURES ====================
-#define NA_PRCTL_MAGIC      0x4E41
-#define NA_CMD_READ_MEM     1
-#define NA_CMD_WRITE_MEM    2
-#define NA_CMD_GET_PID      5
-#define NA_MAX_RW_SIZE      4096
-#define NA_MAX_PKG_NAME     256
-
-struct na_cmd {
-    uint32_t op;
-    uint32_t pid;
-    uint64_t addr;
-    uint32_t size;
-    int32_t  result;
-    int32_t  screen_w;
-    int32_t  screen_h;
-    char     pkg[NA_MAX_PKG_NAME];
-    uint8_t  data[NA_MAX_RW_SIZE];
-};
-
-// Syscall memory read/write numbers
-#if defined(__arm__)
-inline int drv_readv_nr = 376;
-inline int drv_writev_nr = 377;
-#elif defined(__aarch64__)
-inline int drv_readv_nr = 270;
-inline int drv_writev_nr = 271;
-#elif defined(__i386__)
-inline int drv_readv_nr = 347;
-inline int drv_writev_nr = 348;
-#else
-inline int drv_readv_nr = 310;
-inline int drv_writev_nr = 311;
-#endif
+#include "driver/driver_config.h"
+#include "driver/rt_hook.h"
+#include "driver/rt_dev.h"
+#include "driver/dev_compat.h"
+#include "driver/qx_driver.h"
+#include "driver/kpm_driver.h"
 
 class c_driver {
 private:
-    int fd = -1;
-    pid_t pid = -1;
-    int mem_fd = -1;
-    pid_t mem_fd_pid = -1;
+    int m_selection = 0;
+    c_rt_hook    m_rt_hook;
+    c_rt_dev     m_rt_dev;
+    c_dev_compat m_dev_compat;
+    c_qx_driver  m_qx_driver;
+    c_kpm_driver m_kpm_driver;
 
-    uint32_t active_read_op = 0x801;
-    uint32_t active_write_op = 0x802;
-    uint32_t active_module_op = 0x803;
+public:
+    int getDriverSelection() {
+        DisplayCurrentConfig();
 
-    typedef struct _COPY_MEMORY {
-        pid_t pid;
-        uintptr_t addr;
-        void* buffer;
-        size_t size;
-    } COPY_MEMORY, *PCOPY_MEMORY;
-
-    typedef struct _MODULE_BASE {
-        pid_t pid;
-        char* name;
-        uintptr_t base;
-    } MODULE_BASE, *PMODULE_BASE;
-
-    ssize_t process_v(pid_t __pid, const struct iovec *__local_iov, unsigned long __local_iov_count,
-                      const struct iovec *__remote_iov, unsigned long __remote_iov_count,
-                      unsigned long __flags, bool iswrite) {
-        return syscall((iswrite ? drv_writev_nr : drv_readv_nr), __pid,
-                       __local_iov, __local_iov_count, __remote_iov, __remote_iov_count, __flags);
-    }
-
-    int get_proc_mem_fd() {
-        if (this->pid <= 0) return -1;
-        if (this->pid != mem_fd_pid || mem_fd < 0) {
-            if (mem_fd >= 0) close(mem_fd);
-            char path[64];
-            snprintf(path, sizeof(path), "/proc/%d/mem", this->pid);
-            mem_fd = open(path, O_RDWR);
-            mem_fd_pid = this->pid;
+        if (g_appConfig.settingsLoaded && g_appConfig.driverOption >= 1 && g_appConfig.driverOption <= 5) {
+            printf("[Config] Using driver option from config: %d\n", g_appConfig.driverOption);
+            return g_appConfig.driverOption;
         }
-        return mem_fd;
-    }
 
-    bool pvm(void *address, const void *buffer, size_t size, bool iswrite) {
-        struct iovec local[1];
-        struct iovec remote[1];
-        local[0].iov_base = const_cast<void*>(buffer);
-        local[0].iov_len = size;
-        remote[0].iov_base = address;
-        remote[0].iov_len = size;
-        if (this->pid <= 0) return false;
-        ssize_t bytes = process_v(this->pid, local, 1, remote, 1, 0, iswrite);
-        if (bytes == static_cast<ssize_t>(size)) return true;
-
-        int mfd = get_proc_mem_fd();
-        if (mfd >= 0) {
-            if (iswrite) {
-                return pwrite64(mfd, buffer, size, reinterpret_cast<off64_t>(address)) == static_cast<ssize_t>(size);
-            } else {
-                return pread64(mfd, const_cast<void*>(buffer), size, reinterpret_cast<off64_t>(address)) == static_cast<ssize_t>(size);
+        const char* env_opt = getenv("NIN_DRIVER_OPTION");
+        if (env_opt && strlen(env_opt) > 0) {
+            int opt = atoi(env_opt);
+            if (opt >= 1 && opt <= 5) {
+                printf("[Config] Using driver option from environment: %d\n", opt);
+                g_appConfig.driverOption = opt;
+                g_appConfig.settingsLoaded = true;
+                return opt;
             }
         }
+
+        if (!isatty(fileno(stdin))) {
+            // Non-interactive / daemon mode: signal dynamic auto-probing across all engines
+            printf("[Driver] Daemon mode detected, starting multi-engine auto-probing\n");
+            return 0; // 0 signals auto_probe_all
+        }
+
+        printf("\033[1;36m[+] 0. Auto-Probe (RT DEV -> QX -> DEV COMPAT -> KPM -> RT HOOK)\033[0m\n");
+        printf("\033[1;36m[+] 1. RT Hook\033[0m\n");
+        printf("\033[1;36m[+] 2. RT DEV\033[0m\n");
+        printf("\033[1;36m[+] 3. DEV (Most Compatible)\033[0m\n");
+        printf("\033[1;36m[+] 4. QX10~11.4\033[0m\n");
+        printf("\033[1;36m[+] 5. KPM (Dual-Engine: TB KPM & Neo prctl)\033[0m\n");
+        printf("\033[1;33m[?] Select an option (0-5, 0 for Auto): \033[0m");
+        fflush(stdout);
+
+        int selection = 0;
+        if (scanf("%d", &selection) != 1 || selection < 0 || selection > 5) {
+            printf("\033[33m[Driver] Defaulting to Auto-Probe...\033[0m\n");
+            selection = 0;
+        }
+
+        if (selection > 0) {
+            g_appConfig.driverOption = selection;
+            g_appConfig.settingsLoaded = true;
+            SaveConfig();
+        }
+        return selection;
+    }
+
+    bool auto_probe_all() {
+        printf("[Driver] Probing Ring-0 kernel drivers across all engines...\n");
+        // Priority 1: RT DEV (Direct char device - /dev/BYNb, /dev/wanbai, /dev/mem_tool, /dev/nh, etc.)
+        // Matches the NinMods Driver Loader "RT" driver
+        if (m_rt_dev.init(false)) {
+            m_selection = 2;
+            g_appConfig.driverOption = 2;
+            g_appConfig.settingsLoaded = true;
+            printf("[Driver] Successfully attached: RT DEV (Option 2)\n");
+            return true;
+        }
+        // Priority 2: QX Driver (Dynamic major mknod)
+        // Matches the NinMods Driver Loader "QX" driver
+        if (m_qx_driver.init(false)) {
+            m_selection = 4;
+            g_appConfig.driverOption = 4;
+            g_appConfig.settingsLoaded = true;
+            printf("[Driver] Successfully attached: QX 10-11 (Option 4)\n");
+            return true;
+        }
+        // Priority 3: DEV COMPAT (Compatible character device in /dev)
+        if (m_dev_compat.init(false)) {
+            m_selection = 3;
+            g_appConfig.driverOption = 3;
+            g_appConfig.settingsLoaded = true;
+            printf("[Driver] Successfully attached: DEV COMPAT (Option 3)\n");
+            return true;
+        }
+        // Priority 4: KPM Dual Engine (TB prctl 0x63687501 / Neo prctl 0x4E41 for APatch / KernelSU)
+        if (m_kpm_driver.init(false)) {
+            m_selection = 5;
+            g_appConfig.driverOption = 5;
+            g_appConfig.settingsLoaded = true;
+            printf("[Driver] Successfully attached: %s (Option 5)\n", m_kpm_driver.get_engine_name());
+            return true;
+        }
+        // Priority 5: RT Hook (Syscall/IOCTL Hook)
+        if (m_rt_hook.init(false)) {
+            m_selection = 1;
+            g_appConfig.driverOption = 1;
+            g_appConfig.settingsLoaded = true;
+            printf("[Driver] Successfully attached: RT HOOK (Option 1)\n");
+            return true;
+        }
+
+        // Emitted ONLY when all engines have failed, signaling the launcher UI to prompt driver load
+        printf("\033[41m\033[37m[FATAL] Driver not loaded! No compatible kernel driver active.\033[0m\n");
         return false;
     }
 
-    // Fast direct /dev scanning for known RT DEV nodes (pewpew driver_path)
-    char *driver_path() {
-        const char *dev_path = "/dev";
-        DIR *dir = opendir(dev_path);
-        if (dir == nullptr) return nullptr;
-
-        const char *files[] = { "wanbai", "CheckMe", "Ckanri", "lanran", "video188", "facking", "YBBBYN", "RTkernel", "RT_Monitor", "suvhwvwrtnb", "rtnb", "RTdrivers" };
-        struct dirent *entry;
-        char *file_path = nullptr;
-        while ((entry = readdir(dir)) != nullptr) {
-            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
-
-            size_t path_length = strlen(dev_path) + strlen(entry->d_name) + 2;
-            file_path = (char *)malloc(path_length);
-            if (!file_path) continue;
-            snprintf(file_path, path_length, "%s/%s", dev_path, entry->d_name);
-            for (size_t i = 0; i < sizeof(files)/sizeof(files[0]); i++) {
-                if (strcmp(entry->d_name, files[i]) == 0) {
-                    closedir(dir);
-                    return file_path;
-                }
-            }
-
-            struct stat file_info;
-            if (stat(file_path, &file_info) < 0) { free(file_path); file_path = nullptr; continue; }
-            if (strstr(entry->d_name, "gpiochip") != nullptr) { free(file_path); file_path = nullptr; continue; }
-
-            if ((S_ISCHR(file_info.st_mode) || S_ISBLK(file_info.st_mode))
-                && strchr(entry->d_name, '_') == nullptr 
-                && strchr(entry->d_name, '-') == nullptr 
-                && strchr(entry->d_name, ':') == nullptr) {
-                if (strcmp(entry->d_name, "stdin") == 0 || strcmp(entry->d_name, "stdout") == 0
-                    || strcmp(entry->d_name, "stderr") == 0) {
-                    free(file_path); file_path = nullptr; continue;
-                }
-
-                size_t file_name_length = strlen(entry->d_name);
-                time_t current_time; time(&current_time);
-                int file_year = localtime(&file_info.st_ctime)->tm_year + 1900;
-                if (file_year <= 1980) { free(file_path); file_path = nullptr; continue; }
-
-                time_t atime = file_info.st_atime; time_t ctime = file_info.st_ctime;
-                if (atime == ctime) {
-                    if ((file_info.st_mode & S_IFMT) == 8192 && file_info.st_size == 0
-                        && file_info.st_gid == 0 && file_info.st_uid == 0 && file_name_length <= 9) {
-                        closedir(dir);
-                        return file_path;
-                    }
-                }
-            }
-            free(file_path); file_path = nullptr;
-        }
-        closedir(dir);
-        return nullptr;
-    }
-
-    // Fast heuristic /dev character device scanner (pewpew gtqwq)
-    char *gtqwq() {
-        const char *dev_path = "/dev";
-        DIR *dir = opendir(dev_path);
-        if (dir == nullptr) return nullptr;
-
-        struct dirent *entry;
-        char file_path[256];
-        while ((entry = readdir(dir)) != nullptr) {
-            if (strstr(entry->d_name, "std") != nullptr || strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0 || strstr(entry->d_name, "gpiochip") != nullptr) continue;
-            if (strchr(entry->d_name, '_') != nullptr || strchr(entry->d_name, '-') != nullptr || strchr(entry->d_name, ':') != nullptr) continue;
-
-            snprintf(file_path, sizeof(file_path), "%s/%s", dev_path, entry->d_name);
-            struct stat file_info;
-            if (stat(file_path, &file_info) < 0) continue;
-            if ((localtime(&file_info.st_ctime)->tm_year + 1900) <= 1980) continue;
-            if (strlen(entry->d_name) > 7 || strlen(entry->d_name) < 5) continue;
-            if (file_info.st_gid != 0 || file_info.st_uid != 0) continue;
-
-            if (S_ISCHR(file_info.st_mode) || S_ISBLK(file_info.st_mode)) {
-                if (file_info.st_gid == 0 && file_info.st_uid == 0) {
-                    char *devpath = (char *)malloc(256);
-                    if (devpath) strcpy(devpath, file_path);
-                    closedir(dir);
-                    return devpath;
-                }
-            }
-        }
-        closedir(dir);
-        return nullptr;
-    }
-
-    // Key unlocking sequence for RT DEV drivers (pewpew send_unlock_keys)
-    void send_unlock_keys() {
-        if (fd < 0) return;
-        const char* keys[] = { "123456", "wanbai", "CheckMe", "lanran", "Ckanri", "ninmods_kernel", "" };
-        const uint32_t init_ops[] = { 0x800, 0xC00, 600 };
-        for (uint32_t op : init_ops) {
-            for (const char* k : keys) {
-                char buf[0x100] = {0};
-                strncpy(buf, k, sizeof(buf) - 1);
-                ioctl(fd, op, buf);
-            }
-        }
-    }
-
-    // Probe Neo KPM (0x4E41)
-    bool probe_neo_kpm() {
-        na_cmd cmd;
-        prctl(0xDEAD, 0, 0, 0, 0);
-        memset(&cmd, 0, sizeof(cmd));
-        errno = 0;
-        return (prctl(NA_PRCTL_MAGIC, NA_CMD_GET_PID, (unsigned long)&cmd, 0, 0) == 0);
-    }
-
-    // Probe TB KPM (0x63687501)
-    bool probe_tb_kpm() {
-        struct mem_operation op = { 0, 0, nullptr, 0 };
-        errno = 0;
-        long r = prctl(PRCTL_MEM_READ, (unsigned long)&op, 0, 0, 0);
-        return (r >= 0 || (r == -1 && (errno == EFAULT || errno == ESRCH || errno == EPERM)));
-    }
-
-    bool neo_kpm_read(uintptr_t addr, void *buffer, size_t size) {
-        if (this->pid <= 0 || addr == 0 || buffer == nullptr || size == 0) return false;
-        uint8_t *ptr = reinterpret_cast<uint8_t*>(buffer);
-        size_t remaining = size;
-        uintptr_t curr_addr = addr;
-        while (remaining > 0) {
-            size_t chunk = (remaining > NA_MAX_RW_SIZE) ? NA_MAX_RW_SIZE : remaining;
-            na_cmd cmd;
-            memset(&cmd, 0, sizeof(cmd));
-            cmd.pid  = (uint32_t)this->pid;
-            cmd.addr = (uint64_t)curr_addr;
-            cmd.size = (uint32_t)chunk;
-            if (prctl(NA_PRCTL_MAGIC, NA_CMD_READ_MEM, (unsigned long)&cmd, 0, 0) == 0 && cmd.result == 0) {
-                memcpy(ptr, cmd.data, chunk);
-                ptr += chunk;
-                curr_addr += chunk;
-                remaining -= chunk;
-            } else {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    bool neo_kpm_write(uintptr_t addr, const void *buffer, size_t size) {
-        if (this->pid <= 0 || addr == 0 || buffer == nullptr || size == 0) return false;
-        const uint8_t *ptr = reinterpret_cast<const uint8_t*>(buffer);
-        size_t remaining = size;
-        uintptr_t curr_addr = addr;
-        while (remaining > 0) {
-            size_t chunk = (remaining > NA_MAX_RW_SIZE) ? NA_MAX_RW_SIZE : remaining;
-            na_cmd cmd;
-            memset(&cmd, 0, sizeof(cmd));
-            cmd.pid  = (uint32_t)this->pid;
-            cmd.addr = (uint64_t)curr_addr;
-            cmd.size = (uint32_t)chunk;
-            memcpy(cmd.data, ptr, chunk);
-            if (prctl(NA_PRCTL_MAGIC, NA_CMD_WRITE_MEM, (unsigned long)&cmd, 0, 0) == 0 && cmd.result == 0) {
-                ptr += chunk;
-                curr_addr += chunk;
-                remaining -= chunk;
-            } else {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    bool tb_kpm_read(uintptr_t addr, void *buffer, size_t size) {
-        if (this->pid <= 0 || addr == 0 || buffer == nullptr || size == 0) return false;
-        struct mem_operation op = { this->pid, (uint64_t)addr, buffer, (uint64_t)size };
-        long r = prctl(PRCTL_MEM_READ, (unsigned long)&op, 0, 0, 0);
-        return r >= 0;
-    }
-
-    bool tb_kpm_write(uintptr_t addr, const void *buffer, size_t size) {
-        if (this->pid <= 0 || addr == 0 || buffer == nullptr || size == 0) return false;
-        struct mem_operation op = { this->pid, (uint64_t)addr, const_cast<void*>(buffer), (uint64_t)size };
-        long r = prctl(PRCTL_MEM_WRITE, (unsigned long)&op, 0, 0, 0);
-        return r >= 0;
-    }
-
-    uintptr_t parse_maps_module_base(const char *name) {
-        if (this->pid <= 0) return 0;
-        uintptr_t first_base = 0;
-        uintptr_t valid_elf_base = 0;
-
-        char maps_path[64];
-        snprintf(maps_path, sizeof(maps_path), "/proc/%d/maps", this->pid);
-        FILE *f = fopen(maps_path, "r");
-        if (f != nullptr) {
-            char line[1024];
-            while (fgets(line, sizeof(line), f)) {
-                if (strstr(line, name)) {
-                    uint64_t start = 0, end = 0;
-                    if (sscanf(line, "%lx-%lx", &start, &end) == 2 && start > 0) {
-                        if (first_base == 0) first_base = static_cast<uintptr_t>(start);
-                        uint32_t magic = 0;
-                        if (this->read(static_cast<uintptr_t>(start), &magic, sizeof(magic)) && magic == 0x464C457F) {
-                            valid_elf_base = static_cast<uintptr_t>(start);
-                            break;
-                        }
-                    }
-                }
-            }
-            fclose(f);
-        }
-
-        if (valid_elf_base != 0) {
-            printf("[c_driver] Module '%s' base resolved via ELF magic: 0x%lx\n", name, (unsigned long)valid_elf_base);
-            return valid_elf_base;
-        }
-
-        // Try su -c cat /proc/<pid>/maps fallback (pewpew resilient maps reader)
-        char cmd[256];
-        snprintf(cmd, sizeof(cmd), "su -c 'cat /proc/%d/maps | grep %s'", this->pid, name);
-        f = popen(cmd, "r");
-        if (f != nullptr) {
-            char line[1024];
-            while (fgets(line, sizeof(line), f)) {
-                if (strstr(line, name)) {
-                    uint64_t start = 0, end = 0;
-                    if (sscanf(line, "%lx-%lx", &start, &end) == 2 && start > 0) {
-                        if (first_base == 0) first_base = static_cast<uintptr_t>(start);
-                        uint32_t magic = 0;
-                        if (this->read(static_cast<uintptr_t>(start), &magic, sizeof(magic)) && magic == 0x464C457F) {
-                            valid_elf_base = static_cast<uintptr_t>(start);
-                            break;
-                        }
-                    }
-                }
-            }
-            pclose(f);
-        }
-
-        if (valid_elf_base != 0) {
-            printf("[c_driver] Module '%s' base resolved via su cat ELF magic: 0x%lx\n", name, (unsigned long)valid_elf_base);
-            return valid_elf_base;
-        }
-
-        if (first_base != 0) {
-            printf("[c_driver] Module '%s' base fallback from maps: 0x%lx\n", name, (unsigned long)first_base);
-            return first_base;
-        }
-
-        printf("[c_driver] Failed to find module '%s' in maps (pid=%d)\n", name, this->pid);
-        return 0;
-    }
-
-public:
     c_driver() {
-        if (!isatty(fileno(stdin))) {
-            // Non-interactive / daemon mode: probe engines automatically (pewpew auto-fallback)
-            printf("[c_driver] Daemon mode detected, initiating auto-probe...\n");
-            if (probe_neo_kpm()) {
-                select_driver_option = 2;
-                printf("[+] Driver connected: Neo KPM (prctl 0x4E41)\n");
-            } else if (probe_tb_kpm()) {
-                select_driver_option = 3;
-                printf("[+] Driver connected: TB KPM (prctl 0x63687501)\n");
-            } else {
-                char *dev_node = driver_path();
-                if (!dev_node) dev_node = gtqwq();
-                if (dev_node != nullptr) {
-                    fd = open(dev_node, O_RDWR);
-                    free(dev_node);
-                    select_driver_option = 1;
-                    send_unlock_keys();
-                    printf("[+] Driver connected: RT DEV (fd=%d)\n", fd);
-                } else {
-                    select_driver_option = 4;
-                    printf("[+] Driver connected: Syscall Memory R/W\n");
-                }
-            }
-            return;
-        }
-
-        printf("\033[1;36m[+] 1. RT DEV\033[0m\n");
-        printf("\033[1;36m[+] 2. Neo KPM (prctl 0x4E41)\033[0m\n");
-        printf("\033[1;36m[+] 3. TB KPM  (prctl 0x63687501)\033[0m\n");
-        printf("\033[1;36m[+] 4. Syscall Memory R/W\033[0m\n");
-        printf("\033[1;33m[?] Select an option (1-4): \033[0m");
-        fflush(stdout);
-
-        if (scanf("%d", &select_driver_option) != 1) {
-            select_driver_option = 4;
-        }
-
-        if (select_driver_option == 1) {
-            char *dev_node = driver_path();
-            if (!dev_node) dev_node = gtqwq();
-
-            if (dev_node != nullptr) {
-                fd = open(dev_node, O_RDWR);
-                printf("[c_driver] Connected to RT DEV node '%s' (fd=%d)\n", dev_node, fd);
-                free(dev_node);
-            }
-
-            if (fd == -1) {
-                printf("[c_driver] Using RT Hook (fd=0)...\n");
-                fd = 0;
-            }
-
-            send_unlock_keys();
-            printf("\033[42m\033[37m[+] RT DEV Driver initialized (fd=%d)\033[0m\n", fd);
-        } else if (select_driver_option == 2) {
-            if (probe_neo_kpm()) {
-                printf("\033[42m\033[37m[+] Neo KPM backend active (prctl 0x4E41)\033[0m\n");
-            } else {
-                printf("\033[41m\033[37m[!] Neo KPM not available on this kernel! Falling back to Syscall...\033[0m\n");
-                select_driver_option = 4;
-            }
-        } else if (select_driver_option == 3) {
-            printf("\033[42m\033[37m[+] TB KPM backend active (prctl 0x63687501)\033[0m\n");
-            if (getuid() != 0) {
-                printf("\033[41m\033[37m[WARNING] Root access (uid 0) is required for TB KPM!\033[0m\n");
-            }
-        } else if (select_driver_option == 4) {
-            printf("\033[42m\033[37m[+] Syscall Memory R/W mode enabled\033[0m\n");
-        } else {
-            printf("\033[33m[Driver] Invalid option! Defaulting to Syscall Memory R/W\033[0m\n");
-            select_driver_option = 4;
-        }
+        LoadConfig();
+        connect_driver();
     }
 
     ~c_driver() {
-        if (fd > 0) close(fd);
-        if (mem_fd >= 0) close(mem_fd);
+        m_rt_hook.close_driver();
+        m_rt_dev.close_driver();
+        m_dev_compat.close_driver();
+        m_qx_driver.close_driver();
+        m_kpm_driver.close_driver();
     }
 
-    void initialize(pid_t target_pid) {
-        this->pid = target_pid;
+    bool connect_driver() {
+        m_selection = getDriverSelection();
+
+        if (m_selection == 0) {
+            return auto_probe_all();
+        }
+
+        bool ok = false;
+        if (m_selection == 1) ok = m_rt_hook.init(true);
+        else if (m_selection == 2) ok = m_rt_dev.init(true);
+        else if (m_selection == 3) ok = m_dev_compat.init(true);
+        else if (m_selection == 4) ok = m_qx_driver.init(true);
+        else if (m_selection == 5) ok = m_kpm_driver.init(true);
+
+        if (ok) return true;
+
+        printf("\033[33m[Driver] Selected mode %d failed to load! Initiating auto-probe fallback...\033[0m\n", m_selection);
+        return auto_probe_all();
     }
 
-    bool init_key(char* key = nullptr) {
-        (void)key;
-        send_unlock_keys();
-        return true;
+    void initialize(pid_t p) {
+        m_rt_hook.set_pid(p);
+        m_rt_dev.set_pid(p);
+        m_dev_compat.set_pid(p);
+        m_qx_driver.set_pid(p);
+        m_kpm_driver.set_pid(p);
     }
 
     bool is_driver_loaded() const {
-        return (select_driver_option >= 1 && select_driver_option <= 4);
+        if (m_selection == 1) return m_rt_hook.is_loaded();
+        if (m_selection == 2) return m_rt_dev.is_loaded();
+        if (m_selection == 3) return m_dev_compat.is_loaded();
+        if (m_selection == 4) return m_qx_driver.is_loaded();
+        if (m_selection == 5) return m_kpm_driver.is_loaded();
+        return false;
     }
 
-    const char* get_driver_name() const {
-        switch (select_driver_option) {
-            case 1: return (fd == 0) ? "RT Hook" : "RT DEV";
-            case 2: return "Neo KPM";
-            case 3: return "TB KPM";
-            case 4: return "Syscall (process_vm)";
-            default: return "ARMED";
-        }
-    }
-
-    int getDriverSelectionCached() const {
-        return select_driver_option;
+    bool init_key(char* key) {
+        if (m_selection == 2) return m_rt_dev.init_key(key);
+        if (m_selection == 3) return m_dev_compat.init_key(key);
+        if (m_selection == 4) return m_qx_driver.init_key(key);
+        return false;
     }
 
     bool read(uintptr_t addr, void *buffer, size_t size) {
-        if (this->pid <= 0 || addr == 0 || buffer == nullptr || size == 0) return false;
-
-        if (select_driver_option == 1) { // RT DEV
-            COPY_MEMORY cm;
-            cm.pid = this->pid;
-            cm.addr = addr;
-            cm.buffer = buffer;
-            cm.size = size;
-
-            if (ioctl(fd, active_read_op, &cm) == 0) return true;
-
-            static const uint32_t candidate_ops[] = { 0x801, 601, 0xC01 };
-            for (uint32_t op : candidate_ops) {
-                if (op == active_read_op) continue;
-                if (ioctl(fd, op, &cm) == 0) {
-                    active_read_op = op;
-                    return true;
-                }
-            }
-
-            return false;
-        } else if (select_driver_option == 2) { // Neo KPM
-            return neo_kpm_read(addr, buffer, size);
-        } else if (select_driver_option == 3) { // TB KPM
-            return tb_kpm_read(addr, buffer, size);
-        } else if (select_driver_option == 4) { // Syscall
-            return pvm(reinterpret_cast<void *>(addr), buffer, size, false);
-        }
+        if (!is_driver_loaded()) return false;
+        if (m_selection == 1) return m_rt_hook.read(addr, buffer, size);
+        if (m_selection == 2) return m_rt_dev.read(addr, buffer, size);
+        if (m_selection == 3) return m_dev_compat.read(addr, buffer, size);
+        if (m_selection == 4) return m_qx_driver.read(addr, buffer, size);
+        if (m_selection == 5) return m_kpm_driver.read(addr, buffer, size);
         return false;
     }
 
     bool write(uintptr_t addr, const void *buffer, size_t size) {
-        if (this->pid <= 0 || addr == 0 || buffer == nullptr || size == 0) return false;
-
-        if (select_driver_option == 1) { // RT DEV
-            COPY_MEMORY cm;
-            cm.pid = this->pid;
-            cm.addr = addr;
-            cm.buffer = const_cast<void*>(buffer);
-            cm.size = size;
-
-            if (ioctl(fd, active_write_op, &cm) == 0) return true;
-
-            static const uint32_t candidate_ops[] = { 0x802, 602, 0xC02 };
-            for (uint32_t op : candidate_ops) {
-                if (op == active_write_op) continue;
-                if (ioctl(fd, op, &cm) == 0) {
-                    active_write_op = op;
-                    return true;
-                }
-            }
-
-            return false;
-        } else if (select_driver_option == 2) { // Neo KPM
-            return neo_kpm_write(addr, buffer, size);
-        } else if (select_driver_option == 3) { // TB KPM
-            return tb_kpm_write(addr, buffer, size);
-        } else if (select_driver_option == 4) { // Syscall
-            return pvm(reinterpret_cast<void *>(addr), buffer, size, true);
-        }
+        if (!is_driver_loaded()) return false;
+        if (m_selection == 1) return m_rt_hook.write(addr, buffer, size);
+        if (m_selection == 2) return m_rt_dev.write(addr, buffer, size);
+        if (m_selection == 3) return m_dev_compat.write(addr, buffer, size);
+        if (m_selection == 4) return m_qx_driver.write(addr, buffer, size);
+        if (m_selection == 5) return m_kpm_driver.write(addr, buffer, size);
         return false;
+    }
+
+    bool write(uintptr_t addr, void *buffer, size_t size) {
+        return this->write(addr, static_cast<const void*>(buffer), size);
     }
 
     template <typename T>
@@ -571,38 +211,36 @@ public:
         return this->write(addr, &value, sizeof(T));
     }
 
-    uintptr_t getModuleBase(const char* name) {
-        if (this->pid <= 0) return 0;
+    int getDriverSelectionCached() const {
+        return m_selection;
+    }
 
-        if (select_driver_option == 1) { // RT DEV
-            static const uint32_t mod_ops[] = { 0x803, 603, 0xC03 };
-            for (uint32_t op : mod_ops) {
-                MODULE_BASE mb;
-                memset(&mb, 0, sizeof(mb));
-                char buf[0x100] = {0};
-                strncpy(buf, name, sizeof(buf) - 1);
-                mb.pid = this->pid;
-                mb.name = buf;
-                mb.base = 0;
-                if (ioctl(fd, op, &mb) == 0 && mb.base > 0) {
-                    uint32_t magic = 0;
-                    if (this->read(mb.base, &magic, sizeof(magic)) && magic == 0x464C457F) {
-                        active_module_op = op;
-                        return mb.base;
-                    }
-                }
-            }
-            return parse_maps_module_base(name);
-        } else if (select_driver_option == 2 || select_driver_option == 3 || select_driver_option == 4) {
-            return parse_maps_module_base(name);
-        }
+    const char* get_driver_name() const {
+        if (m_selection == 1) return "RT HOOK";
+        if (m_selection == 2) return "RT DEV";
+        if (m_selection == 3) return "DEV COMPAT";
+        if (m_selection == 4) return "QX 10-11";
+        if (m_selection == 5) return m_kpm_driver.get_engine_name();
+        return "ARMED";
+    }
+
+    uintptr_t getModuleBase(const char* name) {
+        if (!is_driver_loaded()) return 0;
+        if (m_selection == 1) return m_rt_hook.get_module_base(name);
+        if (m_selection == 2) return m_rt_dev.get_module_base(name);
+        if (m_selection == 3) return m_dev_compat.get_module_base(name);
+        if (m_selection == 4) return m_qx_driver.get_module_base(name);
+        if (m_selection == 5) return m_kpm_driver.get_module_base(name);
         return 0;
     }
 
     void hide_process() {
-        if (select_driver_option == 1 && fd >= 0) {
-            ioctl(fd, active_module_op == 603 ? 605 : 0x804);
-        }
+        if (!is_driver_loaded()) return;
+        if (m_selection == 1) m_rt_hook.hide_process();
+        if (m_selection == 2) m_rt_dev.hide_process();
+        if (m_selection == 3) m_dev_compat.hide_process();
+        if (m_selection == 4) m_qx_driver.hide_process();
+        if (m_selection == 5) m_kpm_driver.hide_process();
     }
 };
 
@@ -612,3 +250,5 @@ inline c_driver* get_driver() {
 }
 
 #define driver (get_driver())
+
+#endif // UNIFIED_DRIVER_H
