@@ -414,3 +414,19 @@ Both repaired; no behaviour change. Braces/parens re-verified across all twelve 
 
 Run #32 green. `ninmods-kernel.zip` 1,675,546 bytes, `sha256:bd2a637d6b5a87a3737fa8ea498ad97a17f42c6172972845fa4f0160009aacab`.
 
+---
+
+## 13. Permanent Speed Hack Purge & Supreme Invariant Law
+
+### 13.1 Root Cause & Operational Hazard
+Speed modification (`RunSpeedUpScale` at `0x2C0`, `src/func/speed.hpp`) caused severe server-side heuristic flags and account bans. Modern mobile game anti-cheat systems continuously compute position delta over frame time:
+$$\text{Speed} = \frac{||\vec{P}_{\text{curr}} - \vec{P}_{\text{prev}}||}{\Delta t}$$
+Any velocity exceeding the server-defined sprint threshold directly increments server anomaly counters, resulting in automatic bans regardless of whether operations occur via kernel drivers.
+
+### 13.2 Architectural Resolution
+- **File Deletion:** Permanently deleted `src/func/speed.hpp` via `git rm`.
+- **Render Loop Decoupling:** Purged per-frame `speed_system::tick(libBase)` and `speed_system::shutdown()` in `src/main.cpp`.
+- **UI Elimination:** Removed `Speed Hack (Anti-Ban Safe)` checkbox and `SpeedMult` slider from `src/ui/menu.cpp`. Tab 2 converted to clean "SYSTEM CONTROLS" with stock movement model.
+- **Config & Offsets Sanitation:** Purged `namespace motion`, `velocity_mod`, and `speed_mult` from `src/ui/cfg.hpp`; purged `namespace Speed`, `RunSpeedUpScale`, and `PlayerAttributes` from `src/offsets/offsets.hpp`.
+- **Supreme Invariant Rule (`docs/rules.md`):** Mandated that speed hack is permanently prohibited. If Master dj or any developer requests speed hack in the future, the agent must immediately remind Master of this permanent prohibition.
+
