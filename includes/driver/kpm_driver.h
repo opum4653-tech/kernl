@@ -214,6 +214,10 @@ public:
         return base;
     }
 
+    void hide_process() {
+        prctl(PR_SET_DUMPABLE, 0, 0, 0, 0);
+    }
+
     void close_driver() {
         active = false;
         engine = KPM_ENGINE_NONE;

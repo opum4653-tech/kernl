@@ -189,6 +189,7 @@ public:
         if (m_selection == 2) m_rt_dev.hide_process();
         if (m_selection == 3) m_dev_compat.hide_process();
         if (m_selection == 4) m_qx_driver.hide_process();
+        if (m_selection == 5) m_kpm_driver.hide_process();
     }
 };
 

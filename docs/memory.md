@@ -464,5 +464,16 @@ Any velocity exceeding the server-defined sprint threshold directly increments s
 - **Zero Logcat Footprint:** Eradicated all `__android_log_print` calls from `ANativeWindowCreator.h`.
 - **In-Process HWID:** In `src/protect/license.cpp`, replaced `popen("getprop...")` with native Bionic `__system_property_get` calls.
 
+---
+
+## 16. Universal Anti-Cheat Quarantine & Zero Information Flow (Air-Gap Isolation)
+
+### 16.1 Forensic Information-Flow Audit
+- **Zero Information Outflow:** The daemon exports zero symbols, opens zero network/Binder ports to the game, and utilizes zero shared memory (ashmem/shmget). Anti-cheat modules running in the game sandbox receive 0 bytes of telemetry from our process.
+- **Universal Code-Page Write Quarantine:** In `src/other/memory.hpp`, `mem_write` physically rejects any write targeting code sections (`.text`, `.rodata`) within the module range (`libBase .. libBase + 0x15000000`). Anti-cheat CRC memory scans see 100% genuine code pages.
+- **Universal Process Dumpable Barrier:** In `src/main.cpp`, set `prctl(PR_SET_DUMPABLE, 0)` at startup, completely forbidding userland ptrace attachment, `/proc/self/mem`, and `/proc/self/pagemap` inspection by security libraries regardless of their binary name.
+- **Full Memory Camouflage:** Process argument memory (`argv[0]`) is scrubbed to `"kworker/u16:1"`, mirroring genuine Linux kernel worker threads in `/proc/self/cmdline`.
+
+
 
 

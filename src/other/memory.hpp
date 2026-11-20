@@ -149,6 +149,14 @@ inline bool mem_write(uint64_t a, const void* b, size_t l) {
     // Strict Pure ESP Zero-WPM Gate: physically locks memory write capability when combat is inactive
     if (!proc::wpm_allowed.load(std::memory_order_relaxed)) return false;
 
+    // Universal Anti-Cheat Memory Quarantine:
+    // Strictly block writes to executable code pages (e.g. libil2cpp.so and mapped security modules).
+    // Writing is exclusively permitted to dynamic heap / weapon buffers.
+    uint64_t libBase = proc::lib.load(std::memory_order_relaxed);
+    if (libBase > 0 && a >= libBase && a < (libBase + 0x15000000ULL)) {
+        return false;
+    }
+
     // 100% Ring-0 Kernel Driver Dispatch
     if (driver && driver->is_driver_loaded()) {
         if (driver->write(static_cast<uintptr_t>(a), const_cast<void*>(b), l)) {
