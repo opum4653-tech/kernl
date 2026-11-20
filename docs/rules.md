@@ -140,3 +140,12 @@ This document establishes the mandatory design, architecture, and coding rules f
 
 5. **Zero Leaked Cheat Signatures:**
    - Device node scanners (`scan_driver_path`) must dynamically inspect character device attributes without maintaining hardcoded blacklisted cheat strings (`"wanbai"`, `"CheckMe"`, etc.) that trigger static YARA scanners.
+
+6. **Zero Logcat Footprint:**
+   - `__android_log_print` calls using detectable tags (`"ImGui"`, `"Overlay"`) are permanently banned across all compilation units to eliminate logcat telemetry detection.
+
+7. **Authentic Touch Hardware Cloning:**
+   - Touchscreen virtual injection (`Touch.cpp`) must clone the real physical digitizer name via `EVIOCGNAME`, bus ID (`BUS_I2C = 0x18`), and physical sysfs path (`EVIOCGPHYS`). Generating synthetic random strings in `/proc/bus/input/devices` is prohibited.
+
+8. **Zero Shell Footprint in Display Pipeline:**
+   - `display_safe` must resolve screen dimensions and orientation 100% in-process via sysfs (`/sys/class/graphics/fb0/virtual_size`), `/dev/graphics/fb0` ioctls, and Android Bionic system properties. Spawning `popen("dumpsys input...")` or `popen("wm size...")` is permanently prohibited.

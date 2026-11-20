@@ -96,25 +96,6 @@ SafeDisplayInfo get_info(bool force_refresh) {
         }
     }
 
-    // Tier 4: Single-Shot Guarded Fallback via wm size (Bounded Execution)
-    if (info.width <= 0 || info.height <= 0) {
-        FILE *fp = popen("PATH=/system/bin:/bin wm size 2>/dev/null", "r");
-        if (fp) {
-            char line[256] = {0};
-            while (fgets(line, sizeof(line), fp)) {
-                char *p = strstr(line, "size:");
-                if (p) {
-                    int w = 0, h = 0;
-                    if (sscanf(p + 5, " %dx%d", &w, &h) == 2 && w > 0 && h > 0) {
-                        info.width = w;
-                        info.height = h;
-                    }
-                }
-            }
-            pclose(fp);
-        }
-    }
-
     // Absolute Safety Fallback
     if (info.width <= 0 || info.height <= 0) {
         info.width = 1080;
@@ -143,35 +124,8 @@ void update_orientation(uint32_t rot) {
 }
 
 uint32_t probe_orientation() {
-    static uint32_t s_last_rot = 1;
-    static auto s_last_time = std::chrono::steady_clock::time_point{};
-    auto now = std::chrono::steady_clock::now();
-
-    // Throttle dumpsys query to at most once every 3 seconds to avoid blocking system_server IPC
-    if (s_last_time.time_since_epoch().count() != 0 &&
-        std::chrono::duration_cast<std::chrono::milliseconds>(now - s_last_time).count() < 3000) {
-        return s_last_rot;
-    }
-    s_last_time = now;
-
-    uint32_t rot = s_last_rot;
-    FILE *fp = popen("dumpsys input 2>/dev/null | grep -m 1 SurfaceOrientation", "r");
-    if (fp) {
-        char buf[128] = {0};
-        if (fgets(buf, sizeof(buf), fp)) {
-            char *p = strstr(buf, "SurfaceOrientation:");
-            if (p) {
-                int r = 0;
-                if (sscanf(p + 19, " %d", &r) == 1 && r >= 0 && r <= 3) {
-                    rot = static_cast<uint32_t>(r);
-                }
-            }
-        }
-        pclose(fp);
-    }
-    s_last_rot = rot;
-    update_orientation(rot);
-    return rot;
+    std::lock_guard<std::mutex> lock(s_disp_mutex);
+    return s_cached_info.orientation;
 }
 
 } // namespace display_safe

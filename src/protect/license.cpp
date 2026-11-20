@@ -5,6 +5,7 @@
 #include <cctype>
 #include <mutex>
 #include <string>
+#include <sys/system_properties.h>
 #include <curl/curl.h>
 
 #define LIC_LOGI(...) do {} while(0)
@@ -91,26 +92,15 @@ namespace lic {
             return std::string(env_hwid);
         }
 
-        // 100% In-Memory Hardware ID Query (Zero Disk Storage)
-        char buf[128] = {0};
-        FILE* fp = popen("getprop ro.serialno 2>/dev/null", "r");
-        if (fp) {
-            if (fgets(buf, sizeof(buf), fp)) {
-                buf[strcspn(buf, "\r\n")] = 0;
-            }
-            pclose(fp);
-        }
-        if (strlen(buf) > 0 && strcmp(buf, "unknown") != 0) {
+        // 100% In-Memory Hardware ID Query via Bionic Properties (Zero Fork, Zero Shell)
+        char buf[PROP_VALUE_MAX] = {0};
+        if (__system_property_get("ro.serialno", buf) > 0 && strlen(buf) > 0 && strcmp(buf, "unknown") != 0) {
             return std::string(buf);
         }
-        fp = popen("getprop ro.build.id 2>/dev/null", "r");
-        if (fp) {
-            if (fgets(buf, sizeof(buf), fp)) {
-                buf[strcspn(buf, "\r\n")] = 0;
-            }
-            pclose(fp);
+        if (__system_property_get("ro.build.id", buf) > 0 && strlen(buf) > 0) {
+            return std::string(buf);
         }
-        return strlen(buf) > 0 ? std::string(buf) : "NIN_DEVICE_HWID";
+        return "NIN_DEVICE_HWID";
     }
 
     static size_t curl_write_string_cb(void* contents, size_t size, size_t nmemb, void* userp) {

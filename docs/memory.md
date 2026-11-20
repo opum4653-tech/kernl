@@ -449,4 +449,20 @@ Any velocity exceeding the server-defined sprint threshold directly increments s
   - In `includes/draw/Android_draw/draw.cpp`, enabled `secure = true` by default on both Vulkan and OpenGL native windows. SurfaceFlinger automatically omits overlay rendering during `screencap`, screen recorders, and game in-process screenshot grabs.
 - **Disguised SurfaceFlinger Layer:** Renamed detectable layer string from `"AImGui"` to `"SurfaceView[ScreenDecor]"` to prevent anti-cheat window enumeration bans.
 
+---
+
+## 15. Elevation of Layer 2: Overlay & Display Pipeline (SurfaceFlinger Level) (90/100 -> 100/100)
+
+### 15.1 Detection Vector Post-Mortem (The Missing 10%)
+1. **Periodic Shell / Dumpsys Polling:** In `src/other/display_manager.cpp`, `probe_orientation()` was executing `popen("dumpsys input 2>/dev/null | grep -m 1 SurfaceOrientation")` every 3 seconds, triggering repeated `/system/bin/sh` forks, auditd records, and `system_server` IPC inspection logs. In `get_info()`, Tier 4 also used `popen("PATH=... wm size")`.
+2. **Synthetic Touch Device Name Anomaly:** In `includes/draw/Android_touch/Touch.cpp`, `/dev/uinput` created a device with random letters (e.g., `Name="A81xQ"` and `Bus=0000`), appearing in `/proc/bus/input/devices` as an anomalous virtual injection device.
+3. **Android Logcat Traces:** In `includes/internal/native_surface/ANativeWindowCreator.h`, `__android_log_print` emitted error strings with tag `"ImGui"`, creating a clear signature in the logcat buffer.
+
+### 15.2 Forensic Remediation
+- **Purged All Shell Dumpsys & wm size:** `display_safe` now relies 100% on zero-fork sysfs (`/sys/class/graphics/fb0/virtual_size`), `/dev/graphics/fb0` ioctl, and in-memory Android Bionic system properties (`ro.surface_flinger.max_graphics_width`, `ro.sf.hwrotation`). Orientation is queried directly in-process via `ANativeWindowCreator::GetDisplayInfo()`.
+- **Authentic Digitizer Hardware Cloning:** `Touch.cpp` queries the primary physical touchscreen (`origfd[0]`) via `EVIOCGNAME`, `EVIOCGID`, and `EVIOCGPHYS`. The virtual uinput device inherits the genuine touchscreen hardware name (`sec_touchscreen` / `fts_ts`), bus type (`BUS_I2C = 0x18`), and sysfs path.
+- **Zero Logcat Footprint:** Eradicated all `__android_log_print` calls from `ANativeWindowCreator.h`.
+- **In-Process HWID:** In `src/protect/license.cpp`, replaced `popen("getprop...")` with native Bionic `__system_property_get` calls.
+
+
 

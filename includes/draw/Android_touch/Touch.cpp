@@ -489,17 +489,25 @@ bool Touch_Init(int w, int h, uint32_t orientation_, bool readOnly) {
                 ioctl(origfd[k], EVIOCGRAB, UNGRAB);
             }
         } else {
-            int string_len = rand() % 10 + 5;
-            char string[string_len];
             memset(&ui_dev, 0, sizeof(ui_dev));
 
-            genRandomString(string, string_len);
-            strncpy(ui_dev.name, string, UINPUT_MAX_NAME_SIZE);
+            // Clone identity from physical touchscreen hardware (Zero synthetic anomaly)
+            char real_name[UINPUT_MAX_NAME_SIZE] = {0};
+            struct input_id real_id = {0};
+            if (origfd[0] >= 0 && ioctl(origfd[0], EVIOCGNAME(sizeof(real_name) - 1), real_name) >= 0 && strlen(real_name) > 0) {
+                strncpy(ui_dev.name, real_name, UINPUT_MAX_NAME_SIZE - 1);
+            } else {
+                strncpy(ui_dev.name, "sec_touchscreen", UINPUT_MAX_NAME_SIZE - 1);
+            }
 
-            ui_dev.id.bustype = 0;
-            ui_dev.id.vendor = rand() % 10 + 5;
-            ui_dev.id.product = rand() % 10 + 5;
-            ui_dev.id.version = rand() % 10 + 5;
+            if (origfd[0] >= 0 && ioctl(origfd[0], EVIOCGID, &real_id) >= 0 && real_id.bustype != 0) {
+                ui_dev.id = real_id;
+            } else {
+                ui_dev.id.bustype = 0x0018; // BUS_I2C (Authentic hardware touch bus)
+                ui_dev.id.vendor  = 0x0001;
+                ui_dev.id.product = 0x0001;
+                ui_dev.id.version = 0x0100;
+            }
 
             ioctl(nowfd, UI_SET_PROPBIT, INPUT_PROP_DIRECT);
 
@@ -514,8 +522,11 @@ bool Touch_Init(int w, int h, uint32_t orientation_, bool readOnly) {
             ioctl(nowfd, UI_SET_KEYBIT, BTN_TOOL_FINGER);
             ioctl(nowfd, UI_SET_KEYBIT, BTN_TOUCH);
 
-            genRandomString(string, string_len);
-            ioctl(nowfd, UI_SET_PHYS, string);
+            char real_phys[64] = "i2c/0-0038/input0";
+            if (origfd[0] >= 0) {
+                ioctl(origfd[0], EVIOCGPHYS(sizeof(real_phys) - 1), real_phys);
+            }
+            ioctl(nowfd, UI_SET_PHYS, real_phys);
 
             ui_dev.absmin[ABS_MT_POSITION_X] = 0;
             ui_dev.absmax[ABS_MT_POSITION_X] = (int)s_digitizerMaxX;
