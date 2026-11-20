@@ -84,7 +84,7 @@ namespace func::esp {
 
     // Validates whether a projected screen coordinate is inside visible display bounds
     inline bool ok(const Vector3& v) {
-        return v.z > 0.5f && v.x > -150.0f && v.x < (g_sw + 150.0f) && v.y > -150.0f && v.y < (g_sh + 150.0f);
+        return v.z > 0.05f && v.x > -150.0f && v.x < (g_sw + 150.0f) && v.y > -150.0f && v.y < (g_sh + 150.0f);
     }
 
     // Formats distance in meters or kilometers

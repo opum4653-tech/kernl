@@ -53,7 +53,7 @@ namespace func::esp {
         // Iterate all active enemies in snapshot
         for (const auto& p : snap) {
             // Reject entities behind near clipping plane or dead entities
-            if (p.Head.z < 0.5f) continue;
+            if (p.Head.z < 0.05f) continue;
             if (p.curHP <= 0) continue;
 
             // Reject entities beyond the configured max render distance slider (0.0f = Unlimited)
