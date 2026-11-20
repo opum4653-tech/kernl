@@ -40,9 +40,9 @@
 //    - Tab 1 (Kernel Trajectory):
 //      * Master Switch, Kernel Silent Trajectory (Unnormalized Vector), Kernel Scope Trigger (Instant Head),
 //        Kernel Precision Vector (100% Red), Ignore Downed Entities, Kernel FOV Boundary, Elevation Bias.
-//    - Tab 2 (Kernel Motion & System):
-//      * Master Switch, Kernel Velocity Modifier (Anti-Ban Safe),
-//        Driver Telemetry (PID, LibBase, Driver Mode), and DETACH KERNEL EXTENSION Button.
+//    - Tab 2 (Kernel System & Diagnostics):
+//      * Master Switch, 100% Official Stock Movement Model,
+//        Driver Telemetry (PID, LibBase, Driver Mode), and EXIT OVERLAY Button.
 //
 // 4. CROSS-FILE RENDER PIPELINE:
 //    - Calls func::esp::draw() (in src/func/esp/esp.hpp) to draw world ESP on background draw list.
