@@ -42,7 +42,7 @@
 //      * Master Switch, Kernel Silent Trajectory (Unnormalized Vector), Kernel Scope Trigger (Instant Head),
 //        Kernel Precision Vector (100% Red), Ignore Downed Entities, Kernel FOV Boundary, Elevation Bias.
 //    - Tab 2 (Kernel Motion & System):
-//      * Master Switch, Kernel Velocity Modifier (Anti-Ban Safe), Kernel Recoil Compensation,
+//      * Master Switch, Kernel Velocity Modifier (Anti-Ban Safe),
 //        Driver Telemetry (PID, LibBase, Driver Mode), and DETACH KERNEL EXTENSION Button.
 //
 // 4. CROSS-FILE RENDER PIPELINE:
@@ -681,9 +681,6 @@ void render() {
                     cfg::SliderFloat("##SpeedMult", cfg::motion::speed_mult, 0.0f, 0.30f, "+%.2fx Speed Boost");
                     ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.4f, 1.0f), "SAFE: +0.00x - +0.30x (Server Protected)");
                 }
-
-                ImGui::Dummy(ImVec2(0, 4 * ui_scale));
-                cfg::Checkbox("Kernel Recoil Compensation", cfg::motion::no_recoil);
 
                 handleTouchScroll();
             }

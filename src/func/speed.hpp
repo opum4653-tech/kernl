@@ -11,7 +11,8 @@
 // ==============================================================================================
 // FILE: src/func/speed.hpp
 // ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
-// PURPOSE: Memory controller for Combat & Movement modifications (Velocity Modifier & Recoil Compensation).
+// PURPOSE: Memory controller for Movement modifications (Velocity Modifier).
+//          Weapon recoil remains 100% official and completely untouched.
 //
 // CROSS-FILE CALL GRAPH & LIFECYCLE:
 // ----------------------------------------------------------------------------------------------
@@ -22,7 +23,7 @@
 //
 // 2. TARGET STRUCTURES IN GAME HEAP (Il2Cpp):
 //    - Velocity Modifier: LocalPlayer (0xD8) -> PlayerAttributes (0x768 / 0x770) -> RunSpeedUpScale (0x2C0).
-//    - No Recoil: LocalPlayer -> WeaponOnHand (0x600) -> Weapon_Data (0x18) -> Weapon_Recoil (0x80).
+//    - Weapon Recoil: ZERO MODIFICATION (Operates 100% naturally via game's native combat engine).
 //
 // 3. ANTI-BAN SAFETY PROTOCOLS & SYMMETRICAL REVERSE PATHS:
 //    - Strict Speed Clamp: Multiplier is mathematically clamped to 1.00x - 1.30x (server-safe boundary).
@@ -47,10 +48,6 @@ namespace speed_system {
     struct ModState {
         float orig_run_scale = 1.0f;        // Original captured player sprint multiplier
         bool  orig_player_captured = false; // True once baseline has been backed up
-
-        bool  recoil_last = false;          // True while recoil patch is currently applied
-        float recoil_orig = 0.0f;           // Original captured weapon recoil float
-        bool  recoil_orig_captured = false; // True once baseline recoil has been backed up
     };
     inline ModState g_mod_state;
 
@@ -124,13 +121,11 @@ namespace speed_system {
 
         const bool  ui_speed_on = cfg::motion::velocity_mod.load(std::memory_order_relaxed);
         const float ui_speed_mx = cfg::motion::speed_mult.load(std::memory_order_relaxed);
-        const bool  ui_recoil_on = cfg::motion::no_recoil.load(std::memory_order_relaxed);
 
         bool is_speed_enabled = cfg::master_enabled && (ui_speed_on || g_config.enabled);
-        bool is_recoil_enabled = cfg::master_enabled && ui_recoil_on;
 
-        // If neither feature is active and no restoration is pending, return immediately (zero IOCTL overhead)
-        if (!is_speed_enabled && !g_config.last_state && !is_recoil_enabled && !g_mod_state.recoil_last) {
+        // If speed feature is not active and no restoration is pending, return immediately (zero IOCTL overhead)
+        if (!is_speed_enabled && !g_config.last_state) {
             return;
         }
 
@@ -156,12 +151,10 @@ namespace speed_system {
             return;
         }
 
-        // 1. VELOCITY MODIFIER (ANTI-BAN SAFE WITH SMART FIRING GUARD)
         // Safe Anti-Ban Invariant:
-        // Persistent heap modifications (RunSpeedUpScale / Weapon_Recoil) are permanently
-        // neutralized. Memory is never kept persistently modified.
+        // Persistent heap modifications are permanently neutralized.
+        // Weapon Recoil is 100% natural and unmanipulated; no recoil patch exists.
         (void)is_speed_enabled;
-        (void)is_recoil_enabled;
         (void)mult;
     }
 

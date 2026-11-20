@@ -290,7 +290,7 @@ static int start_overlay() {
             ui::menu::render(); // Renders ESP drawings, floating logo, and ImGui menu
             Touch_CommitUiRects();
 
-            // Execute Velocity Modifier and Recoil Compensation memory patches
+            // Execute Velocity Modifier evaluation (Weapon Recoil is 100% official/unmodified)
             uint64_t libBase = proc::lib.load(std::memory_order_acquire);
             if (proc::pid.load(std::memory_order_acquire) > 0 && libBase > 0) {
                 speed_system::tick(libBase);
