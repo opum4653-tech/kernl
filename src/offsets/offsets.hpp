@@ -26,18 +26,31 @@ namespace Offsets {
 
 // ----------------------------------------------------------------------------------------------
 // 1. BASE CHAIN RESOLUTION: libil2cpp.so -> GameFacade -> BaseGame -> Match (Free Fire Max ARM64)
+// Sourced from Offsetsmax.h (Updated September 16, 2026)
 // ----------------------------------------------------------------------------------------------
     namespace Base {
-        constexpr uintptr_t GameFacade           = 0xAD68E18; // Free Fire Max Il2Cpp GameFacade cell
+        constexpr uintptr_t GameFacade           = 0xAD68E18; // Free Fire Max Il2Cpp GameFacade cell (Offsetsmax.h)
+        constexpr uintptr_t GameFacade_TypeInfo  = 0xAD68E18; // TypeInfo / BSS slot
         constexpr uintptr_t GameFacade_Alt       = 0xAD6DC18; // Free Fire Max alt candidate (STORM_MODS)
         constexpr uintptr_t GameFacade_Global    = 0xA72E4E0; // Free Fire Global 1.132.x primary
-        constexpr uintptr_t GameFacade_P2        = 0xB8;      // Static fields pointer displacement (0xB8)
-        constexpr uintptr_t BaseGame_Match       = 0x90;      // Current Match instance pointer displacement
+        constexpr uintptr_t GameFacade_P2        = 0xB8;      // Static fields pointer displacement (Staticfield / StaticGameFacade)
+        constexpr uintptr_t Staticfield          = 0xB8;      // Offsetsmax.h alias
+        constexpr uintptr_t StaticGameFacade     = 0xB8;      // Offsetsmax.h alias
+        constexpr uintptr_t BaseGame_HasInited   = 0x80;      // BaseGame_HasInited (Offsetsmax.h)
+        constexpr uintptr_t BaseGame_MatchEnd    = 0x8C;      // BaseGame_MatchEnd (Offsetsmax.h)
+        constexpr uintptr_t BaseGame_Match       = 0x90;      // Current Match instance pointer displacement (CurrentMatch)
+        constexpr uintptr_t CurrentMatch         = 0x90;      // Offsetsmax.h alias
         constexpr uintptr_t BaseGame_Timer       = 0x20;      // Game timer instance
         constexpr uintptr_t Timer_Delta          = 0x2C;      // Delta time float
-        constexpr uintptr_t MatchIsRunning       = 0xCC;      // Boolean: active match flag
-        constexpr uintptr_t Match_PlayerDict     = 0xC0;      // System.Collections.Generic.Dictionary<byte, Player>
-        constexpr uintptr_t Match_LocalPlayer    = 0xD8;      // Local Player entity pointer
+        constexpr uintptr_t MatchIsRunning       = 0xCC;      // Boolean: active match flag (Offsetsmax.h)
+        constexpr uintptr_t Match_PlayerDict     = 0xC0;      // System.Collections.Generic.Dictionary<byte, Player> (DictionaryEntities)
+        constexpr uintptr_t Dictionary           = 0xC0;      // Offsetsmax.h alias
+        constexpr uintptr_t DictionaryEntities   = 0xC0;      // Offsetsmax.h alias
+        constexpr uintptr_t LDictionaryEntities  = 0xC8;      // Offsetsmax.h alias
+        constexpr uintptr_t Match_LocalPlayer    = 0xD8;      // Local Player entity pointer (localPlayer / LocalPlayer)
+        constexpr uintptr_t LocalPlayer          = 0xD8;      // Offsetsmax.h alias
+        constexpr uintptr_t CurrentObserve       = 0x100;     // CurrentObserve (Offsetsmax.h)
+        constexpr uintptr_t ObserverPlayer       = 0x30;      // ObserverPlayer (Offsetsmax.h)
     }
 
 // ----------------------------------------------------------------------------------------------
@@ -68,48 +81,58 @@ namespace Offsets {
     }
 
 // ----------------------------------------------------------------------------------------------
-// 5. PLAYER REPLICATION ENTITY FIELDS
+// 5. PLAYER REPLICATION ENTITY FIELDS (Sourced from Offsetsmax.h)
 // ----------------------------------------------------------------------------------------------
     namespace Player {
         constexpr uintptr_t Rotation             = 0x614;     // Entity rotation Vector3
-        constexpr uintptr_t HeadTF               = 0x6A8;     // Free Fire Max Head ITransformNode
+        constexpr uintptr_t AimRotation          = 0x61C;     // AimRotation (Offsetsmax.h)
+        constexpr uintptr_t CallSetAimRotationCount = 0x79C;  // CallSetAimRotationCount (Offsetsmax.h)
+        constexpr uintptr_t HeadTF               = 0x6A8;     // Free Fire Max Head ITransformNode (Offsetsmax.h Head = 0x6A8)
         constexpr uintptr_t HeadTF_Alt           = 0x6A0;     // Fallback
-        constexpr uintptr_t HipTF                = 0x6B0;     // Free Fire Max Hip / Waist ITransformNode
-        constexpr uintptr_t SpineTF              = 0x6B8;     // Spine ITransformNode
-        constexpr uintptr_t RootTF               = 0x6C8;     // Root / Pelvis ITransformNode
-        constexpr uintptr_t FootTF               = 0x6F0;     // Free Fire Max Left Toe ITransformNode
-        constexpr uintptr_t FootTF_Alt           = 0x6F8;     // Right Toe TF
-        constexpr uintptr_t HeadCollider         = 0x740;     // Head Collider pointer
+        constexpr uintptr_t HipTF                = 0x6B0;     // Free Fire Max Hip / Waist ITransformNode (Offsetsmax.h Hip = 0x6B0)
+        constexpr uintptr_t SpineTF              = 0x6B8;     // Spine ITransformNode (Offsetsmax.h Spine = 0x6B8)
+        constexpr uintptr_t RootTF               = 0x6D0;     // Root / Pelvis ITransformNode (Offsetsmax.h Root = 0x6D0)
+        constexpr uintptr_t RootTF_Alt           = 0x6C8;     // Root fallback
+        constexpr uintptr_t FootTF               = 0x6F0;     // Free Fire Max Left Toe ITransformNode (Offsetsmax.h lToe = 0x6F0)
+        constexpr uintptr_t FootTF_Alt           = 0x6F8;     // Right Toe TF (Offsetsmax.h rToe = 0x6F8)
+        constexpr uintptr_t HeadCollider         = 0x740;     // Head Collider pointer (Offsetsmax.h HedColider = 0x740)
         constexpr uintptr_t HeadCollider_Alt     = 0x738;     // Auxiliary Head Collider pointer
-        constexpr uintptr_t LockedAimingCollider = 0x80;      // Primary collider (READ-ONLY)
+        constexpr uintptr_t LockedAimingCollider = 0x80;      // Primary collider (Offsetsmax.h Colider_Field = 0x80)
         constexpr uintptr_t LockedAimingCollider_Alt = 0x78;  // Auxiliary collider (READ-ONLY)
         constexpr uintptr_t AimingTarget         = 0xE68;     // LastAimingTargetFromWeapon
         constexpr uintptr_t AimingAdjusted       = 0xE60;     // LastAimingInfoFromWeaponAdjusted
-        constexpr uintptr_t Camera               = 0x698;     // Free Fire Max FollowCamera pointer
+        constexpr uintptr_t Camera               = 0x698;     // Free Fire Max FollowCamera pointer (Offsetsmax.h FollowCamera = 0x698)
         constexpr uintptr_t Camera_Alt           = 0x690;     // FollowCamera auxiliary
         constexpr uintptr_t FollowCamera_Sub     = 0x698;     // FollowCamera auxiliary pointer
-        constexpr uintptr_t IsFiring             = 0x850;     // Primary isFiring integer flag
+        constexpr uintptr_t IsFiring             = 0x850;     // Primary isFiring integer flag (Offsetsmax.h isFiring / sAim1 = 0x850)
         constexpr uintptr_t IsFiring_Alt         = 0x848;     // Auxiliary isFiring integer flag
-        constexpr uintptr_t HP                   = 0x70;      // m_PRIDataPool pointer
+        constexpr uintptr_t HP                   = 0x70;      // m_PRIDataPool pointer (Offsetsmax.h Player_Data / GetCurHP = 0x70)
         constexpr uintptr_t Armor                = 0x74;      // Armor points
         constexpr uintptr_t HP_MaxEntry          = 0x28;      // Index 1 (Max HP) in ReplicationData pool
         constexpr uintptr_t HP_ArmorEntry        = 0x40;      // Index 4 (Armor Points) in pool
-        constexpr uintptr_t IsDead               = 0x7C;      // Boolean: isDead flag
-        constexpr uintptr_t Avatar               = 0x778;     // AvatarManager pointer
+        constexpr uintptr_t IsDead               = 0x7C;      // Boolean: isDead flag (Offsetsmax.h Player_IsDead = 0x7C)
+        constexpr uintptr_t Avatar               = 0x778;     // AvatarManager pointer (Offsetsmax.h AvatarManager = 0x778)
         constexpr uintptr_t Avatar_Alt           = 0x770;     // AvatarManager auxiliary pointer
-        constexpr uintptr_t IsBot                = 0x4A8;     // Boolean: isClientBot flag
+        constexpr uintptr_t IsBot                = 0x4A8;     // Boolean: isClientBot flag (Offsetsmax.h IsClientBot / IsBot = 0x4A8)
         constexpr uintptr_t IsBot_Alt            = 0x4A0;     // Auxiliary bot flag
-        constexpr uintptr_t Name                 = 0x498;     // MonoString* OriginalNickName
+        constexpr uintptr_t Name                 = 0x498;     // MonoString* OriginalNickName (Offsetsmax.h NamePtr / Player_Name = 0x498)
         constexpr uintptr_t Speed                = 0x560;     // Speed single
-        constexpr uintptr_t AimInfo              = 0xE58;     // Primary LastAimingInfoFromWeapon
+        constexpr uintptr_t AimInfo              = 0xE58;     // Primary LastAimingInfoFromWeapon (Offsetsmax.h aimInfo / sAim2 = 0xE58)
         constexpr uintptr_t AimInfo_Alt          = 0xE50;     // Auxiliary AimingInfo
         constexpr uintptr_t Velocity             = 0xF0;      // Velocity Vector3
         constexpr uintptr_t IsGrounded           = 0x11C;     // Boolean: isGrounded flag
         constexpr uintptr_t FOVOffset            = 0x84;      // Scope FOV offset float inside FollowCamera
-        constexpr uintptr_t Weapon               = 0x608;     // Free Fire Max WeaponOnHand pointer
+        constexpr uintptr_t Weapon               = 0x608;     // Free Fire Max WeaponOnHand pointer (Offsetsmax.h Weapon = 0x608)
         constexpr uintptr_t Weapon_Alt           = 0x600;     // Free Fire Global WeaponOnHand pointer
-        constexpr uintptr_t Attributes           = 0x770;     // PlayerAttributes Max
+        constexpr uintptr_t WeaponOnHand         = 0x17E8;    // Player_WeaponOnHand (Offsetsmax.h = 0x17E8)
+        constexpr uintptr_t InventoryManager     = 0x748;     // InventoryManager (Offsetsmax.h = 0x748)
+        constexpr uintptr_t Attributes           = 0x770;     // PlayerAttributes Max (Offsetsmax.h = 0x770)
         constexpr uintptr_t Attributes_Max       = 0x778;
+        constexpr uintptr_t PhyXdata             = 0x1D60;    // PhyXdata (Offsetsmax.h = 0x1D60)
+        constexpr uintptr_t maybeDead            = 0x20;      // maybeDead (Offsetsmax.h = 0x20)
+        constexpr uintptr_t isKnocked            = 0x10;      // isKnocked (Offsetsmax.h = 0x10)
+        constexpr uintptr_t GhostHack            = 0x814;     // GhostHack (Offsetsmax.h = 0x814)
+        constexpr uintptr_t ShootNoReload        = 0x111;     // ShootNoReload (Offsetsmax.h = 0x111)
 
         // Physical Constants
         constexpr int       StandardBaseHP       = 200;       // Standard base HP
@@ -146,47 +169,62 @@ namespace Offsets {
     }
 
 // ----------------------------------------------------------------------------------------------
-// 8. WEAPON & COMBAT DATA
+// 8. WEAPON & COMBAT DATA (Sourced from Offsetsmax.h)
 // ----------------------------------------------------------------------------------------------
     namespace Weapon {
-        constexpr uintptr_t Data                 = 0x18;      // Weapon_Data pointer displacement
-        constexpr uintptr_t Weapon_ID            = 0x64;      // Weapon identifier int
-        constexpr uintptr_t Recoil               = 0x80;      // Weapon Recoil float (0.0f = zero recoil)
+        constexpr uintptr_t Data                 = 0x98;      // Weapon_Data pointer displacement (Offsetsmax.h Weapon_Data = 0x98)
+        constexpr uintptr_t Data_Alt             = 0x18;      // Weapon_Data auxiliary
+        constexpr uintptr_t Weapon_ID            = 0x64;      // Weapon identifier int (Offsetsmax.h WeaponData_Type = 0x64)
+        constexpr uintptr_t Recoil               = 0x18;      // Weapon Recoil (Offsetsmax.h NoRecoil = 0x18)
+        constexpr uintptr_t Recoil_Alt           = 0x80;      // Recoil component (Offsetsmax.h WeaponComponent = 0x80)
         constexpr uintptr_t IsSight              = 0x8A0;     // Active Weapon Sight pointer (0x8A0 STORM_MODS)
+        constexpr uintptr_t InventoryManager     = 0x748;     // InventoryManager (Offsetsmax.h = 0x748)
+        constexpr uintptr_t WeaponOnHand         = 0x17E8;    // Player_WeaponOnHand (Offsetsmax.h = 0x17E8)
+        constexpr uintptr_t Item                 = 0xA0;      // Item (Offsetsmax.h = 0xA0)
+        constexpr uintptr_t WeaponComponent      = 0x80;      // WeaponComponent (Offsetsmax.h = 0x80)
+        constexpr uintptr_t ItemData             = 0x28;      // ItemData (Offsetsmax.h = 0x28)
+        constexpr uintptr_t ItemData_WeaponId    = 0x40;      // ItemData_WeaponId (Offsetsmax.h = 0x40)
+        constexpr uintptr_t WeaponData_Type      = 0x64;      // WeaponData_Type (Offsetsmax.h = 0x64)
+        constexpr uintptr_t WeaponData_AimType   = 0xC8;      // WeaponData_AimType (Offsetsmax.h = 0xC8)
+        constexpr int       WeaponType_Sniper    = 1;         // WeaponType_Sniper (Offsetsmax.h = 1)
     }
 
 // ----------------------------------------------------------------------------------------------
-// 9. AVATAR & TEAMMATE FILTERING (UMAData Flags)
+// 9. AVATAR & TEAMMATE FILTERING (UMAData Flags - Sourced from Offsetsmax.h)
 // ----------------------------------------------------------------------------------------------
     namespace Avatar {
-        constexpr uintptr_t Uma                  = 0x138;     // AvatarManager -> UMA pointer
-        constexpr uintptr_t Uma_Visible          = 0x101;     // Visibility boolean
-        constexpr uintptr_t Uma_Data             = 0x28;      // UMA -> UMAData pointer
+        constexpr uintptr_t Uma                  = 0x138;     // AvatarManager -> UMA pointer (Offsetsmax.h UmaAvatarSimple / Avatar = 0x138)
+        constexpr uintptr_t Uma_Visible          = 0x101;     // Visibility boolean (Offsetsmax.h IsVisible / Avatar_IsVisible = 0x101)
+        constexpr uintptr_t Uma_Data             = 0x28;      // UMA -> UMAData pointer (Offsetsmax.h UmaData / Avatar_Data = 0x28)
         constexpr uintptr_t UmaData_LocalPlayer  = 0x80;      // Flag: isLocalPlayer
-        constexpr uintptr_t UmaData_Teammate     = 0x81;      // Flag: isTeammate (filter out allies)
+        constexpr uintptr_t UmaData_Teammate     = 0x81;      // Flag: isTeammate (Offsetsmax.h UmaData_IsTeam / Avatar_Data_IsTeam = 0x81)
     }
 
 // ----------------------------------------------------------------------------------------------
-// 10. CAMERA & VIEW MATRIX
+// 10. CAMERA & VIEW MATRIX (Sourced from Offsetsmax.h)
 // ----------------------------------------------------------------------------------------------
     namespace Camera {
-        constexpr uintptr_t Follow               = 0x28;      // Camera follow component
-        constexpr uintptr_t IntPtr               = 0x10;      // Camera native IntPtr
-        constexpr uintptr_t Matrix               = 0x100;     // 4x4 ViewMatrix float buffer
-        constexpr uintptr_t Follow_Alt           = 0x30;
+        constexpr uintptr_t CameraBase           = 0xD8;      // CameraBase (Offsetsmax.h = 0xD8)
+        constexpr uintptr_t CameraOffset         = 0x20;      // Camera (Offsetsmax.h Camera = 0x20)
+        constexpr uintptr_t Follow               = 0x20;      // Camera follow component (Offsetsmax.h Camera = 0x20)
+        constexpr uintptr_t IntPtr               = 0x10;      // Camera native IntPtr (Offsetsmax.h IntPtrCam = 0x10)
+        constexpr uintptr_t Matrix               = 0x100;     // 4x4 ViewMatrix float buffer (Offsetsmax.h Matrix = 0x100)
+        constexpr uintptr_t FollowCamera         = 0x698;     // FollowCamera (Offsetsmax.h = 0x698)
+        constexpr uintptr_t MainCameraTransform  = 0x3F0;     // MainCameraTransform (Offsetsmax.h = 0x3F0)
+        constexpr uintptr_t Follow_Alt           = 0x28;      // Auxiliary
         constexpr uintptr_t IntPtr_Alt           = 0x10;
     }
 
 // ----------------------------------------------------------------------------------------------
-// 11. WEAPON AIM / RAYCAST BUFFER (Silent Aim Trajectory Injection)
+// 11. WEAPON AIM / RAYCAST BUFFER (Silent Aim Trajectory Injection - Sourced from Offsetsmax.h)
 // ----------------------------------------------------------------------------------------------
     namespace Aim {
         constexpr uintptr_t HitObject            = 0x18;      // Target GameObject
         constexpr uintptr_t HitCollider          = 0x20;      // Target Collider
         constexpr uintptr_t HitPoint             = 0x28;      // Raycast hit point Vector3
         constexpr uintptr_t HitNormal            = 0x34;      // Surface normal Vector3
-        constexpr uintptr_t Direction            = 0x40;      // Bullet trajectory raycast direction (0x40)
-        constexpr uintptr_t StartPosition        = 0x4C;      // Bullet muzzle start position (0x4C)
+        constexpr uintptr_t Direction            = 0x40;      // Bullet trajectory raycast direction (Offsetsmax.h raycast / sAim4 = 0x40)
+        constexpr uintptr_t StartPosition        = 0x4C;      // Bullet muzzle start position (Offsetsmax.h startPos / sAim3 = 0x4C)
         constexpr uintptr_t Damage               = 0x58;      // Damage integer
         constexpr uintptr_t Distance             = 0x5C;      // Distance float
         constexpr uintptr_t ActorLayer           = 0x60;      // Layer mask
@@ -196,6 +234,11 @@ namespace Offsets {
         constexpr uintptr_t ViewBlocked          = 0x71;
         constexpr uintptr_t OrigStartPosition    = 0x74;
         constexpr uintptr_t SpecialHitType       = 0x80;
+        constexpr uintptr_t AimRotation          = 0x61C;     // AimRotation (Offsetsmax.h = 0x61C)
+        constexpr uintptr_t Colider_Field        = 0x80;      // Colider_Field (Offsetsmax.h = 0x80)
+        constexpr uintptr_t HedColider           = 0x740;     // HedColider (Offsetsmax.h = 0x740)
+        constexpr uintptr_t aimInfo              = 0xE58;     // aimInfo (Offsetsmax.h = 0xE58)
+        constexpr uintptr_t isFiring             = 0x850;     // isFiring (Offsetsmax.h = 0x850)
 
         constexpr int32_t HitGroup_Default       = 0;
         constexpr int32_t HitGroup_Head          = 1;
@@ -203,27 +246,29 @@ namespace Offsets {
     }
 
 // ----------------------------------------------------------------------------------------------
-// 12. SKELETON BONES (ITransformNode Pointers - Free Fire Max ARM64)
+// 12. SKELETON BONES (ITransformNode Pointers - Sourced from Offsetsmax.h)
 // ----------------------------------------------------------------------------------------------
     namespace Bone {
-        constexpr uintptr_t Head                 = 0x6A8;     // Free Fire Max Head node
+        constexpr uintptr_t Head                 = 0x6A8;     // Free Fire Max Head node (Offsetsmax.h Head = 0x6A8)
         constexpr uintptr_t Head_Alt             = 0x6A0;     // Fallback
-        constexpr uintptr_t Hip                  = 0x6B0;     // Free Fire Max Hip / Waist node
-        constexpr uintptr_t Breast               = 0x6B8;     // Upper chest / Spine
-        constexpr uintptr_t Spine                = 0x6B8;     // Spine node
-        constexpr uintptr_t Root                 = 0x6C8;     // Root / Pelvis node
-        constexpr uintptr_t Root_Alt             = 0x6D0;     // Root fallback
-        constexpr uintptr_t LeftAnkle            = 0x6D8;     // Left ankle
-        constexpr uintptr_t RightAnkle           = 0x6E0;     // Right ankle
-        constexpr uintptr_t LeftToe              = 0x6F0;     // Free Fire Max Left toe sole node
+        constexpr uintptr_t Hip                  = 0x6B0;     // Free Fire Max Hip / Waist node (Offsetsmax.h Hip = 0x6B0)
+        constexpr uintptr_t Breast               = 0x6B8;     // Upper chest / Spine (Offsetsmax.h Spine = 0x6B8)
+        constexpr uintptr_t Spine                = 0x6B8;     // Spine node (Offsetsmax.h Spine = 0x6B8)
+        constexpr uintptr_t Root                 = 0x6D0;     // Root / Pelvis node (Offsetsmax.h Root = 0x6D0)
+        constexpr uintptr_t Root_Alt             = 0x6C8;     // Root fallback
+        constexpr uintptr_t LeftAnkle            = 0x6E0;     // Left ankle (Offsetsmax.h lAnkle = 0x6E0)
+        constexpr uintptr_t LeftAnkle_Alt        = 0x6D8;     // Fallback
+        constexpr uintptr_t RightAnkle           = 0x6E8;     // Right ankle (Offsetsmax.h rAnkle = 0x6E8)
+        constexpr uintptr_t RightAnkle_Alt       = 0x6E0;     // Fallback
+        constexpr uintptr_t LeftToe              = 0x6F0;     // Free Fire Max Left toe sole node (Offsetsmax.h lToe = 0x6F0)
         constexpr uintptr_t LeftToe_Alt          = 0x6F8;     // RightToe fallback
-        constexpr uintptr_t RightToe             = 0x6F8;     // Right toe sole node
-        constexpr uintptr_t LeftShoulder         = 0x710;     // Left shoulder
-        constexpr uintptr_t RightShoulder        = 0x718;     // Right shoulder
-        constexpr uintptr_t RightHand            = 0x720;     // Right hand
-        constexpr uintptr_t LeftHand             = 0x728;     // Left hand
-        constexpr uintptr_t RightForeArm         = 0x730;     // Right forearm
-        constexpr uintptr_t LeftForeArm          = 0x738;     // Left forearm
+        constexpr uintptr_t RightToe             = 0x6F8;     // Right toe sole node (Offsetsmax.h rToe = 0x6F8)
+        constexpr uintptr_t LeftShoulder         = 0x710;     // Left shoulder (Offsetsmax.h lShoulder = 0x710)
+        constexpr uintptr_t RightShoulder        = 0x718;     // Right shoulder (Offsetsmax.h rShoulder = 0x718)
+        constexpr uintptr_t RightHand            = 0x720;     // Right hand (Offsetsmax.h rHand = 0x720)
+        constexpr uintptr_t LeftHand             = 0x728;     // Left hand (Offsetsmax.h lHand = 0x728)
+        constexpr uintptr_t RightForeArm         = 0x730;     // Right forearm / elbow (Offsetsmax.h rElbow = 0x730)
+        constexpr uintptr_t LeftForeArm          = 0x738;     // Left forearm / elbow (Offsetsmax.h lElbow = 0x738)
         constexpr float     SkullElevation       = 0.12f;     // Head center elevation (meters)
     }
 

@@ -172,25 +172,25 @@ namespace data {
             auto GfCell = rpm<uint64_t>(snap.lib + gfOff);
             if (!GfCell || GfCell < 0x10000) continue;
 
-            // Primary Path: GfCell is a pointer to GameFacade Il2CppClass
+            // Path A (pewpew standard): GfCell is GameFacade Il2CppClass directly
+            uint64_t sf1 = rpm<uint64_t>(GfCell + Offsets::GameFacade_P2);
+            if (is_valid_ptr(sf1)) {
+                uint64_t curGame1 = rpm<uint64_t>(sf1 + 0x0);
+                uint64_t curMatch1 = rpm<uint64_t>(sf1 + Offsets::StaticFields_Instance); // +0x8
+                if (is_valid_ptr(curGame1)) { BaseGame = curGame1; StaticFields = sf1; break; }
+                else if (is_valid_ptr(curMatch1)) { BaseGame = curMatch1; StaticFields = sf1; break; }
+            }
+
+            // Path B: GfCell is a pointer to GameFacade Il2CppClass (pointer indirection fallback)
             uint64_t GfClass = rpm<uint64_t>(GfCell);
             if (is_valid_ptr(GfClass)) {
                 uint64_t sf = rpm<uint64_t>(GfClass + Offsets::GameFacade_P2);
                 if (is_valid_ptr(sf)) {
-                    uint64_t bg = rpm<uint64_t>(sf + Offsets::StaticFields_Instance); // +0x8
-                    if (is_valid_ptr(bg)) { BaseGame = bg; StaticFields = sf; break; }
                     uint64_t bg0 = rpm<uint64_t>(sf + 0x0);
+                    uint64_t bg = rpm<uint64_t>(sf + Offsets::StaticFields_Instance); // +0x8
                     if (is_valid_ptr(bg0)) { BaseGame = bg0; StaticFields = sf; break; }
+                    else if (is_valid_ptr(bg)) { BaseGame = bg; StaticFields = sf; break; }
                 }
-            }
-
-            // Secondary Fallback: GfCell is directly GameFacade Il2CppClass
-            uint64_t sf1 = rpm<uint64_t>(GfCell + Offsets::GameFacade_P2);
-            if (is_valid_ptr(sf1)) {
-                uint64_t curGame1 = rpm<uint64_t>(sf1 + Offsets::StaticFields_Instance); // +0x8
-                uint64_t curMatch1 = rpm<uint64_t>(sf1 + 0x0);
-                if (is_valid_ptr(curGame1)) { BaseGame = curGame1; StaticFields = sf1; break; }
-                else if (is_valid_ptr(curMatch1)) { BaseGame = curMatch1; StaticFields = sf1; break; }
             }
         }
 
@@ -380,6 +380,19 @@ namespace data {
                 maxHP = 200;
             }
 
+            // Knocked state evaluation via PhyXdata (Offsetsmax.h: PhyXdata 0x1D60 -> maybeDead 0x20 -> isKnocked 0x10)
+            bool isKnocked = false;
+            auto phyxData = rpm<uint64_t>(enemy + Offsets::Player::PhyXdata);
+            if (phyxData) {
+                auto maybeDead = rpm<uint64_t>(phyxData + Offsets::Player::maybeDead);
+                if (maybeDead && rpm<int>(maybeDead + Offsets::Player::isKnocked) == 8) {
+                    isKnocked = true;
+                }
+            }
+            if (!isKnocked && curHP <= 1) {
+                isKnocked = true;
+            }
+
             // Teammate & Self filter via AvatarManager UMAData (Safe Non-Dropping Check)
             bool isVisible = true;
             auto avatarMgr = span.at<uint64_t>(Offsets::Player_Avatar);
@@ -466,6 +479,7 @@ namespace data {
             pd.headWorld  = headWorld;
             pd.isBot      = isBot;
             pd.isVisible  = isVisible;
+            pd.isKnocked  = isKnocked;
             pd.distance   = dist;
             pd.curHP      = curHP;
             pd.maxHP      = maxHP;

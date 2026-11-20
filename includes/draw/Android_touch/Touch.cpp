@@ -18,19 +18,35 @@
 static std::atomic<float> s_guiTouchX{-1.0f};
 static std::atomic<float> s_guiTouchY{-1.0f};
 static std::atomic<bool>  s_guiTouchDown{false};
+static std::atomic<bool>  s_guiTouchTapPending{false};
+static bool s_wasImGuiDown = false;
 
 void Touch_SyncToImGui() {
     ImGuiIO& io = ImGui::GetIO();
-    bool down = s_guiTouchDown.load(std::memory_order_acquire);
-    if (down) {
-        float x = s_guiTouchX.load(std::memory_order_relaxed);
-        float y = s_guiTouchY.load(std::memory_order_relaxed);
-        if (x >= 0.0f && y >= 0.0f) {
-            io.MousePos = ImVec2(x, y);
-        }
+    float x = s_guiTouchX.load(std::memory_order_relaxed);
+    float y = s_guiTouchY.load(std::memory_order_relaxed);
+    if (x >= 0.0f && y >= 0.0f) {
+        io.MousePos = ImVec2(x, y);
+    }
+
+    bool physicalDown = s_guiTouchDown.load(std::memory_order_acquire);
+    bool tapPending   = s_guiTouchTapPending.load(std::memory_order_acquire);
+
+    if (physicalDown) {
         io.MouseDown[0] = true;
+        s_wasImGuiDown = true;
+    } else if (tapPending) {
+        if (!s_wasImGuiDown) {
+            io.MouseDown[0] = true;
+            s_wasImGuiDown = true;
+        } else {
+            io.MouseDown[0] = false;
+            s_wasImGuiDown = false;
+            s_guiTouchTapPending.store(false, std::memory_order_release);
+        }
     } else {
         io.MouseDown[0] = false;
+        s_wasImGuiDown = false;
     }
 }
 
@@ -323,11 +339,17 @@ static void *TypeA(void *arg) {
                         Finger[i][latest].id = (i * 2 + 1) * maxF + latest;
                         Finger[i][latest].freshDown = true;
                     } else {
-                        if (Finger[i][latest].swallow) {
+                        bool anySwallowed = false;
+                        for (int f = 0; f < maxF; f++) {
+                            if (Finger[i][f].swallow) anySwallowed = true;
+                            Finger[i][f].swallow = false;
+                            Finger[i][f].freshDown = false;
+                            Finger[i][f].isDown = false;
+                            Finger[i][f].isTmpDown = false;
+                        }
+                        if (anySwallowed) {
                             s_guiTouchDown.store(false, std::memory_order_release);
                         }
-                        Finger[i][latest].swallow = false;
-                        Finger[i][latest].freshDown = false;
                     }
                     continue;
                 }
@@ -422,6 +444,7 @@ static void *TypeA(void *arg) {
                         s_guiTouchX.store(x, std::memory_order_relaxed);
                         s_guiTouchY.store(y, std::memory_order_relaxed);
                         s_guiTouchDown.store(true, std::memory_order_release);
+                        s_guiTouchTapPending.store(true, std::memory_order_release);
                     }
                 } else {
                     if (Finger[i][latest].swallow) {
@@ -462,7 +485,10 @@ bool Touch_Init(int w, int h, uint32_t orientation_, bool readOnly) {
         if (strncmp(ptr->d_name, "event", 5) != 0) continue;
 
         snprintf(temp, sizeof(temp), "/dev/input/%s", ptr->d_name);
-        int fd = open(temp, O_RDWR);
+        int fd = open(temp, readOnly ? O_RDONLY : O_RDWR);
+        if (fd < 0 && !readOnly) {
+            fd = open(temp, O_RDONLY);
+        }
         if (fd < 0) continue;
 
         float devMaxX = 0.0f, devMaxY = 0.0f;
@@ -616,6 +642,8 @@ void Touch_Close() {
     if (Touch_initialized) {
         Touch_initialized = false;
         s_guiTouchDown.store(false, std::memory_order_release);
+        s_guiTouchTapPending.store(false, std::memory_order_release);
+        s_wasImGuiDown = false;
         for (int i = 0; i < maxE; ++i) {
             if (origfd[i] >= 0) {
                 if (!Touch_readOnly)

@@ -58,11 +58,15 @@ namespace sys {
     static constexpr long SYS_close             = 57;
     static constexpr long SYS_read              = 63;
     static constexpr long SYS_getdents64        = 61;
+    static constexpr long SYS_vm_read           = 270;
+    static constexpr long SYS_vm_write          = 271;
     #elif defined(__x86_64__)
     static constexpr long SYS_openat            = 257;
     static constexpr long SYS_close             = 3;
     static constexpr long SYS_read              = 0;
     static constexpr long SYS_getdents64        = 217;
+    static constexpr long SYS_vm_read           = 310;
+    static constexpr long SYS_vm_write          = 311;
     #endif
 
     #ifndef AT_FDCWD
@@ -101,6 +105,12 @@ namespace sys {
     static inline int  close (int fd)                        { return static_cast<int>(sc6(SYS_close, fd, 0, 0, 0, 0, 0)); }
     static inline long read  (int fd, void* b, size_t c)     { return sc6(SYS_read, fd, reinterpret_cast<long>(b), c, 0, 0, 0); }
     static inline long getdents64(int fd, void* d, size_t c) { return sc6(SYS_getdents64, fd, reinterpret_cast<long>(d), c, 0, 0, 0); }
+    static inline long vm_read (int pid, struct iovec* l, unsigned long lc, struct iovec* r, unsigned long rc) {
+        return sc6(SYS_vm_read, pid, reinterpret_cast<long>(l), lc, reinterpret_cast<long>(r), rc, 0);
+    }
+    static inline long vm_write(int pid, struct iovec* l, unsigned long lc, struct iovec* r, unsigned long rc) {
+        return sc6(SYS_vm_write, pid, reinterpret_cast<long>(l), lc, reinterpret_cast<long>(r), rc, 0);
+    }
 }
 
 struct linux_dirent64 {
@@ -117,66 +127,83 @@ static inline void wipe(void* p, size_t n) {
     for (size_t i = 0; i < n; i++) v[i] = 0;
 }
 
-// Memory boundary validation check (guards against null pointers & kernel addresses)
-inline bool is_valid_ptr(uint64_t a) {
-    uint64_t p = a & 0x0000FFFFFFFFFFFFULL;
-    return (p >= 0x10000ULL && p <= 0x00007FFFFFFFFFFFULL);
+inline bool addr_valid(uint64_t a) { return a >= 0x1000; }
+inline bool is_valid_ptr(uint64_t a) { return a >= 0x1000; }
+
+inline int get_proc_mem_fd() {
+    static int s_fd = -1;
+    static int s_last_pid = -1;
+    int curPid = proc::pid.load(std::memory_order_relaxed);
+    if (curPid <= 0) return -1;
+    if (curPid != s_last_pid || s_fd < 0) {
+        if (s_fd >= 0) close(s_fd);
+        char path[64];
+        snprintf(path, sizeof(path), "/proc/%d/mem", curPid);
+        s_fd = open(path, O_RDWR);
+        s_last_pid = curPid;
+    }
+    return s_fd;
 }
 
-inline bool addr_valid(uint64_t a) { return is_valid_ptr(a); }
-
-// Universal Memory Read (RPM): 100% Pure Ring-0 Kernel Driver Architecture
-// Zero userspace syscall 270 (process_vm_readv) fallback to ensure complete stealth and zero audit traces.
+// Memory Read (RPM): Pure pewpew standard - Zero arbitrary size caps or memory bounds limits
 inline bool mem_read(uint64_t a, void* b, size_t l) {
-    if (!is_valid_ptr(a) || l == 0 || b == nullptr) return false;
+    int curPid = proc::pid.load(std::memory_order_relaxed);
+    if (curPid <= 0 || a < 0x1000 || l == 0 || b == nullptr) return false;
 
-    // 100% Ring-0 Kernel Driver Dispatch
+    // Driver Dispatch (Neo KPM, TB KPM, RT DEV)
     if (driver && driver->is_driver_loaded()) {
+        driver->initialize(static_cast<pid_t>(curPid));
         if (driver->read(static_cast<uintptr_t>(a), b, l)) {
             return true;
         }
+    }
+
+    // Direct raw Syscall 270 (process_vm_readv) fallback
+    struct iovec loc[1], rem[1];
+    loc[0].iov_base = b;
+    loc[0].iov_len  = l;
+    rem[0].iov_base = reinterpret_cast<void*>(a);
+    rem[0].iov_len  = l;
+    ssize_t r = sys::vm_read(curPid, loc, 1, rem, 1);
+    if (r == static_cast<long>(l)) return true;
+
+    // Fallback to /proc/<pid>/mem pread64
+    int fd = get_proc_mem_fd();
+    if (fd >= 0) {
+        ssize_t pr = pread64(fd, b, l, static_cast<off64_t>(a));
+        if (pr == static_cast<long>(l)) return true;
     }
 
     memset(b, 0, l);
     return false;
 }
 
-// Universal Memory Write (WPM): 100% Pure Ring-0 Kernel Driver Architecture
-// Hardware-like write protection: Zero userspace syscall 271 (process_vm_writev) fallback.
+// Memory Write (WPM): Pure pewpew standard - Zero arbitrary size caps or memory bounds limits
 inline bool mem_write(uint64_t a, const void* b, size_t l) {
-    // 1. Strict Pointer Sanity & Bounds Validation
-    if (!is_valid_ptr(a) || l == 0 || b == nullptr) return false;
+    int curPid = proc::pid.load(std::memory_order_relaxed);
+    if (curPid <= 0 || a == 0 || l == 0 || b == nullptr) return false;
 
-    // 2. Strict Pure ESP Zero-WPM Gate: physically locks memory write capability when combat is inactive
-    if (!proc::wpm_allowed.load(std::memory_order_acquire)) return false;
-
-    // 3. Strict Payload Size Limit & Alignment Quarantine:
-    // Only small scalar (1, 2, 4 bytes) or 3D Vector (12 bytes = 3 * sizeof(float)) writes are permitted.
-    // Blocks any bulk memory corruption, binary patching, or shellcode injection attempts.
-    constexpr size_t kMaxPermittedWriteBytes = 12; // Exactly sizeof(Vector3)
-    if (l > kMaxPermittedWriteBytes || (l != 1 && l != 2 && l != 4 && l != kMaxPermittedWriteBytes)) return false;
-    if (l >= 4 && (a & 3) != 0) return false; // Strict 4-byte alignment enforcement
-
-    // 4. Universal Anti-Cheat Memory Quarantine:
-    // Strictly block writes to executable code pages (e.g. libil2cpp.so and mapped security modules).
-    // Writing is exclusively permitted to verified dynamic heap / weapon raycast scratchpads.
-    uint64_t libBase = proc::lib.load(std::memory_order_acquire);
-    if (libBase > 0 && a >= libBase && a < (libBase + 0x15000000ULL)) {
-        return false;
-    }
-
-    // 5. User-space Virtual Address Range Boundary Guard
-    if (a < 0x10000ULL || a > 0x00007FFFFFFFFFFFULL) {
-        return false;
-    }
-
-    // 6. 100% Ring-0 Kernel Driver Dispatch
+    // Driver Dispatch (Neo KPM, TB KPM, RT DEV)
     if (driver && driver->is_driver_loaded()) {
+        driver->initialize(static_cast<pid_t>(curPid));
         if (driver->write(static_cast<uintptr_t>(a), const_cast<void*>(b), l)) {
             return true;
         }
     }
 
+    // Direct raw Syscall 271 (process_vm_writev) fallback
+    struct iovec loc[1], rem[1];
+    loc[0].iov_base = const_cast<void*>(b);
+    loc[0].iov_len  = l;
+    rem[0].iov_base = reinterpret_cast<void*>(a);
+    rem[0].iov_len  = l;
+    if (sys::vm_write(curPid, loc, 1, rem, 1) == static_cast<long>(l)) return true;
+
+    // Fallback to /proc/<pid>/mem pwrite64
+    int fd = get_proc_mem_fd();
+    if (fd >= 0) {
+        return pwrite64(fd, b, l, static_cast<off64_t>(a)) == static_cast<long>(l);
+    }
     return false;
 }
 
@@ -275,119 +302,17 @@ inline int get_pid() {
     return found_pid;
 }
 
-// Queries kernel driver or scans /proc/<pid>/maps directly via raw assembly syscalls
-// Infallible multi-strategy base resolver ensuring libil2cpp.so base address is ALWAYS found
+// Queries driver to resolve target module base address (pewpew get_lib pattern)
 inline uint64_t get_lib(const char* targetName = "libil2cpp.so") {
     int curPid = proc::pid.load(std::memory_order_relaxed);
     if (curPid <= 0) return 0;
 
-    // Strategy 1: Active Kernel Driver Module
     if (driver && driver->is_driver_loaded()) {
+        driver->initialize(static_cast<pid_t>(curPid));
         uintptr_t base = driver->getModuleBase(targetName);
         if (base > 0) {
-            uint32_t magic = rpm<uint32_t>(base);
-            if (magic == 0x464C457F) { // \x7FELF
-                return static_cast<uint64_t>(base);
-            }
-            // Even if magic isn't read via driver, test if it resolves GameFacade
-            uint64_t gf1 = rpm<uint64_t>(base + Offsets::Base::GameFacade);
-            uint64_t gf2 = rpm<uint64_t>(base + Offsets::Base::GameFacade_Alt);
-            uint64_t gf3 = rpm<uint64_t>(base + Offsets::Base::GameFacade_Global);
-            if (gf1 > 0x10000000 || gf2 > 0x10000000 || gf3 > 0x10000000) {
-                return static_cast<uint64_t>(base);
-            }
+            return static_cast<uint64_t>(base);
         }
     }
-
-    // Strategy 2: Direct /proc/<pid>/maps scan via raw assembly syscalls
-    char mp[64];
-    snprintf(mp, sizeof(mp), "/proc/%d/maps", curPid);
-
-    int mfd = sys::openat(AT_FDCWD, mp, O_RDONLY);
-    wipe(mp, sizeof(mp));
-    if (mfd < 0) return 0;
-
-    char buf[8192];
-    long tr = 0;
-    uint64_t candidates[8] = {0};
-    int candCount = 0;
-    uint64_t firstMatch = 0;
-
-    while (true) {
-        long nr = sys::read(mfd, buf + tr, sizeof(buf) - tr - 1);
-        if (nr <= 0) break;
-        tr += nr;
-        buf[tr] = '\0';
-
-        char* ls = buf;
-        while (true) {
-            char* le = ls;
-            while (*le && *le != '\n') le++;
-            if (*le == '\0') break;
-            *le = '\0';
-
-            uint64_t st = 0;
-            char* pt = ls;
-            while (*pt && ((*pt >= '0' && *pt <= '9') || (*pt >= 'a' && *pt <= 'f') || (*pt >= 'A' && *pt <= 'F'))) {
-                uint64_t v = (*pt <= '9') ? (*pt - '0') : ((*pt >= 'a') ? (*pt - 'a' + 10) : (*pt - 'A' + 10));
-                st = st * 16 + v;
-                pt++;
-            }
-
-            if (*pt == '-') {
-                pt++;
-                // Skip end address
-                while (*pt && ((*pt >= '0' && *pt <= '9') || (*pt >= 'a' && *pt <= 'f') || (*pt >= 'A' && *pt <= 'F'))) pt++;
-                while (*pt == ' ') pt++;
-
-                // Check permissions: readable private mapping (r--p or r-xp)
-                if (pt[0] == 'r' && pt[3] == 'p') {
-                    if (strstr(ls, targetName)) {
-                        if (firstMatch == 0) firstMatch = st;
-
-                        // Verify ELF magic header: 0x7F 'E' 'L' 'F' (0x464C457F)
-                        uint32_t magic = rpm<uint32_t>(st);
-                        if (magic == 0x464C457F) {
-                            if (candCount < 8) {
-                                candidates[candCount++] = st;
-                            }
-                        }
-                    }
-                }
-            }
-
-            ls = le + 1;
-        }
-
-        long left = (buf + tr) - ls;
-        if (left > 0 && ls > buf) {
-            memmove(buf, ls, left);
-            tr = left;
-        } else if (left > 0 && ls == buf) {
-            // Partial line spanning read boundary: keep tr so next read appends
-            if (sizeof(buf) - tr - 1 == 0) {
-                tr = 0; // Buffer completely exhausted without newline; discard oversized entry
-            }
-        } else {
-            tr = 0;
-        }
-    }
-
-    sys::close(mfd);
-    wipe(buf, sizeof(buf));
-
-    // Forensic validation: test if candidate base directly resolves GameFacade static pointer
-    for (int i = 0; i < candCount; i++) {
-        uint64_t cand = candidates[i];
-        if (cand == 0) continue;
-        uint64_t gf1 = rpm<uint64_t>(cand + Offsets::Base::GameFacade); // Free Fire Max (maxff.h primary)
-        if (gf1 > 0x10000000) return cand;
-        uint64_t gf2 = rpm<uint64_t>(cand + Offsets::Base::GameFacade_Alt); // Free Fire Max (STORM_MODS alt)
-        if (gf2 > 0x10000000) return cand;
-        uint64_t gf3 = rpm<uint64_t>(cand + Offsets::Base::GameFacade_Global); // Free Fire Global (1.132.x primary)
-        if (gf3 > 0x10000000) return cand;
-    }
-
-    if (candCount > 0) return candidates[0];
-    return firstMatch;
+    return 0;
 }

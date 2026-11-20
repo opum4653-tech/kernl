@@ -108,6 +108,11 @@ inline Vector3 GetNodePosition(uint64_t nodeTransform) {
     return GetPosition(nodeTransform);
 }
 
+// Transform accessors matching pewpew / Offsetsmax.h standard
+inline uint64_t GetPlayerHeadTF (uint64_t player) { return rpm<uint64_t>(player + Offsets::Bone_Head); }
+inline uint64_t GetPlayerSpineTF(uint64_t player) { return rpm<uint64_t>(player + Offsets::Bone_Spine); }
+inline uint64_t GetPlayerPeTF   (uint64_t player) { return rpm<uint64_t>(player + Offsets::Bone_Root); }
+
 // Projects 3D world coordinates into 2D screen viewport coordinates using the game's ViewMatrix
 inline Vector3 WorldToScreenPoint(const matrix& vm, const Vector3& pos) {
     // Read atomic screen resolution snapshots to prevent race conditions during device rotation

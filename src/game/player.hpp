@@ -56,6 +56,7 @@ struct PlayerData {
     // Entity Metadata & Health Telemetry
     bool     isBot;     // Extracted from Player::IsBot (0x4A8)
     bool     isVisible; // Extracted from Avatar::Uma_Visible (0x101)
+    bool     isKnocked; // Extracted from PhyXdata (0x1D60) -> maybeDead (0x20) -> isKnocked == 8
     float    distance;  // Euclidean distance between local player head and enemy head
     int      curHP;     // Current health extracted from m_PRIDataPool (0x70) Index 0
     int      maxHP;     // Maximum health extracted from m_PRIDataPool (0x70) Index 1
@@ -65,7 +66,7 @@ struct PlayerData {
     PlayerData()
         : addr(0),
           Head(Vector3::Zero()), Toe(Vector3::Zero()), headWorld(Vector3::Zero()),
-          isBot(false), isVisible(false), distance(0.f),
+          isBot(false), isVisible(false), isKnocked(false), distance(0.f),
           curHP(0), maxHP(200), curArmor(0)
     {}
 

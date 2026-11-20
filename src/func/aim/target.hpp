@@ -115,7 +115,7 @@ namespace trajectory {
             for (const auto& enemy : enemies) {
                 if (enemy.addr == s_lockedTargetAddr) {
                     if (enemy.curHP > 0 && enemy.Head.z >= 0.05f &&
-                        (!cfg::aim::ignore_knocked || enemy.curHP > 1)) {
+                        (!cfg::aim::ignore_knocked || (!enemy.isKnocked && enemy.curHP > 1))) {
                         float dxHead = enemy.Head.x - screenCx;
                         float dyHead = enemy.Head.y - screenCy;
                         float distHead = sqrtf(dxHead * dxHead + dyHead * dyHead);
@@ -153,8 +153,8 @@ namespace trajectory {
                 // Reject invalid screen depths or dead enemies
                 if (enemy.Head.z < 0.05f || enemy.curHP <= 0) continue;
 
-                // Filter knocked players (HP <= 1) if toggle is enabled
-                if (cfg::aim::ignore_knocked && enemy.curHP <= 1) continue;
+                // Filter knocked players (isKnocked flag or HP <= 1) if toggle is enabled
+                if (cfg::aim::ignore_knocked && (enemy.isKnocked || enemy.curHP <= 1)) continue;
 
                 float dxHead = enemy.Head.x - screenCx;
                 float dyHead = enemy.Head.y - screenCy;
