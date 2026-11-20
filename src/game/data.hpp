@@ -50,4 +50,9 @@ namespace data {
 
     // Atomic boolean flag: true when inside an active battle match, false in lobby/menus
     extern std::atomic<bool>       inMatch;
+
+    // Live camera ViewMatrix published each data tick (row-major Unity 4x4).
+    // Consumers: silent.hpp cone guard — read under viewMatrix_mutex.
+    extern std::mutex              viewMatrix_mutex;
+    extern matrix                  viewMatrix_pub;
 }

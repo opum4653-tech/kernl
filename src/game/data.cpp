@@ -52,9 +52,13 @@ namespace data {
     // Match status flag (true = player is inside an active game round)
     std::atomic<bool>        inMatch{false};
 
-    // Camera matrix lives entirely inside this translation unit: it is written
-    // by update() and consumed by boneScreen, all on the data thread in program order.
+    // Camera matrix — private working copy (data thread only).
     static matrix            viewMatrix{};
+
+    // Public snapshot of the camera ViewMatrix, published once per update() cycle.
+    // Consumers (silent.hpp cone guard) read this under viewMatrix_mutex.
+    std::mutex               viewMatrix_mutex;
+    matrix                   viewMatrix_pub{};
 
     // Lifecycle state and thread handle for the continuous background scraper loop
     static std::atomic<bool> g_run{false};
@@ -283,6 +287,12 @@ namespace data {
             return;
         }
 
+        // Publish the resolved ViewMatrix for cross-thread consumers (e.g., cone guard).
+        {
+            std::lock_guard<std::mutex> lk(viewMatrix_mutex);
+            viewMatrix_pub = viewMatrix;
+        }
+
         // Read 4x4 ViewMatrix committed
         (void)viewMatrix;
 
@@ -299,6 +309,25 @@ namespace data {
                     headNode = headNodeAlt;
                 }
             }
+        }
+        // Multi-tier anatomical fallbacks to ensure localPos never stays (0,0,0)
+        if (localPos == Vector3::Zero() || localPos.sqrMagnitude() < 1.0f) {
+            uint64_t rootNode = rpm<uint64_t>(localPlayer + Offsets::Bone_Root);
+            if (!rootNode) rootNode = rpm<uint64_t>(localPlayer + Offsets::Bone::Root_Alt);
+            if (rootNode) localPos = GetNodePosition(rootNode);
+        }
+        if (localPos == Vector3::Zero() || localPos.sqrMagnitude() < 1.0f) {
+            uint64_t spineNode = rpm<uint64_t>(localPlayer + Offsets::Bone::Spine);
+            if (spineNode) localPos = GetNodePosition(spineNode);
+        }
+        if (localPos == Vector3::Zero() || localPos.sqrMagnitude() < 1.0f) {
+            uint64_t footNode = rpm<uint64_t>(localPlayer + Offsets::Bone_LeftToe);
+            if (!footNode) footNode = rpm<uint64_t>(localPlayer + Offsets::Bone::LeftToe_Alt);
+            if (footNode) localPos = GetNodePosition(footNode);
+        }
+        if (localPos == Vector3::Zero() || localPos.sqrMagnitude() < 1.0f) {
+            uint64_t compTF = rpm<uint64_t>(localPlayer + Offsets::Unity::Component_Transform);
+            if (compTF) localPos = GetPosition(compTF);
         }
 
         // 5. Resolve Enemy Player Dictionary (Match_PlayerDict = 0xC0)
@@ -386,14 +415,22 @@ namespace data {
             if (!std::isfinite(headWorld.x) || !std::isfinite(headWorld.y) || !std::isfinite(headWorld.z)) continue;
             if (headWorld.y < -150.0f || headWorld.y > 600.0f) continue;
 
-            // Distance filter against user-configured Max Range slider (0.0f = Unlimited Range)
-            float dist = calculate_distance(localPos, headWorld);
-            float maxTrackingDist = cfg::esp::max_range.load(std::memory_order_relaxed);
-            if (dist < 0.5f || (maxTrackingDist > 0.0f && dist > maxTrackingDist)) continue;
-
             // Project Head to screen coordinates
             Vector3 headScreen = WorldToScreenPoint(viewMatrix, headWorld);
             if (headScreen.z < 0.001f) continue;
+
+            // Distance calculation: robust against temporary localPos resolution loss
+            float dist = 0.0f;
+            if (localPos != Vector3::Zero() && localPos.sqrMagnitude() >= 1.0f) {
+                dist = calculate_distance(localPos, headWorld);
+            } else {
+                // High-precision perspective distance fallback from camera look plane
+                dist = headScreen.z;
+            }
+
+            // Distance filter against user-configured Max Range slider (0.0f = Unlimited Range)
+            float maxTrackingDist = cfg::esp::max_range.load(std::memory_order_relaxed);
+            if (dist < 0.5f || (maxTrackingDist > 0.0f && dist > maxTrackingDist)) continue;
 
             // 8. Resolve Foot / Toe Node strictly from real memory transforms
             uint64_t footNode = span.at<uint64_t>(Offsets::Bone_LeftToe);
@@ -408,7 +445,16 @@ namespace data {
             }
             if (toeScreen.z < 0.001f || toeScreen == Vector3::Zero()) {
                 Vector3 toeWorld = headWorld;
-                toeWorld.y -= 1.8f;
+                // Dynamically probe Root/Spine node for stance-aware anatomical height
+                uint64_t rNode = span.at<uint64_t>(Offsets::Bone_Root);
+                if (!rNode) rNode = span.at<uint64_t>(Offsets::Bone::Root_Alt);
+                Vector3 rWorld = rNode ? GetNodePosition(rNode) : Vector3::Zero();
+                float torsoH = (rWorld != Vector3::Zero()) ? (headWorld.y - rWorld.y) : 0.85f;
+                if (torsoH > 0.25f && torsoH < 1.15f) {
+                    toeWorld.y -= (torsoH * 2.0f); // Stance-proportional scaling (standing/crouch/prone)
+                } else {
+                    toeWorld.y -= 1.70f; // Humanoid standing baseline
+                }
                 toeScreen = WorldToScreenPoint(viewMatrix, toeWorld);
             }
 
