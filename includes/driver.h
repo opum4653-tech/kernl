@@ -42,31 +42,79 @@ public:
         }
 
         if (!isatty(fileno(stdin))) {
-            // Non-interactive / daemon mode: default to Mode 3 (DEV Most Compatible) or Mode 2
-            printf("[Driver] Daemon mode detected, defaulting to Option 3 (DEV Most Compatible)\n");
-            g_appConfig.driverOption = 3;
-            g_appConfig.settingsLoaded = true;
-            return 3;
+            // Non-interactive / daemon mode: signal dynamic auto-probing across all engines
+            printf("[Driver] Daemon mode detected, starting multi-engine auto-probing\n");
+            return 0; // 0 signals auto_probe_all
         }
 
+        printf("\033[1;36m[+] 0. Auto-Probe (KPM -> QX -> RT DEV -> DEV COMPAT)\033[0m\n");
         printf("\033[1;36m[+] 1. RT Hook\033[0m\n");
         printf("\033[1;36m[+] 2. RT DEV\033[0m\n");
         printf("\033[1;36m[+] 3. DEV (Most Compatible)\033[0m\n");
         printf("\033[1;36m[+] 4. QX10~11.4\033[0m\n");
         printf("\033[1;36m[+] 5. KPM (Dual-Engine: TB KPM & Neo prctl)\033[0m\n");
-        printf("\033[1;33m[?] Select an option (1-5): \033[0m");
+        printf("\033[1;33m[?] Select an option (0-5, 0 for Auto): \033[0m");
         fflush(stdout);
 
-        int selection = 3;
-        if (scanf("%d", &selection) != 1 || selection < 1 || selection > 5) {
-            printf("\033[41m\033[37m[FATAL] Invalid driver option selected! Defaulting to 3...\033[0m\n");
-            selection = 3;
+        int selection = 0;
+        if (scanf("%d", &selection) != 1 || selection < 0 || selection > 5) {
+            printf("\033[33m[Driver] Defaulting to Auto-Probe...\033[0m\n");
+            selection = 0;
         }
 
-        g_appConfig.driverOption = selection;
-        g_appConfig.settingsLoaded = true;
-        SaveConfig();
+        if (selection > 0) {
+            g_appConfig.driverOption = selection;
+            g_appConfig.settingsLoaded = true;
+            SaveConfig();
+        }
         return selection;
+    }
+
+    bool auto_probe_all() {
+        printf("[Driver] Probing Ring-0 kernel drivers across all engines...\n");
+        // Priority 1: KPM Dual Engine (TB prctl 0x63687501 / Neo prctl 0x4E41)
+        if (m_kpm_driver.init()) {
+            m_selection = 5;
+            g_appConfig.driverOption = 5;
+            g_appConfig.settingsLoaded = true;
+            printf("[Driver] Successfully attached: %s (Option 5)\n", m_kpm_driver.get_engine_name());
+            return true;
+        }
+        // Priority 2: QX Driver (Dynamic major mknod)
+        if (m_qx_driver.init()) {
+            m_selection = 4;
+            g_appConfig.driverOption = 4;
+            g_appConfig.settingsLoaded = true;
+            printf("[Driver] Successfully attached: QX 10-11 (Option 4)\n");
+            return true;
+        }
+        // Priority 3: RT DEV (Direct char device)
+        if (m_rt_dev.init()) {
+            m_selection = 2;
+            g_appConfig.driverOption = 2;
+            g_appConfig.settingsLoaded = true;
+            printf("[Driver] Successfully attached: RT DEV (Option 2)\n");
+            return true;
+        }
+        // Priority 4: DEV Compat (Random char device)
+        if (m_dev_compat.init()) {
+            m_selection = 3;
+            g_appConfig.driverOption = 3;
+            g_appConfig.settingsLoaded = true;
+            printf("[Driver] Successfully attached: DEV COMPAT (Option 3)\n");
+            return true;
+        }
+        // Priority 5: RT Hook
+        if (m_rt_hook.init()) {
+            m_selection = 1;
+            g_appConfig.driverOption = 1;
+            g_appConfig.settingsLoaded = true;
+            printf("[Driver] Successfully attached: RT HOOK (Option 1)\n");
+            return true;
+        }
+
+        printf("\033[41m\033[37m[FATAL] Zero kernel drivers responded to auto-probing! Pure Ring-0 driver offline.\033[0m\n");
+        return false;
     }
 
     c_driver() {
@@ -85,18 +133,21 @@ public:
     bool connect_driver() {
         m_selection = getDriverSelection();
 
-        if (m_selection == 1) {
-            return m_rt_hook.init();
-        } else if (m_selection == 2) {
-            return m_rt_dev.init();
-        } else if (m_selection == 3) {
-            return m_dev_compat.init();
-        } else if (m_selection == 4) {
-            return m_qx_driver.init();
-        } else if (m_selection == 5) {
-            return m_kpm_driver.init();
+        if (m_selection == 0) {
+            return auto_probe_all();
         }
-        return false;
+
+        bool ok = false;
+        if (m_selection == 1) ok = m_rt_hook.init();
+        else if (m_selection == 2) ok = m_rt_dev.init();
+        else if (m_selection == 3) ok = m_dev_compat.init();
+        else if (m_selection == 4) ok = m_qx_driver.init();
+        else if (m_selection == 5) ok = m_kpm_driver.init();
+
+        if (ok) return true;
+
+        printf("\033[33m[Driver] Selected mode %d failed to load! Initiating auto-probe fallback...\033[0m\n", m_selection);
+        return auto_probe_all();
     }
 
     void initialize(pid_t p) {

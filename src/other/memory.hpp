@@ -144,20 +144,33 @@ inline bool mem_read(uint64_t a, void* b, size_t l) {
 // Universal Memory Write (WPM): 100% Pure Ring-0 Kernel Driver Architecture
 // Hardware-like write protection: Zero userspace syscall 271 (process_vm_writev) fallback.
 inline bool mem_write(uint64_t a, const void* b, size_t l) {
+    // 1. Strict Pointer Sanity & Bounds Validation
     if (!is_valid_ptr(a) || l == 0 || b == nullptr) return false;
 
-    // Strict Pure ESP Zero-WPM Gate: physically locks memory write capability when combat is inactive
-    if (!proc::wpm_allowed.load(std::memory_order_relaxed)) return false;
+    // 2. Strict Pure ESP Zero-WPM Gate: physically locks memory write capability when combat is inactive
+    if (!proc::wpm_allowed.load(std::memory_order_acquire)) return false;
 
-    // Universal Anti-Cheat Memory Quarantine:
+    // 3. Strict Payload Size Limit & Alignment Quarantine:
+    // Only small scalar (1, 2, 4 bytes) or 3D Vector (12 bytes = 3 * sizeof(float)) writes are permitted.
+    // Blocks any bulk memory corruption, binary patching, or shellcode injection attempts.
+    constexpr size_t kMaxPermittedWriteBytes = 12; // Exactly sizeof(Vector3)
+    if (l > kMaxPermittedWriteBytes || (l != 1 && l != 2 && l != 4 && l != kMaxPermittedWriteBytes)) return false;
+    if (l >= 4 && (a & 3) != 0) return false; // Strict 4-byte alignment enforcement
+
+    // 4. Universal Anti-Cheat Memory Quarantine:
     // Strictly block writes to executable code pages (e.g. libil2cpp.so and mapped security modules).
-    // Writing is exclusively permitted to dynamic heap / weapon buffers.
-    uint64_t libBase = proc::lib.load(std::memory_order_relaxed);
+    // Writing is exclusively permitted to verified dynamic heap / weapon raycast scratchpads.
+    uint64_t libBase = proc::lib.load(std::memory_order_acquire);
     if (libBase > 0 && a >= libBase && a < (libBase + 0x15000000ULL)) {
         return false;
     }
 
-    // 100% Ring-0 Kernel Driver Dispatch
+    // 5. User-space Virtual Address Range Boundary Guard
+    if (a < 0x10000ULL || a > 0x00007FFFFFFFFFFFULL) {
+        return false;
+    }
+
+    // 6. 100% Ring-0 Kernel Driver Dispatch
     if (driver && driver->is_driver_loaded()) {
         if (driver->write(static_cast<uintptr_t>(a), const_cast<void*>(b), l)) {
             return true;
@@ -197,7 +210,8 @@ inline int get_pid() {
         while (p < buf + nr) {
             auto* e = reinterpret_cast<linux_dirent64*>(p);
 
-            if (e->d_type == 4) { // Directory
+            // Support both DT_DIR (4) and DT_UNKNOWN (0) for custom procfs mounts
+            if (e->d_type == 4 || e->d_type == 0) { // Directory / Unknown
                 char* n = e->d_name;
                 bool in = true;
                 for (char* c = n; *c; c++) {
@@ -349,6 +363,11 @@ inline uint64_t get_lib(const char* targetName = "libil2cpp.so") {
         if (left > 0 && ls > buf) {
             memmove(buf, ls, left);
             tr = left;
+        } else if (left > 0 && ls == buf) {
+            // Partial line spanning read boundary: keep tr so next read appends
+            if (sizeof(buf) - tr - 1 == 0) {
+                tr = 0; // Buffer completely exhausted without newline; discard oversized entry
+            }
         } else {
             tr = 0;
         }

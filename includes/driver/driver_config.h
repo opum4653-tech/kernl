@@ -35,13 +35,27 @@ struct AppConfig {
 inline AppConfig g_appConfig;
 
 inline void SaveConfig() {
+    // Zero disk footprint: avoid writing plaintext configuration files to disk (/data/local/tmp/)
+    // to eliminate forensic artifacts detectable by anti-cheat and root scanners.
+    // In-memory g_appConfig retains driver options during runtime.
 }
 
 inline bool LoadConfig() {
-    // No persistence layer exists yet (SaveConfig is a stub), so nothing is
-    // restored here. Reporting settingsLoaded=true made DisplayCurrentConfig
-    // print "Unknown / Unknown" as if a mode had been chosen.
-    return false;
+    // If a legacy file exists from previous sessions, scrub it securely
+    unlink("/data/local/tmp/.nin_driver.cfg");
+    unlink("driver.cfg");
+
+    // Scan environment variable override first (100% fileless configuration)
+    const char* env_opt = getenv("NIN_DRIVER_OPTION");
+    if (env_opt && strlen(env_opt) > 0) {
+        int val = atoi(env_opt);
+        if (val >= 1 && val <= 5) {
+            g_appConfig.driverOption = val;
+            g_appConfig.settingsLoaded = true;
+            return true;
+        }
+    }
+    return g_appConfig.settingsLoaded;
 }
 
 inline void DisplayCurrentConfig() {

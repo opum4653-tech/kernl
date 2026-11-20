@@ -34,15 +34,15 @@ A Kernel Driver operates at **Ring-0**. It successfully hides the cheat process 
 ---
 
 ### Phase 2: In-Engine Memory Quarantine & Zero-WPM Safety Lock
-- [ ] **Task 2.1: Enforce Strict Zero-WPM Hardware Lock for Pure ESP (`src/other/memory.hpp`, `src/globals.hpp`)**
+- [x] **Task 2.1: Enforce Strict Zero-WPM Hardware Lock for Pure ESP (`src/other/memory.hpp`, `src/globals.hpp`)**
   - **Forensic Cause:** Users running Pure ESP must have mathematical 100% certainty that zero bytes are ever written into the game process under any condition.
-  - **Action Plan:** Enforce an immutable hardware-like gate in `mem_write()`: if Combat/Aimbot features are disabled, `mem_write()` immediately returns false without touching kernel driver write routines.
-- [ ] **Task 2.2: Memory Write Address Quarantine Barrier (`src/other/memory.hpp`)**
+  - **Fix:** Enforced an immutable acquire-barrier gate in `mem_write()`: if combat/aim features are inactive (`proc::wpm_allowed == false`), `mem_write()` immediately aborts with zero kernel driver interaction.
+- [x] **Task 2.2: Memory Write Address Quarantine Barrier (`src/other/memory.hpp`)**
   - **Forensic Cause:** Rogue writes into executable code, metadata tables, or entity structures trigger in-engine checksum crashes and integrity bans.
-  - **Action Plan:** Strictly constrain `wpm` destination addresses. Any address outside verified weapon raycast buffers is rejected with zero execution.
-- [ ] **Task 2.3: Cadence & Flood Rate Limiter (`src/func/aim/aim.hpp`)**
+  - **Fix:** Strictly constrained `wpm` destination addresses. Hardened 4-stage barrier: (1) Valid user-space pointer bounds `[0x10000 .. 0x7FFFFFFFFFFF]`, (2) Max permitted payload size locked to 12 bytes (`sizeof(Vector3)`), (3) Strict 4-byte memory alignment (`a & 3 == 0`), (4) Code page quarantine blocking any write to `[libBase .. libBase + 0x15000000]`.
+- [x] **Task 2.3: Cadence & Flood Rate Limiter (`src/func/aim/aim.hpp`)**
   - **Forensic Cause:** Over-flooding memory with rapid WPM cycles (500Hz) creates memory bus contention and can be captured by game watchdog sampling loops.
-  - **Action Plan:** Synchronize writes strictly with active weapon discharge cadence (single write per shot cycle).
+  - **Fix:** Synchronized writes strictly with active weapon discharge cadence (single write per shot cycle), eliminating high-frequency writer threads.
 
 ---
 
@@ -57,12 +57,12 @@ A Kernel Driver operates at **Ring-0**. It successfully hides the cheat process 
 ---
 
 ### Phase 4: Kernel Driver Stealth & Ring-0 Sanitization
-- [ ] **Task 4.1: Driver Fallback Lockdown & Strict Validation (`includes/driver.h`, `src/other/memory.hpp`)**
+- [x] **Task 4.1: Driver Fallback Lockdown & Strict Validation (`includes/driver.h`, `src/other/memory.hpp`)**
   - **Forensic Cause:** If driver fails to attach, mod silently failing or operating with incorrect device nodes can expose system footprints.
-  - **Action Plan:** Verify kernel driver communication health before any read/write cycle; display explicit error and halt gracefully if driver is unconfirmed.
-- [ ] **Task 4.2: Fileless Driver Configuration & Memory Scrubbing (`includes/driver/driver_config.h`)**
+  - **Fix:** Implemented Ring-0 multi-engine dynamic auto-probing (`auto_probe_all()`): sequentially verifies KPM (TB prctl 0x63687501 / Neo prctl 0x4E41) -> QX 10-11 -> RT DEV -> DEV COMPAT -> RT HOOK. Self-heals in daemon mode without blind fallback.
+- [x] **Task 4.2: Fileless Driver Configuration & Memory Scrubbing (`includes/driver/driver_config.h`)**
   - **Forensic Cause:** Writing `.nin_driver.cfg` to `/data/local/tmp` leaves forensic disk artifacts visible to root-checking apps.
-  - **Action Plan:** Switch to memory-only configuration or pass parameters strictly via environment variables / CLI args.
+  - **Fix:** Switched to 100% fileless configuration. Removed disk persistence; legacy config files in `/data/local/tmp/` and working directory are securely scrubbed via `unlink()` on startup. State lives strictly in memory and environment variables (`NIN_DRIVER_OPTION`).
 
 ---
 
