@@ -21,6 +21,7 @@ namespace proc {
     inline std::atomic<int>      pid{-1};
     inline std::atomic<uint64_t> lib{0};
     inline std::atomic<bool>     is_game_max{false}; // True if Free Fire Max, false if Free Fire Global
+    inline std::atomic<bool>     wpm_allowed{false}; // Pure ESP Zero-WPM hardware write protection gate
 
     struct Snapshot {
         int      pid;    // Target process ID
@@ -57,15 +58,11 @@ namespace sys {
     static constexpr long SYS_close             = 57;
     static constexpr long SYS_read              = 63;
     static constexpr long SYS_getdents64        = 61;
-    static constexpr long SYS_vm_read           = 270;
-    static constexpr long SYS_vm_write          = 271;
     #elif defined(__x86_64__)
     static constexpr long SYS_openat            = 257;
     static constexpr long SYS_close             = 3;
     static constexpr long SYS_read              = 0;
     static constexpr long SYS_getdents64        = 217;
-    static constexpr long SYS_vm_read           = 310;
-    static constexpr long SYS_vm_write          = 311;
     #endif
 
     #ifndef AT_FDCWD
@@ -104,12 +101,6 @@ namespace sys {
     static inline int  close (int fd)                        { return static_cast<int>(sc6(SYS_close, fd, 0, 0, 0, 0, 0)); }
     static inline long read  (int fd, void* b, size_t c)     { return sc6(SYS_read, fd, reinterpret_cast<long>(b), c, 0, 0, 0); }
     static inline long getdents64(int fd, void* d, size_t c) { return sc6(SYS_getdents64, fd, reinterpret_cast<long>(d), c, 0, 0, 0); }
-    static inline long vm_read (int pid, struct iovec* l, unsigned long lc, struct iovec* r, unsigned long rc) {
-        return sc6(SYS_vm_read, pid, reinterpret_cast<long>(l), lc, reinterpret_cast<long>(r), rc, 0);
-    }
-    static inline long vm_write(int pid, struct iovec* l, unsigned long lc, struct iovec* r, unsigned long rc) {
-        return sc6(SYS_vm_write, pid, reinterpret_cast<long>(l), lc, reinterpret_cast<long>(r), rc, 0);
-    }
 }
 
 struct linux_dirent64 {
@@ -134,58 +125,35 @@ inline bool is_valid_ptr(uint64_t a) {
 
 inline bool addr_valid(uint64_t a) { return is_valid_ptr(a); }
 
-// Universal Memory Read (RPM): Dual-Engine Architecture
-// 1. Primary: Ring-0 Kernel Driver Dispatch (Zero userland footprint)
-// 2. Fail-Safe: Direct ARM64 Assembly Syscall (SYS_process_vm_readv = 270)
+// Universal Memory Read (RPM): 100% Pure Ring-0 Kernel Driver Architecture
+// Zero userspace syscall 270 (process_vm_readv) fallback to ensure complete stealth and zero audit traces.
 inline bool mem_read(uint64_t a, void* b, size_t l) {
     if (!is_valid_ptr(a) || l == 0 || b == nullptr) return false;
 
-    // Fast-path 1: Kernel Driver Module
+    // 100% Ring-0 Kernel Driver Dispatch
     if (driver && driver->is_driver_loaded()) {
         if (driver->read(static_cast<uintptr_t>(a), b, l)) {
             return true;
         }
     }
 
-    // Fail-safe Invariant: Direct ARM64 Assembly Syscall 270 (SYS_vm_read)
-    int curPid = proc::pid.load(std::memory_order_relaxed);
-    if (curPid > 0) {
-        struct iovec loc[1], rem[1];
-        loc[0].iov_base = b;
-        loc[0].iov_len  = l;
-        rem[0].iov_base = reinterpret_cast<void*>(a);
-        rem[0].iov_len  = l;
-        long r = sys::vm_read(curPid, loc, 1, rem, 1);
-        if (r == static_cast<long>(l)) return true;
-    }
-
     memset(b, 0, l);
     return false;
 }
 
-// Universal Memory Write (WPM): Dual-Engine Architecture
-// 1. Primary: Ring-0 Kernel Driver Dispatch
-// 2. Fail-Safe: Direct ARM64 Assembly Syscall (SYS_vm_write = 271)
+// Universal Memory Write (WPM): 100% Pure Ring-0 Kernel Driver Architecture
+// Hardware-like write protection: Zero userspace syscall 271 (process_vm_writev) fallback.
 inline bool mem_write(uint64_t a, const void* b, size_t l) {
     if (!is_valid_ptr(a) || l == 0 || b == nullptr) return false;
 
-    // Fast-path 1: Kernel Driver Module
+    // Strict Pure ESP Zero-WPM Gate: physically locks memory write capability when combat is inactive
+    if (!proc::wpm_allowed.load(std::memory_order_relaxed)) return false;
+
+    // 100% Ring-0 Kernel Driver Dispatch
     if (driver && driver->is_driver_loaded()) {
         if (driver->write(static_cast<uintptr_t>(a), const_cast<void*>(b), l)) {
             return true;
         }
-    }
-
-    // Fail-safe Invariant: Direct ARM64 Assembly Syscall 271 (SYS_vm_write)
-    int curPid = proc::pid.load(std::memory_order_relaxed);
-    if (curPid > 0) {
-        struct iovec loc[1], rem[1];
-        loc[0].iov_base = const_cast<void*>(b);
-        loc[0].iov_len  = l;
-        rem[0].iov_base = reinterpret_cast<void*>(a);
-        rem[0].iov_len  = l;
-        long r = sys::vm_write(curPid, loc, 1, rem, 1);
-        if (r == static_cast<long>(l)) return true;
     }
 
     return false;

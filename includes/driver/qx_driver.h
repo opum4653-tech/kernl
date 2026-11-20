@@ -1,29 +1,52 @@
 #pragma once
 
 #include "driver_config.h"
+#include <sys/sysmacros.h>
 
 // ============================================================
 // Driver Mode 4: QX10~11.4 (Automated Dynamic Major Mknod Driver)
+// 100% In-Process Discovery (Zero shell / Zero popen execution)
 // ============================================================
 class c_qx_driver {
 private:
     int fd = -1;
     pid_t pid = -1;
 
-    static char* execCom(const char *shell) {
-        FILE *fp = popen(shell, "r");
-        if (fp == NULL) {
-            return NULL;
+    static bool find_deleted_qx_target(char *filePath, size_t fpSize, char *target_pid, size_t pidSize) {
+        DIR *dir = opendir("/proc");
+        if (!dir) return false;
+        struct dirent *entry;
+        while ((entry = readdir(dir)) != NULL) {
+            if (!isdigit(entry->d_name[0])) continue;
+            char exeLink[256];
+            snprintf(exeLink, sizeof(exeLink), "/proc/%s/exe", entry->d_name);
+            char target[512];
+            ssize_t len = readlink(exeLink, target, sizeof(target) - 1);
+            if (len > 0) {
+                target[len] = '\0';
+                if (strstr(target, "/data/") && strstr(target, "(deleted)")) {
+                    strncpy(target_pid, entry->d_name, pidSize - 1);
+                    target_pid[pidSize - 1] = '\0';
+                    char *start = strstr(target, "/data/");
+                    char *end = strstr(target, " (deleted)");
+                    if (start && end && end > start) {
+                        size_t plen = end - start;
+                        if (plen >= fpSize) plen = fpSize - 1;
+                        strncpy(filePath, start, plen);
+                        filePath[plen] = '\0';
+                        char *rep = strstr(filePath, "data");
+                        if (rep) {
+                            memmove(rep + 2, rep + 3, strlen(rep + 3) + 1);
+                            memmove(rep, "dev", strlen("dev"));
+                        }
+                        closedir(dir);
+                        return true;
+                    }
+                }
+            }
         }
-        char buffer[256];
-        char *result = (char *)malloc(1024);
-        if (!result) { pclose(fp); return NULL; }
-        result[0] = '\0';
-        while (fgets(buffer, sizeof(buffer), fp) != NULL) {
-            strncat(result, buffer, 1023 - strlen(result));
-        }
-        pclose(fp);
-        return result;
+        closedir(dir);
+        return false;
     }
 
     static int findFirstMatchingPath(const char *path, regex_t *regex, char *result) {
@@ -53,8 +76,8 @@ private:
     }
 
     static void createDriverNode(const char *path, int major_number, int minor_number) {
-        std::string command = "mknod " + std::string(path) + " c " + std::to_string(major_number) + " " + std::to_string(minor_number);
-        system(command.c_str());
+        dev_t dev = makedev(major_number, minor_number);
+        mknod(path, S_IFCHR | 0666, dev);
     }
 
     static void removeDeviceNode(const char *path) {
@@ -65,57 +88,11 @@ public:
     c_qx_driver() : fd(-1), pid(-1) {}
 
     bool init() {
-        char *output = execCom("ls -l /proc/*/exe 2>/dev/null | grep -E \"/data/[a-z]{6} \\(deleted\\)\"");
         char filePath[256] = {0};
         char target_pid[56] = {0};
 
-        if (output != NULL && strlen(output) > 0) {
-            char *procStart = strstr(output, "/proc/");
-            if (procStart == NULL) {
-                printf("\033[41m\033[37m[FATAL] QX driver not found! Exiting...\033[0m\n");
-                free(output);
-                return false;
-            }
-            char *pidStart = procStart + 6;
-            char *pidEnd = strchr(pidStart, '/');
-            if (pidEnd == NULL) {
-                printf("\033[41m\033[37m[FATAL] QX driver not found! Exiting...\033[0m\n");
-                free(output);
-                return false;
-            }
-            size_t pidLen = pidEnd - pidStart;
-            if (pidLen >= sizeof(target_pid)) pidLen = sizeof(target_pid) - 1;
-            strncpy(target_pid, pidStart, pidLen);
-            target_pid[pidLen] = '\0';
-
-            char *arrowStart = strstr(output, "->");
-            if (arrowStart == NULL) {
-                printf("\033[41m\033[37m[FATAL] QX driver not found! Exiting...\033[0m\n");
-                free(output);
-                return false;
-            }
-            char *start = arrowStart + 3;
-            char *end = strchr(output, '(');
-            if (end == NULL) {
-                printf("\033[41m\033[37m[FATAL] QX driver not found! Exiting...\033[0m\n");
-                free(output);
-                return false;
-            }
-            end = end - 1;
-            size_t fpLen = end - start + 1;
-            if (fpLen >= sizeof(filePath)) fpLen = sizeof(filePath) - 1;
-            strncpy(filePath, start, fpLen);
-            filePath[fpLen] = '\0';
-
-            char *replacePtr = strstr(filePath, "data");
-            if (replacePtr != NULL) {
-                memmove(replacePtr + 2, replacePtr + 3, strlen(replacePtr + 3) + 1);
-                memmove(replacePtr, "dev", strlen("dev"));
-            }
-            free(output);
-        } else {
+        if (!find_deleted_qx_target(filePath, sizeof(filePath), target_pid, sizeof(target_pid))) {
             printf("\033[41m\033[37m[FATAL] QX driver not found! Exiting...\033[0m\n");
-            if (output) free(output);
             return false;
         }
 
@@ -133,18 +110,20 @@ public:
 
         char result[1024];
         if (findFirstMatchingPath(fdPath, &regex, result)) {
-            char cmd[256];
-            snprintf(cmd, sizeof(cmd), "ls -AL -l  %s | grep -Eo '[0-9]{3},' | grep  -Eo '[0-9]{3}'", result);
-            char *fdInfo = execCom(cmd);
-            if (fdInfo == NULL || strlen(fdInfo) == 0) {
-                printf("\033[41m\033[37m[FATAL] Driver not loaded! Exiting...\033[0m\n");
+            struct stat st;
+            if (stat(result, &st) == 0 && (S_ISCHR(st.st_mode) || S_ISBLK(st.st_mode))) {
+                major_number = major(st.st_rdev);
+            }
+            if (major_number <= 0) {
+                if (lstat(result, &st) == 0 && (S_ISCHR(st.st_mode) || S_ISBLK(st.st_mode))) {
+                    major_number = major(st.st_rdev);
+                }
+            }
+            if (major_number <= 0) {
+                printf("\033[41m\033[37m[FATAL] Driver major number not found! Exiting...\033[0m\n");
                 regfree(&regex);
-                if (fdInfo) free(fdInfo);
                 return false;
             }
-            fdInfo[strlen(fdInfo) - 1] = '\0';
-            major_number = atoi(fdInfo);
-            free(fdInfo);
         } else {
             printf("\033[41m\033[37m[FATAL] Driver not loaded! Exiting...\033[0m\n");
             regfree(&regex);

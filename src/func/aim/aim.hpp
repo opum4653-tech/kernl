@@ -108,7 +108,9 @@ namespace trajectory {
     // Steady natural trajectory coordinator loop
     inline void loop() {
         while (aim_thread_running().load(std::memory_order_relaxed)) {
-            if (cfg::master_enabled && (cfg::aim::silent || cfg::aim::auto_headshot || cfg::aim::scope_aim)) {
+            bool combatActive = cfg::master_enabled && (cfg::aim::silent || cfg::aim::auto_headshot || cfg::aim::scope_aim);
+            proc::wpm_allowed.store(combatActive, std::memory_order_relaxed);
+            if (combatActive) {
                 update();
             } else {
                 publish_target_invalid();
@@ -141,6 +143,7 @@ namespace trajectory {
 
     // Stops the trajectory coordinator thread, flushes trajectory writer, and clears targets
     inline void thread_stop() {
+        proc::wpm_allowed.store(false, std::memory_order_relaxed);
         if (!aim_thread_running().exchange(false)) return;
         auto& t = get_aim_thread();
         if (t.joinable()) {

@@ -54,23 +54,10 @@ struct mem_operation {
     uint64_t size;
 };
 
-// 3. Direct Syscall R/W numbers for ARM64 / ARM fallback
-#if defined(__aarch64__)
-#define KPM_SYS_MEM_READV  270
-#define KPM_SYS_MEM_WRITEV 271
-#elif defined(__arm__)
-#define KPM_SYS_MEM_READV  376
-#define KPM_SYS_MEM_WRITEV 377
-#else
-#define KPM_SYS_MEM_READV  310
-#define KPM_SYS_MEM_WRITEV 311
-#endif
-
 enum EKpmEngine {
     KPM_ENGINE_NONE = 0,
     KPM_ENGINE_TB,      // TongBao KPM (0x63687501 / 0x63687502)
-    KPM_ENGINE_NEO,     // Neo KPM (0x4E41)
-    KPM_ENGINE_SYSCALL  // process_vm_readv / writev fallback
+    KPM_ENGINE_NEO      // Neo KPM (0x4E41)
 };
 
 class c_kpm_driver {
@@ -78,19 +65,6 @@ private:
     bool active = false;
     pid_t pid = -1;
     EKpmEngine engine = KPM_ENGINE_NONE;
-
-    bool pvm_rw(uintptr_t addr, void *buffer, size_t size, bool is_write) {
-        if (this->pid <= 0 || !buffer || size == 0) return false;
-        struct iovec local[1];
-        struct iovec remote[1];
-        local[0].iov_base  = buffer;
-        local[0].iov_len   = size;
-        remote[0].iov_base = reinterpret_cast<void*>(addr);
-        remote[0].iov_len  = size;
-        long nr = is_write ? KPM_SYS_MEM_WRITEV : KPM_SYS_MEM_READV;
-        ssize_t bytes = syscall(nr, this->pid, local, 1, remote, 1, 0);
-        return (bytes == static_cast<ssize_t>(size));
-    }
 
 public:
     c_kpm_driver() : active(false), pid(-1), engine(KPM_ENGINE_NONE) {}
@@ -132,18 +106,18 @@ public:
             return true;
         }
 
-        // Priority 3: Fallback to direct process_vm_readv syscall (Zero-crash resilience)
-        engine = KPM_ENGINE_SYSCALL;
-        active = true;
-        printf("\033[43m\033[30m[KPM] Kernel KPM module not loaded. Enabled Syscall (PVM) Mode\033[0m\n");
-        return true;
+        // Pure Ring-0 Invariant: KPM kernel module MUST be active.
+        // Userspace syscall fallbacks are strictly prohibited to maintain 100% Ring-0 stealth.
+        active = false;
+        engine = KPM_ENGINE_NONE;
+        printf("\033[41m\033[37m[FATAL] KPM kernel module not loaded! Pure Ring-0 driver inactive.\033[0m\n");
+        return false;
     }
 
     const char* get_engine_name() const {
         switch (engine) {
             case KPM_ENGINE_TB:      return "TB KPM";
             case KPM_ENGINE_NEO:     return "NEO KPM";
-            case KPM_ENGINE_SYSCALL: return "PVM SYSCALL";
             default:                 return "INACTIVE";
         }
     }
@@ -185,8 +159,6 @@ public:
                 bytes_left -= chunk;
             }
             return true;
-        } else if (engine == KPM_ENGINE_SYSCALL) {
-            return pvm_rw(addr, buffer, size, false);
         }
         return false;
     }
@@ -220,8 +192,6 @@ public:
                 bytes_left -= chunk;
             }
             return true;
-        } else if (engine == KPM_ENGINE_SYSCALL) {
-            return pvm_rw(addr, buffer, size, true);
         }
         return false;
     }

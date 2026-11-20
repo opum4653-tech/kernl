@@ -49,18 +49,20 @@ public:
 
     uintptr_t get_module_base(const char* name) {
         if (pid <= 0 || !name) return 0;
-        FILE* fp = nullptr;
-        char cmd[0x100] = "";
-        uintptr_t ret = 0;
-        snprintf(cmd, sizeof(cmd), "ls -l /proc/%d/map_files/ | grep '%s'", pid, name);
-        fp = popen(cmd, "r");
-        if (!fp) {
-            std::cerr << "Failed to run command" << std::endl;
-            return 0;
+        char maps_path[64];
+        snprintf(maps_path, sizeof(maps_path), "/proc/%d/maps", this->pid);
+        FILE *f = fopen(maps_path, "r");
+        if (!f) return 0;
+        char line[512];
+        uintptr_t base = 0;
+        while (fgets(line, sizeof(line), f)) {
+            if (strstr(line, name)) {
+                base = (uintptr_t)strtoull(line, nullptr, 16);
+                break;
+            }
         }
-        fscanf(fp, "%*s %*d %*s %*s %*d %*s %*s %lx-%*lx", &ret);
-        pclose(fp);
-        return ret;
+        fclose(f);
+        return base;
     }
 
     void hide_process() {

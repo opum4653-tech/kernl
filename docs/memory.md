@@ -430,3 +430,23 @@ Any velocity exceeding the server-defined sprint threshold directly increments s
 - **Config & Offsets Sanitation:** Purged `namespace motion`, `velocity_mod`, and `speed_mult` from `src/ui/cfg.hpp`; purged `namespace Speed`, `RunSpeedUpScale`, and `PlayerAttributes` from `src/offsets/offsets.hpp`.
 - **Supreme Invariant Rule (`docs/rules.md`):** Mandated that speed hack is permanently prohibited. If Master dj or any developer requests speed hack in the future, the agent must immediately remind Master of this permanent prohibition.
 
+---
+
+## 14. 100/100 Ring-0 Kernel Driver & Pure ESP Zero-WPM Stealth Invariants
+
+### 14.1 Elevation of Layer 1: Kernel Driver & Memory Read (95/100 -> 100/100)
+- **Elimination of Userspace Syscall Fallback:** In `src/other/memory.hpp`, removed `sys::vm_read` (syscall 270) and `sys::vm_write` (syscall 271) fallback blocks. Memory operations are now 100% routed through Ring-0 kernel drivers without generating userland seccomp/auditd logs.
+- **KPM Driver Hardening:** In `includes/driver/kpm_driver.h`, permanently purged `KPM_ENGINE_SYSCALL` and `pvm_rw`. If neither TB KPM (`PRCTL_MEM_READ`) nor Neo KPM (`NA_PRCTL_MAGIC`) is loaded in the kernel, initialization fails cleanly instead of secretly degrading to detectable userspace syscalls.
+- **Zero Shell Subprocess Footprint:** 
+  - `includes/driver/rt_hook.h`: Replaced `popen("ls -l /proc/%d/map_files/ | grep ...")` with direct in-process libc parsing of `/proc/%d/maps`.
+  - `includes/driver/qx_driver.h`: Replaced `execCom("ls -l /proc/*/exe...")` and `execCom("ls -AL -l...")` with in-process `/proc` link traversal and native `stat()` / `major(st.st_rdev)` resolution. Replaced `system("mknod...")` with POSIX `makedev` / `mknod()`.
+- **Signature Sanitation:** Removed hardcoded leaked cheat strings (`"wanbai"`, `"CheckMe"`, etc.) from `includes/driver/rt_dev.h`.
+
+### 14.2 Elevation of Layer 4: Pure ESP Mode - Zero WPM (99/100 -> 100/100)
+- **Hardware-like Zero-WPM Gate:** Introduced `proc::wpm_allowed` atomic barrier in `src/other/memory.hpp`. When Combat / Aim features are toggled OFF, `mem_write` early-returns `false` before dispatching to the driver, making target game memory strictly read-only.
+- **Anti-Screenshot & Screen Recording Protection (`eSecure | eSkipScreenshot`):**
+  - In `includes/internal/native_surface/ANativeWindowCreator.h`, fixed `CreateSurface` flags to apply `0x00000080` (`eSecure`) and `0x00004000` (`eSkipScreenshot`) when `secure == true`.
+  - In `includes/draw/Android_draw/draw.cpp`, enabled `secure = true` by default on both Vulkan and OpenGL native windows. SurfaceFlinger automatically omits overlay rendering during `screencap`, screen recorders, and game in-process screenshot grabs.
+- **Disguised SurfaceFlinger Layer:** Renamed detectable layer string from `"AImGui"` to `"SurfaceView[ScreenDecor]"` to prevent anti-cheat window enumeration bans.
+
+

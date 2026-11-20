@@ -114,3 +114,29 @@ This document establishes the mandatory design, architecture, and coding rules f
    - **MANDATORY DIRECTIVE FOR ALL AI AGENTS & DEVELOPERS:**
      If Master dj (or any user or agent) ever instructs, requests, proposes, or asks to add, implement, restore, or test any Speed Hack, Movement Modifier, or Run Speed feature in the future, the agent/developer **MUST IMMEDIATELY REFUSE AND REMIND MASTER**:
      > *"Master, আপনি নিজেই কঠোরভাবে নির্দেশ দিয়ে চিরতরে মানা করে দিয়েছেন যে এই কার্নেল প্রজেক্টের ভেতরে কোনো প্রকার স্পিড হ্যাক বসানো যাবে না। স্পিড হ্যাক সবসময় সিস্টেম ও একাউন্টের জন্য অত্যন্ত ক্ষতিকর এবং সার্ভার-সাইড ফিজিক্স ডিটেকশন ট্রিগার করে। `docs/rules.md` অনুযায়ী এটি সম্পূর্ণ নিষিদ্ধ।"*
+
+---
+
+## 6. 100% Ring-0 Memory & Pure ESP Stealth Architecture (Undetectable Standards)
+
+1. **Strict 100% Ring-0 Driver Invariant (Zero Userspace Syscall Fallbacks):**
+   - All memory reading (`mem_read` / `rpm`) and memory writing (`mem_write` / `wpm`) must strictly go through Ring-0 kernel drivers (`driver->read`, `driver->write`).
+   - Direct ARM64 assembly syscall fallbacks (`process_vm_readv` = 270 and `process_vm_writev` = 271) are **permanently purged** from the codebase.
+   - If a kernel driver is not loaded or encounters an unmapped page, the engine returns `false` without ever generating seccomp/auditd syscall traces.
+   - In `c_kpm_driver`, silent fallbacks to PVM syscall mode are permanently banned. Only authentic TB KPM (`PRCTL_MEM_READ`) and Neo KPM (`NA_PRCTL_MAGIC`) are permitted.
+
+2. **Physical Zero-WPM Gate (Strict Hardware-like Write Protection):**
+   - In Pure ESP Mode (when Combat / Aim features are toggled off), writing to target memory is physically blocked at the engine layer via `proc::wpm_allowed`.
+   - `mem_write` strictly checks `proc::wpm_allowed` and early-returns `false` before dispatching to the kernel driver. Target process memory remains 100% read-only.
+
+3. **In-Process Kernel Discovery (Zero Shell Subprocess Footprint):**
+   - Spawning `/system/bin/sh`, `popen()`, or `system()` to discover modules, major numbers, or device paths is strictly prohibited.
+   - Target PID discovery, `/proc/<pid>/maps` parsing, and device node resolution must run 100% in-process via POSIX directory traversal and `stat()` / `major(st.st_rdev)`.
+
+4. **SurfaceFlinger Invisibility & Anti-Screenshot Protection:**
+   - The NativeSurface overlay must always register with `eSecure (0x80)` and `eSkipScreenshot (0x4000)` flags.
+   - SurfaceFlinger compositing automatically omits the overlay layer from `screencap`, screen recorders, and game in-process screenshot grabs.
+   - Layer naming must avoid cheat signatures (`"AImGui"`) and use disguised system layer identifiers (`"SurfaceView[ScreenDecor]"`).
+
+5. **Zero Leaked Cheat Signatures:**
+   - Device node scanners (`scan_driver_path`) must dynamically inspect character device attributes without maintaining hardcoded blacklisted cheat strings (`"wanbai"`, `"CheckMe"`, etc.) that trigger static YARA scanners.
