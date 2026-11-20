@@ -60,10 +60,15 @@ namespace silent {
             return;
         }
 
-        // 1. Resolve Weapon AimInfo buffer pointer (Offsets::Player::AimInfo = 0xE58)
-        uint64_t hitObjAddress = rpm<uint64_t>(localPlayer + Offsets::Player::AimInfo);
-        if (!is_valid_ptr(hitObjAddress)) {
-            hitObjAddress = rpm<uint64_t>(localPlayer + Offsets::Player_AimInfo_Alt);
+        // 1. Resolve Weapon AimInfo buffer pointer (Multi-Candidate: 0xE58, 0xE50, 0xE60)
+        uint64_t hitObjAddress = 0;
+        const uintptr_t aimCandidates[] = { Offsets::Player::AimInfo, Offsets::Player_AimInfo_Alt, 0xE60 };
+        for (uintptr_t off : aimCandidates) {
+            uint64_t cand = rpm<uint64_t>(localPlayer + off);
+            if (is_valid_ptr(cand)) {
+                hitObjAddress = cand;
+                break;
+            }
         }
         if (!is_valid_ptr(hitObjAddress)) {
             return;

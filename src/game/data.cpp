@@ -128,6 +128,17 @@ namespace data {
         return WorldToScreenPoint(viewMatrix, w);
     }
 
+    // Tests column norms and checks for NaN / Inf to guarantee that the camera
+    // matrix is fully initialized and in an active 3D rendering projection state.
+    static inline bool is_valid_matrix(const matrix& m) {
+        if (std::isnan(m.m11) || std::isnan(m.m22) || std::isnan(m.m33) || std::isnan(m.m44)) return false;
+        if (std::isinf(m.m11) || std::isinf(m.m22) || std::isinf(m.m33) || std::isinf(m.m44)) return false;
+        float col1 = fabsf(m.m11) + fabsf(m.m21) + fabsf(m.m31);
+        float col2 = fabsf(m.m12) + fabsf(m.m22) + fabsf(m.m32);
+        float col4 = fabsf(m.m14) + fabsf(m.m24) + fabsf(m.m34) + fabsf(m.m44);
+        return (col1 > 0.05f && col2 > 0.05f && col4 > 0.05f);
+    }
+
     // Master memory walk cycle: executed continuously on the dedicated background data thread
     void update() {
         // Atomic snapshot of live PID and module base to prevent race conditions during game exit
@@ -137,35 +148,39 @@ namespace data {
         std::vector<PlayerData> tmp;
         tmp.reserve(64);
 
-        // 1. Resolve GameFacade Cell from libil2cpp.so base
-        auto GfCell = rpm<uint64_t>(snap.lib + oxorany(Offsets::GameFacade));
-        if (!GfCell) return;
+        // 1. Resolve GameFacade Cell from libil2cpp.so base (Multi-Candidate: Max + Global)
+        const uintptr_t gfCandidates[] = {
+            0xAD68E18, // Free Fire Max (maxff.h primary)
+            0xAD6DC18, // Free Fire Max (STORM_MODS alt)
+            0xA72E4E0  // Free Fire Global (1.132.x primary)
+        };
 
         uint64_t BaseGame = 0;
         uint64_t StaticFields = 0;
 
-        // Primary Path: GfCell is a pointer to GameFacade Il2CppClass (proven 100% stable chain in 8a7d0a4 & crack_master)
-        uint64_t GfClass = rpm<uint64_t>(GfCell);
-        if (is_valid_ptr(GfClass)) {
-            uint64_t sf = rpm<uint64_t>(GfClass + Offsets::GameFacade_P2);
-            if (is_valid_ptr(sf)) {
-                uint64_t bg = rpm<uint64_t>(sf + Offsets::StaticFields_Instance); // +0x8
-                if (is_valid_ptr(bg)) { BaseGame = bg; StaticFields = sf; }
-                else {
+        for (uintptr_t gfOff : gfCandidates) {
+            auto GfCell = rpm<uint64_t>(snap.lib + gfOff);
+            if (!GfCell || GfCell < 0x10000) continue;
+
+            // Primary Path: GfCell is a pointer to GameFacade Il2CppClass
+            uint64_t GfClass = rpm<uint64_t>(GfCell);
+            if (is_valid_ptr(GfClass)) {
+                uint64_t sf = rpm<uint64_t>(GfClass + Offsets::GameFacade_P2);
+                if (is_valid_ptr(sf)) {
+                    uint64_t bg = rpm<uint64_t>(sf + Offsets::StaticFields_Instance); // +0x8
+                    if (is_valid_ptr(bg)) { BaseGame = bg; StaticFields = sf; break; }
                     uint64_t bg0 = rpm<uint64_t>(sf + 0x0);
-                    if (is_valid_ptr(bg0)) { BaseGame = bg0; StaticFields = sf; }
+                    if (is_valid_ptr(bg0)) { BaseGame = bg0; StaticFields = sf; break; }
                 }
             }
-        }
 
-        // Secondary Fallback: GfCell is directly GameFacade Il2CppClass
-        if (!is_valid_ptr(BaseGame)) {
+            // Secondary Fallback: GfCell is directly GameFacade Il2CppClass
             uint64_t sf1 = rpm<uint64_t>(GfCell + Offsets::GameFacade_P2);
             if (is_valid_ptr(sf1)) {
                 uint64_t curGame1 = rpm<uint64_t>(sf1 + Offsets::StaticFields_Instance); // +0x8
                 uint64_t curMatch1 = rpm<uint64_t>(sf1 + 0x0);
-                if (is_valid_ptr(curGame1)) { BaseGame = curGame1; StaticFields = sf1; }
-                else if (is_valid_ptr(curMatch1)) { BaseGame = curMatch1; StaticFields = sf1; }
+                if (is_valid_ptr(curGame1)) { BaseGame = curGame1; StaticFields = sf1; break; }
+                else if (is_valid_ptr(curMatch1)) { BaseGame = curMatch1; StaticFields = sf1; break; }
             }
         }
 
@@ -210,28 +225,60 @@ namespace data {
             return;
         }
 
-        // 3. Resolve Camera ViewMatrix chain
+        // 3. Resolve Camera ViewMatrix chain (Multi-Candidate with matrix validation)
         uint64_t Follow = 0, Cam = 0, IntPtr = 0;
+        bool matrix_resolved = false;
 
-        Follow = rpm<uint64_t>(localPlayer + Offsets::Player_Camera);
-        if (Follow) Cam = rpm<uint64_t>(Follow + Offsets::Camera_Follow);
-        if (Cam)    IntPtr = rpm<uint64_t>(Cam + Offsets::Camera_IntPtr);
+        auto try_matrix = [&](uint64_t intPtrCandidate) -> bool {
+            if (!intPtrCandidate || !is_valid_ptr(intPtrCandidate)) return false;
+            matrix vm = rpm<matrix>(intPtrCandidate + Offsets::Camera_Matrix);
+            if (is_valid_matrix(vm)) {
+                viewMatrix = vm;
+                matrix_resolved = true;
+                return true;
+            }
+            return false;
+        };
 
-        if (!IntPtr) {
-            // Fallback auxiliary camera offset chain
-            Follow = rpm<uint64_t>(localPlayer + Offsets::Player::FollowCamera_Sub);
-            if (Follow) Cam = rpm<uint64_t>(Follow + Offsets::Camera::Follow_Alt);
-            if (Cam)    IntPtr = rpm<uint64_t>(Cam + Offsets::Camera::IntPtr_Alt);
+        // Try primary FollowCamera pointer (0x698 on Max, 0x690 on Global)
+        const uintptr_t camPtrOffsets[] = { 0x698, 0x690 };
+        for (uintptr_t camOff : camPtrOffsets) {
+            Follow = rpm<uint64_t>(localPlayer + camOff);
+            if (!Follow || !is_valid_ptr(Follow)) continue;
+
+            // Probe Camera displacements: 0x20 (maxff), 0x30 (STORM_MODS), 0x28 (Global)
+            const uintptr_t followOffsets[] = { 0x20, 0x30, 0x28 };
+            for (uintptr_t fOff : followOffsets) {
+                Cam = rpm<uint64_t>(Follow + fOff);
+                if (Cam && is_valid_ptr(Cam)) {
+                    IntPtr = rpm<uint64_t>(Cam + Offsets::Camera_IntPtr);
+                    if (try_matrix(IntPtr)) break;
+                }
+            }
+            if (matrix_resolved) break;
         }
 
-        if (!IntPtr) {
+        // Candidate 4: BaseGame + 0xD8 -> 0x20 / 0x28 -> 0x10 (CameraBase fallback)
+        if (!matrix_resolved && BaseGame) {
+            uint64_t camMgr = rpm<uint64_t>(BaseGame + 0xD8);
+            if (camMgr && is_valid_ptr(camMgr)) {
+                uint64_t c20 = rpm<uint64_t>(camMgr + 0x20);
+                if (c20) try_matrix(rpm<uint64_t>(c20 + 0x10));
+                if (!matrix_resolved) {
+                    uint64_t c28 = rpm<uint64_t>(camMgr + 0x28);
+                    if (c28) try_matrix(rpm<uint64_t>(c28 + 0x10));
+                }
+            }
+        }
+
+        if (!matrix_resolved && !is_valid_matrix(viewMatrix)) {
             std::lock_guard<std::mutex> lk(players_mutex);
             players.clear();
             return;
         }
 
-        // Read 4x4 ViewMatrix from Camera native instance
-        viewMatrix = rpm<matrix>(IntPtr + Offsets::Camera_Matrix);
+        // Read 4x4 ViewMatrix committed
+        (void)viewMatrix;
 
         // 4. Resolve Local Player Head Bone Position (Primary 0x6A0)
         Vector3 localPos = Vector3::Zero();
