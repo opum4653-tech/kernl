@@ -684,13 +684,13 @@ void render() {
                 SectionHeader("SYSTEM CONTROLS", ui_scale);
 
                 DrawToggleSwitch("Master Switch", &cfg::master_enabled, 44.0f * ui_scale, ui_scale);
-                ImGui::Dummy(ImVec2(0, 10 * ui_scale));
+                ImGui::Dummy(ImVec2(0, 8 * ui_scale));
 
                 ImGui::TextDisabled("Kernel Mod Engine");
                 ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.4f, 1.0f), "Zero-Footprint Anti-Ban Safe");
-                ImGui::Dummy(ImVec2(0, 4 * ui_scale));
-                ImGui::TextDisabled("Movement Model:");
-                ImGui::SameLine();
+                ImGui::Dummy(ImVec2(0, 6 * ui_scale));
+
+                ImGui::TextDisabled("Movement Model");
                 ImGui::TextColored(ImVec4(0.3f, 0.8f, 1.0f, 1.0f), "100%% Official Stock");
 
                 handleTouchScroll();
@@ -702,29 +702,69 @@ void render() {
             if (ImGui::BeginChild("##ColRightMisc", ImVec2(colW, contentH), true)) {
                 SectionHeader("SYSTEM & EXIT", ui_scale);
 
+                ImDrawList* cdl = ImGui::GetWindowDrawList();
+                auto DrawDiagTile = [&](const char* label, const char* val, ImU32 valCol) {
+                    float availW = ImGui::GetContentRegionAvail().x;
+                    ImFont* f = g_UiFont ? g_UiFont : ImGui::GetFont();
+                    float fSize = 13.0f * ui_scale;
+
+                    ImVec2 lSz = f->CalcTextSizeA(fSize, FLT_MAX, 0.0f, label);
+                    ImVec2 vSz = f->CalcTextSizeA(fSize, FLT_MAX, 0.0f, val);
+
+                    if (availW >= (lSz.x + vSz.x + 28.0f * ui_scale)) {
+                        float tileH = 34.0f * ui_scale;
+                        ImVec2 p0 = ImGui::GetCursorScreenPos();
+                        ImVec2 p1(p0.x + availW, p0.y + tileH);
+
+                        cdl->AddRectFilled(p0, p1, IM_COL32(20, 16, 28, 220), 6.0f * ui_scale);
+                        cdl->AddRect(p0, p1, IM_COL32(48, 38, 66, 180), 6.0f * ui_scale, 0, 1.0f);
+
+                        ImVec2 lPos(p0.x + 10.0f * ui_scale, p0.y + (tileH - fSize) * 0.5f);
+                        cdl->AddText(f, fSize, lPos, theme_orchid::ColTextMuted, label);
+
+                        ImVec2 vPos(p1.x - vSz.x - 10.0f * ui_scale, p0.y + (tileH - fSize) * 0.5f);
+                        cdl->AddText(f, fSize, vPos, valCol, val);
+
+                        ImGui::Dummy(ImVec2(availW, tileH + 4.0f * ui_scale));
+                    } else {
+                        float tileH = 46.0f * ui_scale;
+                        ImVec2 p0 = ImGui::GetCursorScreenPos();
+                        ImVec2 p1(p0.x + availW, p0.y + tileH);
+
+                        cdl->AddRectFilled(p0, p1, IM_COL32(20, 16, 28, 220), 6.0f * ui_scale);
+                        cdl->AddRect(p0, p1, IM_COL32(48, 38, 66, 180), 6.0f * ui_scale, 0, 1.0f);
+
+                        ImVec2 lPos(p0.x + 10.0f * ui_scale, p0.y + 6.0f * ui_scale);
+                        cdl->AddText(f, fSize * 0.9f, lPos, theme_orchid::ColTextMuted, label);
+
+                        ImVec2 vPos(p0.x + 10.0f * ui_scale, p0.y + tileH - fSize - 6.0f * ui_scale);
+                        cdl->AddText(f, fSize, vPos, valCol, val);
+
+                        ImGui::Dummy(ImVec2(availW, tileH + 4.0f * ui_scale));
+                    }
+                };
+
                 const char* dName = driver ? driver->get_driver_name() : "ARMED";
 
                 char pidStr[32];
-                snprintf(pidStr, sizeof(pidStr), "%d", proc::pid.load(std::memory_order_relaxed));
+                if (proc::pid.load(std::memory_order_relaxed) > 0) {
+                    snprintf(pidStr, sizeof(pidStr), "%d", proc::pid.load(std::memory_order_relaxed));
+                } else {
+                    snprintf(pidStr, sizeof(pidStr), "NONE");
+                }
 
                 char libStr[32];
-                snprintf(libStr, sizeof(libStr), "0x%lX", (unsigned long)proc::lib.load(std::memory_order_relaxed));
+                if (proc::lib.load(std::memory_order_relaxed) > 0) {
+                    snprintf(libStr, sizeof(libStr), "0x%lX", (unsigned long)proc::lib.load(std::memory_order_relaxed));
+                } else {
+                    snprintf(libStr, sizeof(libStr), "NONE");
+                }
 
-                float labelColW = std::clamp(80.0f * ui_scale, 75.0f, 96.0f);
+                DrawDiagTile("PID", pidStr, IM_COL32(240, 235, 255, 255));
+                DrawDiagTile("LIB BASE", libStr, IM_COL32(240, 235, 255, 255));
+                DrawDiagTile("DRIVER", dName, IM_COL32(0, 220, 235, 255));
 
-                ImGui::TextDisabled("PID:");
-                ImGui::SameLine(labelColW);
-                ImGui::Text("%s", proc::pid.load(std::memory_order_relaxed) > 0 ? pidStr : "NONE");
-
-                ImGui::TextDisabled("LIB BASE:");
-                ImGui::SameLine(labelColW);
-                ImGui::Text("%s", proc::lib.load(std::memory_order_relaxed) > 0 ? libStr : "NONE");
-
-                ImGui::TextDisabled("DRIVER:");
-                ImGui::SameLine(labelColW);
-                ImGui::TextColored(ImVec4(0, 0.85f, 0.9f, 1), "%s", dName);
-
-                ImGui::Dummy(ImVec2(0, 10 * ui_scale));
+                ImGui::Dummy(ImVec2(0, 8 * ui_scale));
                 ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(200, 40, 60, 200));
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(240, 60, 80, 240));
                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(180, 20, 40, 255));
