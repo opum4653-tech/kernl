@@ -13,14 +13,67 @@ private:
     uint32_t active_write_op = DEV_OP_WRITE_MEM;
     uint32_t active_module_op = DEV_OP_MODULE_BASE;
 
-    static char* scan_compat_dev() {
+    static bool verify_test_read(int test_fd, uint32_t& out_read, uint32_t& out_write) {
+        if (test_fd < 0) return false;
+
+        // Step 1: Send initialization / unlock keys & bind test PID
+        const char* keys[] = { "123456", "wanbai", "CheckMe", "lanran", "Ckanri", "ninmods_kernel", "" };
+        const uint32_t init_ops[] = { DEV_OP_INIT_KEY, RT_IOCTL_INIT, 0x8000, PROC_OP_INIT_KEY, 600 };
+        for (uint32_t op : init_ops) {
+            for (const char* k : keys) {
+                char buf[0x100] = {0};
+                strncpy(buf, k, sizeof(buf) - 1);
+                ioctl(test_fd, op, buf);
+            }
+        }
+
+        pid_t self_pid = getpid();
+        ioctl(test_fd, RT_IOCTL_INIT, self_pid);
+        ioctl(test_fd, RT_IOCTL_INIT, &self_pid);
+        ioctl(test_fd, 0x8004, self_pid);
+        ioctl(test_fd, 0x8004, &self_pid);
+        ioctl(test_fd, DEV_OP_INIT_KEY, self_pid);
+
+        volatile uint32_t test_magic = 0x5A5A1234;
+        uint32_t read_buf = 0;
+
+        COPY_MEMORY cm;
+        cm.pid = getpid();
+        cm.addr = reinterpret_cast<uintptr_t>(&test_magic);
+        cm.buffer = &read_buf;
+        cm.size = sizeof(test_magic);
+
+        struct OpPair {
+            uint32_t r;
+            uint32_t w;
+        };
+        static const OpPair pairs[] = {
+            { DEV_OP_READ_MEM,   DEV_OP_WRITE_MEM   }, // 0x801 / 0x802
+            { RT_IOCTL_READ,     RT_IOCTL_WRITE     }, // 0x8001 / 0x8002
+            { HOOK_OP_READ_MEM,  HOOK_OP_WRITE_MEM  }, // 601 / 602
+            { PROC_OP_READ_MEM,  PROC_OP_WRITE_MEM  }, // 0xC01 / 0xC02
+            { 0x400,             0x200              }  // Alt KPM
+        };
+
+        for (const auto& p : pairs) {
+            read_buf = 0;
+            if (ioctl(test_fd, p.r, &cm) == 0 && read_buf == test_magic) {
+                out_read = p.r;
+                out_write = p.w;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    static char* scan_compat_dev(uint32_t& out_read, uint32_t& out_write) {
         // Priority 1: Direct known node validation deployed by NinMods loader
         const char* known_nodes[] = {
             "/dev/BYNb",
             "/dev/wanbai",
             "/dev/mem_tool",
             "/dev/nh",
-            "/dev/cdev",
             "/dev/entryi",
             "/dev/RTkernel",
             "/dev/RT_Monitor",
@@ -33,8 +86,11 @@ private:
             if (stat(node, &st) == 0 && (S_ISCHR(st.st_mode) || S_ISBLK(st.st_mode))) {
                 int test_fd = open(node, O_RDWR);
                 if (test_fd >= 0) {
+                    if (verify_test_read(test_fd, out_read, out_write)) {
+                        close(test_fd);
+                        return strdup(node);
+                    }
                     close(test_fd);
-                    return strdup(node);
                 }
             }
         }
@@ -79,10 +135,13 @@ private:
             if (S_ISCHR(file_info.st_mode) || S_ISBLK(file_info.st_mode)) {
                 int test_fd = open(file_path, O_RDWR);
                 if (test_fd >= 0) {
+                    if (verify_test_read(test_fd, out_read, out_write)) {
+                        close(test_fd);
+                        char *devpath = strdup(file_path);
+                        closedir(dir);
+                        return devpath;
+                    }
                     close(test_fd);
-                    char *devpath = strdup(file_path);
-                    closedir(dir);
-                    return devpath;
                 }
             }
         }
@@ -93,7 +152,7 @@ private:
     void send_unlock_keys() {
         if (fd < 0) return;
         const char* keys[] = { "123456", "wanbai", "CheckMe", "lanran", "Ckanri", "ninmods_kernel", "" };
-        const uint32_t init_ops[] = { DEV_OP_INIT_KEY, PROC_OP_INIT_KEY, 600 };
+        const uint32_t init_ops[] = { DEV_OP_INIT_KEY, RT_IOCTL_INIT, 0x8000, PROC_OP_INIT_KEY, 600 };
         for (uint32_t op : init_ops) {
             for (const char* k : keys) {
                 char buf[0x100] = {0};
@@ -107,22 +166,26 @@ public:
     c_dev_compat() : fd(-1), pid(-1) {}
 
     bool init(bool verbose = true) {
-        char *device_name = scan_compat_dev();
+        uint32_t read_op = DEV_OP_READ_MEM;
+        uint32_t write_op = DEV_OP_WRITE_MEM;
+        char *device_name = scan_compat_dev(read_op, write_op);
         if (device_name == NULL) {
             if (verbose) {
-                printf("[DEV COMPAT] Compatible device node not found in /dev\n");
+                printf("[DEV COMPAT] Verified compatible device node not found in /dev\n");
             }
             return false;
         }
         fd = open(device_name, O_RDWR);
         if (fd == -1) {
             if (verbose) {
-                printf("[DEV COMPAT] Cannot open device: %s\n", device_name);
+                printf("[DEV COMPAT] Cannot open verified device: %s\n", device_name);
             }
             free(device_name);
             return false;
         }
-        printf("[+] Driver connected: DEV COMPAT (%s)\n", device_name);
+        active_read_op = read_op;
+        active_write_op = write_op;
+        printf("[+] Driver connected & verified: DEV COMPAT (%s) [read_op: 0x%X]\n", device_name, active_read_op);
         free(device_name);
 
         send_unlock_keys();
@@ -130,7 +193,16 @@ public:
     }
 
     void set_pid(pid_t p) {
-        this->pid = p;
+        if (this->pid != p) {
+            this->pid = p;
+            if (fd >= 0 && p > 0) {
+                ioctl(fd, RT_IOCTL_INIT, p);
+                ioctl(fd, RT_IOCTL_INIT, &p);
+                ioctl(fd, 0x8004, p);
+                ioctl(fd, 0x8004, &p);
+                ioctl(fd, DEV_OP_INIT_KEY, p);
+            }
+        }
     }
 
     bool is_loaded() const {
@@ -144,6 +216,7 @@ public:
             char buf[0x100] = {0};
             strncpy(buf, key, sizeof(buf) - 1);
             ioctl(fd, DEV_OP_INIT_KEY, buf);
+            ioctl(fd, RT_IOCTL_INIT, buf);
         }
         return true;
     }
@@ -158,7 +231,7 @@ public:
 
         if (ioctl(fd, active_read_op, &cm) == 0) return true;
 
-        static const uint32_t candidate_ops[] = { DEV_OP_READ_MEM, HOOK_OP_READ_MEM, PROC_OP_READ_MEM };
+        static const uint32_t candidate_ops[] = { DEV_OP_READ_MEM, RT_IOCTL_READ, HOOK_OP_READ_MEM, PROC_OP_READ_MEM, 0x400 };
         for (uint32_t op : candidate_ops) {
             if (op == active_read_op) continue;
             if (ioctl(fd, op, &cm) == 0) {
@@ -179,7 +252,7 @@ public:
 
         if (ioctl(fd, active_write_op, &cm) == 0) return true;
 
-        static const uint32_t candidate_ops[] = { DEV_OP_WRITE_MEM, HOOK_OP_WRITE_MEM, PROC_OP_WRITE_MEM };
+        static const uint32_t candidate_ops[] = { DEV_OP_WRITE_MEM, RT_IOCTL_WRITE, HOOK_OP_WRITE_MEM, PROC_OP_WRITE_MEM, 0x200 };
         for (uint32_t op : candidate_ops) {
             if (op == active_write_op) continue;
             if (ioctl(fd, op, &cm) == 0) {

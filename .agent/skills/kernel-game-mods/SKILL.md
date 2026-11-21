@@ -204,3 +204,14 @@ When active trigger is detected (`isFiring > 0` or scoping trigger):
 * **Zero Duplication on Feature Tabs:** Never place a Master Switch or redundant toggle on Tab 0 (ESP Visuals) or Tab 1 (Aimbot Engine). Feature tabs must contain only their dedicated feature checkboxes and configuration sliders.
 * **Global Control:** When toggled on Tab 2, `cfg::master_enabled` governs the entire engine across all features.
 
+---
+
+## 9. Build Configuration Parity Doctrine (`CMakeLists.txt` & `Android.mk`)
+
+* **Parity Enforcement:** `CMakeLists.txt` must maintain 100% flag and include parity with `jni/Android.mk` and `jni/Application.mk`.
+* **Required Compiler Flags:** `-std=c++17 -DUSE_OPENGL -fexceptions -fno-rtti -fvisibility=hidden -fvisibility-inlines-hidden -Oz -ffunction-sections -fdata-sections -fomit-frame-pointer -Wno-error=format-security -fno-color-diagnostics -fmerge-all-constants -fno-ident`.
+* **Required Linker Flags:** `-Wl,--gc-sections -Wl,--strip-all -Wl,--build-id=none -Wl,--no-undefined -pie -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack -Wl,-z,max-page-size=16384`.
+* **Include Directories:** Must include `src/FONTS` along with all active feature and driver directories.
+* **Submodules:** `libevdev` builds exclusively `source/libevdev/libevdev.c`.
+
+

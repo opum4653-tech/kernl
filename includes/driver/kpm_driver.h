@@ -70,9 +70,17 @@ public:
     c_kpm_driver() : active(false), pid(-1), engine(KPM_ENGINE_NONE) {}
 
     bool probe_tb() {
-        mem_operation op = { 0, 0, nullptr, 0 };
+        volatile uint32_t test_val = 0x5A5A1234;
+        uint32_t read_buf = 0;
+        mem_operation op = { getpid(), reinterpret_cast<uint64_t>(&test_val), &read_buf, sizeof(test_val) };
         errno = 0;
         long r = syscall(__NR_prctl, PRCTL_MEM_READ, (unsigned long)&op, 0, 0, 0);
+        if (r >= 0 && read_buf == test_val) {
+            return true;
+        }
+        mem_operation null_op = { 0, 0, nullptr, 0 };
+        errno = 0;
+        r = syscall(__NR_prctl, PRCTL_MEM_READ, (unsigned long)&null_op, 0, 0, 0);
         // Standard Linux kernel without TB KPM returns -1 with EINVAL.
         // Loaded TB KPM module responds with 0 or EFAULT/ESRCH on probe.
         if (r == 0 || (r == -1 && (errno == EFAULT || errno == ESRCH || errno == EPERM))) {

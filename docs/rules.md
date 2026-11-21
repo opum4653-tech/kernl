@@ -187,3 +187,37 @@ This document establishes the mandatory design, architecture, and coding rules f
    - The close button ('X') must be inset from the right window border with comfortable padding (`18.0f * ui_scale`), avoiding right-edge screen clipping.
    - The close button must trigger immediately on touch-down (`io.MouseClicked[0]`).
 
+---
+
+## 8. Build Configuration & Toolchain Parity Doctrine (CMake & NDK Parity)
+
+1. **Strict Feature & Flag Parity between `Android.mk` and `CMakeLists.txt`:**
+   - Any compiler or linker flag added to `jni/Android.mk` or `jni/Application.mk` must be mirrored identically in `CMakeLists.txt` and vice-versa.
+   - **Target Compiler Flags:**
+     - `-std=c++17`
+     - `-DUSE_OPENGL`
+     - `-fexceptions` (ensures consistent C++ exception unwinding for network/JSON)
+     - `-fno-rtti` (eliminates RTTI typeinfo memory overhead and symbol leakage)
+     - `-fvisibility=hidden` and `-fvisibility-inlines-hidden` (strips internal C++ symbol visibility from `.dynsym`)
+     - `-Oz` (extreme size optimization for low binary footprint)
+     - `-ffunction-sections` and `-fdata-sections` (enables dead-code elimination)
+     - `-fomit-frame-pointer` (frees x29 general register on ARM64)
+     - `-Wno-error=format-security`
+     - `-fno-color-diagnostics`
+     - `-fmerge-all-constants`
+     - `-fno-ident` (strips compiler identification metadata from `.comment`)
+   - **Target Linker Flags:**
+     - `-Wl,--gc-sections` (dead code stripping)
+     - `-Wl,--strip-all` (symbol table stripping)
+     - `-Wl,--build-id=none` (strips `.note.gnu.build-id` signature)
+     - `-Wl,--no-undefined` (fails link time on unresolved external references)
+     - `-pie` (Position Independent Executable)
+     - `-Wl,-z,relro -Wl,-z,now` (full RELRO memory protection)
+     - `-Wl,-z,noexecstack` (NX stack protection)
+     - `-Wl,-z,max-page-size=16384` (Android 14/15 16KB page alignment compatibility)
+   - **Include Directory Parity:**
+     - All active header directories (`src/FONTS`, `src/offsets`, `includes/driver`, `includes/draw`, `includes/internal`, etc.) must be uniformly present.
+   - **Submodule Compilation:**
+     - `libevdev` builds strictly `source/libevdev/libevdev.c` across both build systems.
+
+

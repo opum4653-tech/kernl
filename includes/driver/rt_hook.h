@@ -14,18 +14,24 @@ public:
     c_rt_hook() : fd(-1), pid(-1) {}
 
     bool init(bool verbose = true) {
-        COPY_MEMORY test_cm = { 0, 0, nullptr, 0 };
+        volatile uint32_t test_magic = 0x5A5A1234;
+        uint32_t read_buf = 0;
+        COPY_MEMORY test_cm;
+        test_cm.pid = getpid();
+        test_cm.addr = reinterpret_cast<uintptr_t>(&test_magic);
+        test_cm.buffer = &read_buf;
+        test_cm.size = sizeof(test_magic);
         errno = 0;
         int ret = ioctl(0, HOOK_OP_READ_MEM, &test_cm);
-        if (ret == -1 && (errno == ENOTTY || errno == EBADF)) {
-            if (verbose) {
-                printf("[RT HOOK] Syscall hook interface not installed\n");
-            }
-            return false;
+        if (ret == 0 && read_buf == test_magic) {
+            fd = 0;
+            printf("[+] Driver connected: RT HOOK\n");
+            return true;
         }
-        fd = 0;
-        printf("[+] Driver connected: RT HOOK\n");
-        return true;
+        if (verbose) {
+            printf("[RT HOOK] Syscall hook interface not installed\n");
+        }
+        return false;
     }
 
     void set_pid(pid_t p) {

@@ -74,6 +74,7 @@ public:
             m_selection = 2;
             g_appConfig.driverOption = 2;
             g_appConfig.settingsLoaded = true;
+            m_kpm_driver.init(false);
             printf("[Driver] Successfully attached: RT DEV (Option 2)\n");
             return true;
         }
@@ -83,6 +84,7 @@ public:
             m_selection = 4;
             g_appConfig.driverOption = 4;
             g_appConfig.settingsLoaded = true;
+            m_kpm_driver.init(false);
             printf("[Driver] Successfully attached: QX 10-11 (Option 4)\n");
             return true;
         }
@@ -91,6 +93,7 @@ public:
             m_selection = 3;
             g_appConfig.driverOption = 3;
             g_appConfig.settingsLoaded = true;
+            m_kpm_driver.init(false);
             printf("[Driver] Successfully attached: DEV COMPAT (Option 3)\n");
             return true;
         }
@@ -158,12 +161,12 @@ public:
     }
 
     bool is_driver_loaded() const {
-        if (m_selection == 1) return m_rt_hook.is_loaded();
-        if (m_selection == 2) return m_rt_dev.is_loaded();
-        if (m_selection == 3) return m_dev_compat.is_loaded();
-        if (m_selection == 4) return m_qx_driver.is_loaded();
-        if (m_selection == 5) return m_kpm_driver.is_loaded();
-        return false;
+        if (m_selection == 1 && m_rt_hook.is_loaded()) return true;
+        if (m_selection == 2 && m_rt_dev.is_loaded()) return true;
+        if (m_selection == 3 && m_dev_compat.is_loaded()) return true;
+        if (m_selection == 4 && m_qx_driver.is_loaded()) return true;
+        if (m_selection == 5 && m_kpm_driver.is_loaded()) return true;
+        return (m_rt_dev.is_loaded() || m_qx_driver.is_loaded() || m_kpm_driver.is_loaded() || m_dev_compat.is_loaded() || m_rt_hook.is_loaded());
     }
 
     bool init_key(char* key) {
@@ -174,22 +177,56 @@ public:
     }
 
     bool read(uintptr_t addr, void *buffer, size_t size) {
-        if (!is_driver_loaded()) return false;
-        if (m_selection == 1) return m_rt_hook.read(addr, buffer, size);
-        if (m_selection == 2) return m_rt_dev.read(addr, buffer, size);
-        if (m_selection == 3) return m_dev_compat.read(addr, buffer, size);
-        if (m_selection == 4) return m_qx_driver.read(addr, buffer, size);
-        if (m_selection == 5) return m_kpm_driver.read(addr, buffer, size);
+        if (m_selection == 2 && m_rt_dev.read(addr, buffer, size)) return true;
+        if (m_selection == 4 && m_qx_driver.read(addr, buffer, size)) return true;
+        if (m_selection == 5 && m_kpm_driver.read(addr, buffer, size)) return true;
+        if (m_selection == 3 && m_dev_compat.read(addr, buffer, size)) return true;
+        if (m_selection == 1 && m_rt_hook.read(addr, buffer, size)) return true;
+
+        // Dynamic multi-engine fallback if active selection fails:
+        if (m_kpm_driver.is_loaded() && m_kpm_driver.read(addr, buffer, size)) return true;
+        if (m_rt_dev.is_loaded() && m_rt_dev.read(addr, buffer, size)) return true;
+        if (m_qx_driver.is_loaded() && m_qx_driver.read(addr, buffer, size)) return true;
+        if (m_dev_compat.is_loaded() && m_dev_compat.read(addr, buffer, size)) return true;
+        if (m_rt_hook.is_loaded() && m_rt_hook.read(addr, buffer, size)) return true;
+
+        // Lazy fallback to KPM if never initialized (e.g. KernelSU / APatch) - attempted only once to prevent overhead
+        static bool s_kpm_read_lazy_attempted = false;
+        if (!s_kpm_read_lazy_attempted && !m_kpm_driver.is_loaded()) {
+            s_kpm_read_lazy_attempted = true;
+            if (m_kpm_driver.init(false)) {
+                int curPid = proc::pid.load(std::memory_order_relaxed);
+                if (curPid > 0) m_kpm_driver.set_pid(curPid);
+                if (m_kpm_driver.read(addr, buffer, size)) return true;
+            }
+        }
+
         return false;
     }
 
     bool write(uintptr_t addr, const void *buffer, size_t size) {
-        if (!is_driver_loaded()) return false;
-        if (m_selection == 1) return m_rt_hook.write(addr, buffer, size);
-        if (m_selection == 2) return m_rt_dev.write(addr, buffer, size);
-        if (m_selection == 3) return m_dev_compat.write(addr, buffer, size);
-        if (m_selection == 4) return m_qx_driver.write(addr, buffer, size);
-        if (m_selection == 5) return m_kpm_driver.write(addr, buffer, size);
+        if (m_selection == 2 && m_rt_dev.write(addr, buffer, size)) return true;
+        if (m_selection == 4 && m_qx_driver.write(addr, buffer, size)) return true;
+        if (m_selection == 5 && m_kpm_driver.write(addr, buffer, size)) return true;
+        if (m_selection == 3 && m_dev_compat.write(addr, buffer, size)) return true;
+        if (m_selection == 1 && m_rt_hook.write(addr, buffer, size)) return true;
+
+        if (m_kpm_driver.is_loaded() && m_kpm_driver.write(addr, buffer, size)) return true;
+        if (m_rt_dev.is_loaded() && m_rt_dev.write(addr, buffer, size)) return true;
+        if (m_qx_driver.is_loaded() && m_qx_driver.write(addr, buffer, size)) return true;
+        if (m_dev_compat.is_loaded() && m_dev_compat.write(addr, buffer, size)) return true;
+        if (m_rt_hook.is_loaded() && m_rt_hook.write(addr, buffer, size)) return true;
+
+        static bool s_kpm_write_lazy_attempted = false;
+        if (!s_kpm_write_lazy_attempted && !m_kpm_driver.is_loaded()) {
+            s_kpm_write_lazy_attempted = true;
+            if (m_kpm_driver.init(false)) {
+                int curPid = proc::pid.load(std::memory_order_relaxed);
+                if (curPid > 0) m_kpm_driver.set_pid(curPid);
+                if (m_kpm_driver.write(addr, buffer, size)) return true;
+            }
+        }
+
         return false;
     }
 
@@ -216,11 +253,17 @@ public:
     }
 
     const char* get_driver_name() const {
-        if (m_selection == 1) return "RT HOOK";
-        if (m_selection == 2) return "RT DEV";
-        if (m_selection == 3) return "DEV COMPAT";
-        if (m_selection == 4) return "QX 10-11";
-        if (m_selection == 5) return m_kpm_driver.get_engine_name();
+        if (!is_driver_loaded()) return "NO DRIVER";
+        if (m_selection == 1 && m_rt_hook.is_loaded()) return "RT HOOK";
+        if (m_selection == 2 && m_rt_dev.is_loaded()) return "RT DEV";
+        if (m_selection == 3 && m_dev_compat.is_loaded()) return "DEV COMPAT";
+        if (m_selection == 4 && m_qx_driver.is_loaded()) return "QX 10-11";
+        if (m_selection == 5 && m_kpm_driver.is_loaded()) return m_kpm_driver.get_engine_name();
+        if (m_kpm_driver.is_loaded()) return m_kpm_driver.get_engine_name();
+        if (m_rt_dev.is_loaded()) return "RT DEV";
+        if (m_qx_driver.is_loaded()) return "QX 10-11";
+        if (m_dev_compat.is_loaded()) return "DEV COMPAT";
+        if (m_rt_hook.is_loaded()) return "RT HOOK";
         return "ARMED";
     }
 
