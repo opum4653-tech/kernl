@@ -62,9 +62,6 @@
 
 #define LOGI(...) do {} while(0)
 
-// Global font handle for high-contrast bold typography
-ImFont* g_BoldFont = nullptr;
-
 // Loads custom TrueType vector fonts into ImGui's font atlas
 static void LoadCustomFonts(ImGuiIO& io) {
     // initGUI_draw() already pushed Roboto @32px first, so it stays Fonts[0] and

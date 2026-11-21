@@ -6,6 +6,7 @@ std::atomic<float> g_sh{1080.0f};
 
 // Registered by initGUI_draw() in draw.cpp; null until then.
 ImFont* g_UiFont = nullptr;
+ImFont* g_BoldFont = nullptr;
 ImFont* g_EspFont = nullptr;
 ImFont* g_LogoFont = nullptr;
 

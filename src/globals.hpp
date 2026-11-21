@@ -34,5 +34,6 @@ extern std::atomic<bool> main_thread_flag;
 // Typography font handles rasterized at native rendering sizes
 struct ImFont;
 extern ImFont* g_UiFont;    // 18px body font for menu text and controls
+extern ImFont* g_BoldFont;  // 25px bold font for headers and branding
 extern ImFont* g_EspFont;   // 14px font for ESP tags and distance markers
 extern ImFont* g_LogoFont;  // 64px display font for floating logo "N" glyph

@@ -52,7 +52,6 @@
 
 extern int native_window_screen_x;
 extern int native_window_screen_y;
-extern ImFont* g_BoldFont;
 
 // Starts with floating logo closed by default. Menu opens ONLY when user taps the floating logo.
 bool g_ShowMenu = false;
