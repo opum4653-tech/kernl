@@ -204,8 +204,8 @@ static bool DrawSegmentedButtons(const char* str_id, std::atomic<int>* selected,
 // every section title pink and the underline wider than the words above it.
 // ----------------------------------------------------------------------------
 static void SectionHeader(const char* title, float ui_scale) {
-    ImFont* font = g_UiFont ? g_UiFont : ImGui::GetFont();
-    const float fs = 17.0f * ui_scale;
+    ImFont* font = g_BoldFont ? g_BoldFont : (g_UiFont ? g_UiFont : ImGui::GetFont());
+    const float fs = 15.0f * ui_scale;
 
     ImVec2 pos = ImGui::GetCursorScreenPos();
     ImVec2 ts = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, title);
@@ -318,7 +318,7 @@ void render() {
 
     // Exact 20 PushStyleColor calls
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.055f, 0.047f, 0.078f, 0.98f));
-    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(colPrim.x, colPrim.y, colPrim.z, 0.70f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
     ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.110f, 0.086f, 0.157f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.160f, 0.120f, 0.220f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0.220f, 0.160f, 0.300f, 1.0f));
@@ -343,7 +343,7 @@ void render() {
     // Exact 4 PushStyleVar calls
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ui_opacity);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 12.0f * ui_scale);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.5f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
 
     ImGuiWindowFlags winFlags = ImGuiWindowFlags_NoTitleBar |
@@ -359,6 +359,12 @@ void render() {
     Touch_AddUiRect(s_menu_pos.x, s_menu_pos.y, winW, winH);
 
     if (ImGui::Begin("##NinmodsKernelMainWindow", nullptr, winFlags)) {
+        bool fontPushed = false;
+        if (g_UiFont) {
+            ImGui::PushFont(g_UiFont);
+            fontPushed = true;
+        }
+        ImGui::SetWindowFontScale(std::clamp(ui_scale, 0.90f, 1.10f));
         ImDrawList* dl = ImGui::GetWindowDrawList();
         ImVec2 winPos = ImGui::GetWindowPos();
         ImVec2 winSize = ImGui::GetWindowSize();
@@ -719,6 +725,10 @@ void render() {
 
         ImGui::PopStyleVar(4);
         ImGui::PopStyleColor(2);
+
+        if (fontPushed) {
+            ImGui::PopFont();
+        }
     }
     ImGui::End();
     ImGui::PopStyleVar(4);

@@ -88,6 +88,7 @@ static void LoadCustomFonts(ImGuiIO& io) {
     cfg.SizePixels = 64.0f;
     g_LogoFont = io.Fonts->AddFontFromMemoryTTF((void*)inter_bold, sizeof(inter_bold), 64.0f, &cfg, io.Fonts->GetGlyphRangesCyrillic());
 
+    io.FontDefault = g_UiFont;
     io.Fonts->Build();
 }
 

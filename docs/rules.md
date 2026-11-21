@@ -43,8 +43,11 @@ This document establishes the mandatory design, architecture, and coding rules f
    - A gesture that begins inside a rect stays swallowed until the finger lifts.
    - Touches within the logo or menu bounds must never penetrate into the underlying game canvas.
 
-3. **Menu Dimensions & Compact Header:**
+3. **Menu Dimensions, Borderless Body & Typography Standards:**
    - Header height is sleek and compact (`headerH = 48.0f * ui_scale`), reduced from legacy 96px for modern proportion.
+   - Main menu window body is strictly borderless (`ImGuiStyleVar_WindowBorderSize = 0.0f`, `ImGuiCol_Border = 0x00000000`). Never add an outer border stroke to the main window.
+   - Menu typography is driven by `g_UiFont` (18px Inter Medium) set as `io.FontDefault` and pushed to the menu window stack. Standard widgets (`ImGui::Checkbox`, `SliderFloat`, `SliderInt`) render at crisp native 18px rather than fallback 32px.
+   - Section headers use `g_BoldFont` at `15.0f * ui_scale`.
    - Close button ('X') is padded safely (`18.0f * ui_scale`) from the right window border to prevent clipping.
    - Close button hit region has enlarged padding (`6.0f * ui_scale`) and responds instantly on touch-down (`io.MouseClicked[0]`).
    - Total menu window size dynamically scales via `ui_scale`.
