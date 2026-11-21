@@ -112,10 +112,16 @@ namespace func::esp {
     // Derives an accurate 2D humanoid bounding box from 3D projected Head and Toe positions
     inline PlayerBox computePlayerBox(const PlayerData& p) {
         PlayerBox pb{ {0,0}, {0,0}, false };
-        if (!ok(p.Head)) return pb;
 
-        float topY = p.Head.y;
-        float botY = ok(p.Toe) ? p.Toe.y : (p.Head.y + 50.0f);
+        // Accept either visible bone. A distant enemy can have its head just
+        // outside the viewport while the feet remain visible — the old
+        // head-only gate removed the box (and therefore all ESP) for those.
+        const bool headOK = ok(p.Head);
+        const bool toeOK  = ok(p.Toe);
+        if (!headOK && !toeOK) return pb;
+
+        float topY = headOK ? p.Head.y : (p.Toe.y - 50.0f);
+        float botY = toeOK  ? p.Toe.y  : (p.Head.y + 50.0f);
         if (topY > botY) std::swap(topY, botY);
 
         float height = botY - topY;
@@ -130,7 +136,8 @@ namespace func::esp {
         }
 
         // Align horizontally centered between head and toe (natural spine alignment)
-        float midX = ok(p.Toe) ? ((p.Head.x + p.Toe.x) * 0.5f) : p.Head.x;
+        float midX = (headOK && toeOK) ? ((p.Head.x + p.Toe.x) * 0.5f)
+                                       : (headOK ? p.Head.x : p.Toe.x);
         float width = height * Offsets::ESP::BoxWidthRatio;
         float halfW = width * 0.5f;
 

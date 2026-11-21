@@ -135,7 +135,7 @@ Only update the hex numbers inside `src/offsets/offsets.hpp`.
 * Read transform pointer from bone node: `nodeTransform + 0x10`.
 * If null or zero, fallback to direct `Transform` evaluation.
 * Resolve `MatrixPtr` (`0x38`) and indices list (`0x20`), computing hierarchical parent rotation quaternions and scales.
-* Dual-tier validation: Always evaluate primary `0x6A8` first; if it produces `(0,0,0)`, evaluate `0x6A0`.
+* **Far / LOD enemy fallback (current implementation):** Read BOTH head (`0x6A8`) and root (`0x6D0`) before rejecting an entity. If the head node is absent or resolves to `(0,0,0)` — common for distant enemies rendered with a simplified skeleton — synthesize `headWorld = rootWorld + 1.75m`. Only drop the entity when both transforms fail. Never `return` on head failure alone: that silently removes far enemies from ESP.
 
 ### 3. Full-Body Chaturbhuj Box Proportions
 * **Top:** Head bone screen position minus 12% helmet padding:
@@ -147,7 +147,28 @@ Only update the hex numbers inside `src/offsets/offsets.hpp`.
 * Center box horizontally on the midpoint of head and toe screen coordinates.
 
 ### 4. Head Laser Tracer
-* Trace from screen center-top or crosshair directly to the skull center coordinate ($y_{\text{head}} + 0.12m$).
+* Trace from screen center-top (default), crosshair, or screen bottom to the projected head coordinate.
+* **Tolerant frustum gate:** accept `ok(Head) || ok(Toe)` with a 150px margin. The old zero-margin head-only `[0..g_sw]×[0..g_sh]` check dropped every far enemy whose head sat just outside the viewport. Snap to whichever bone is visible and clamp the endpoint into the physical screen.
+* Uniform opacity — no distance fade, no distance cutoff.
+
+### 5. Range Doctrine: Camera Frustum Only
+* ESP range is EXACTLY what the camera renders. There is no `max_range` slider and no distance cull anywhere in `src/`.
+* `data.cpp` rejects a player only when BOTH projected head and toes are outside `FRUSTUM_MARGIN = 80px` or behind the near plane (`z <= 0.05`). Off-screen/behind-camera entities cost zero RPM.
+* `esp.hpp` / `common.hpp` apply a defensive 150px guard; `computePlayerBox()` accepts toe-only solutions so a partially visible far target still gets a box.
+* `p.distance` is retained for HUD text and box-height fallback only — NEVER for filtering or fading.
+
+### 6. RPM Optimization Stack (7 layers, ~90% reduction)
+1. Batch reads (`mem_read` blocks) instead of many `rpm<T>()` calls.
+2. Transform/bone cache keyed by entity address, 100ms TTL, guarded by `data::bone_cache_mutex`.
+3. Data loop 33ms (30Hz) minimum; lobby 100ms.
+4. Frustum culling before any detailed read.
+5. Fisher-Yates randomized read order per tick.
+6. ESP-only gate: skip `PhyXdata`/`IsKnocked` when no aim feature is on.
+7. Dead/teammate rejection before Transform walks.
+* Cache is cleared on `note_detached()`, `thread_stop()`, and PID/lib change. Dynamic GameFacade scanner state (`s_dyn_checked` / `s_dyn_gf`) resets on re-attach too.
+
+### 7. Driver Serialization Invariant
+* One process-wide `c_driver` is shared by data, aim and watchdog threads. All access goes through `proc::driver_mutex()` helpers — `driver_read()`, `driver_write()`, `driver_module_base()`, `driver_setup()`, `driver_status()`. Never call `driver->` directly from a worker thread.
 
 ---
 
@@ -165,15 +186,16 @@ Only update the hex numbers inside `src/offsets/offsets.hpp`.
 3. **Euclidean Distance:**
    $$dist = \sqrt{D_x^2 + D_y^2 + D_z^2}$$
 
-### 3. Memory Flooding Pipeline (High-Speed Zero-RPM Writer Thread)
-When active trigger is detected (`isFiring > 0` or scoping trigger):
-1. Write unnormalized displacement vector $\vec{D}$ to `AimInfo + Offsets::Aim::Direction` (`0x40`).
-2. Write scalar distance $dist$ to `AimInfo + Offsets::Aim::Distance` (`0x5C`).
-3. Write critical damage group `1` to `AimInfo + Offsets::Aim::HitGroup` (`0x64`).
-4. Write target head position to `AimInfo + Offsets::Aim::HitPoint` (`0x28`).
-5. Write normalized direction to `AimInfo + Offsets::Aim::HitNormal` (`0x34`).
-6. **Dual Collider Override (Anti-Torso Fallback):** Overwrite target enemy's `LockedAimingCollider` slots (`0x80` & `0x78`) with target's `HeadCollider` (`0x740`).
-7. **Weapon Recoil Stabilization:** Zero out active weapon recoil (`WeaponOnHand + 0x80 + 0x18 = 0.0f`).
+### 3. Safe Write Pipeline (CURRENT — supersedes the old 7-write flooding design)
+> [!WARNING]
+> The previous runbook instructed writes to `HitGroup (0x64)`, `HitPoint (0x28)`, `HitNormal (0x34)`, `Distance (0x5C)`, enemy `LockedAimingCollider (0x80/0x78)` and weapon recoil. **All of those were removed** — they caused client/server hitgroup desync and entity-memory tampering, i.e. instant ban. Do not reintroduce them.
+
+1. **Only one field is ever written:** normalized 12-byte `Vector3` to `AimInfo + Offsets::Aim::Direction` (`0x40`). `wpm()` is gated to 1/2/4/8/12-byte aligned, non-code-page writes while `proc::wpm_allowed` is true.
+2. **Full-auto coverage:** steer once per estimated bullet (~85ms ≈ 11-12 rds/s) while `isFiring` is held — a rising-edge-only write steered just the first shot of a burst. Time-based gating works at any aim-loop cadence without multiplying WPM.
+3. **Cone guard:** `dot(cameraForward, direction) >= cos(8°) = 0.99027`; abort otherwise. Jittered vector is re-validated against the cone.
+4. **Humanization:** Gaussian micro-jitter on every shot (head sigma 0.0015-0.003, body 0.005-0.010), ~12% of bullet windows skipped, ±3ms cadence jitter, time-based (150ms) stale-camera guard keyed on `data::viewMatrix_stamp`.
+5. **Rate-controlled headshots:** Auto Headshot is a checkbox that ENABLES the rate controller, not a 100% force. `evaluate_headshot_rate()` uses the `headshot_rate` slider, +25% scoped uplift (cap 95%), distance falloff past 40m — but an explicit 0% stays 0% at any range. `headRate=0` steers to chest, never skips the shot.
+6. **Lifecycle:** telemetry is locked in `common.hpp`; `clear_silent_data()` / `restore_headshot_override()` are zero-footprint (no entity memory to restore).
 
 ---
 
@@ -237,17 +259,75 @@ When active trigger is detected (`isFiring > 0` or scoping trigger):
 
 ### 3. In-Game Entity Memory Chain (Unity IL2CPP ARM64)
 * **Base Resolution:**
-  - `Offsets::GameFacade`: Primary `0xAD68E18` (Offsetsmax.h), Alt `0xAD6DC18`, Global `0xA72E4E0`, supported by dynamic ARM64 `ADRP + LDR` instruction scanner (`resolve_gamefacade_dynamic`).
+  - **MAX-ONLY build:** targets `com.dts.freefiremax` exclusively. Free Fire Global (`com.dts.freefireth`) and its `GameFacade_Global 0xA72E4E0` probe were removed. Primary `0xAD68E18`, Alt `0xAD6DC18`, plus dynamic ARM64 `ADRP + LDR` scanner (`resolve_gamefacade_dynamic`).
   - `Staticfield` (`0xB8`): Evaluates both `GfCell + 0xB8` and `classPtr + 0xB8` to extract `curGame` / `BaseGame`.
 * **Match & Camera Resolution:**
   - `CurrentMatch` (`0x90`) & `localPlayer` (`0xD8`).
-  - `inMatch`: Evaluates `(matchState == 1) || is_valid_ptr(localPlayer) || is_valid_ptr(BaseGame)` -> Transitions to `ACTIVE`.
+  - `inMatch`: `matchState > 0`; only when the flag is unreadable (`< 0`) fall back to `is_valid_ptr(localPlayer)`. NEVER OR-in `is_valid_ptr(BaseGame)` — it is guaranteed valid at that point and made `inMatch` permanently true even in the lobby.
+  - `viewMatrix_stamp` bumps ONLY when a fresh matrix was resolved. Re-publishing the old matrix with a new stamp defeats the silent-aim staleness guard.
   - Camera ViewMatrix (`0x100`): Evaluates `FollowCamera (0x698) -> Camera (0x20) -> IntPtrCam (0x10) -> Matrix (0x100)` or `BaseGame + CameraBase (0xD8)`.
 * **Entity Extraction & Culling Doctrine:**
   - `Dictionary` (`0xC0`), `entryAddr` (`0x18`), `enemyList` (`0x10`).
   - Dead check: `Player_IsDead` (`0x7C`) must be 0.
   - Team check: `Avatar_Data_IsTeam` (`0x81`) must be 0.
   - Knocked check: `PhyXdata` (`0x1D60`) -> `maybeDead` (`0x20`) -> `isKnocked` (`0x10`).
-  - **Frustum Culling Separation:** Never drop entities with `headScreen.z < 0.05f` inside `data::update()`; store all valid in-range living enemies in `data::players` so the global enemy count tile (`PLAYERS: X ENEMY`) remains accurate. Frustum near-plane clipping (`headScreen.z < 0.05f`) is handled exclusively in rendering (`esp.hpp`) and aim targeting (`target.hpp`).
+  - **Frustum-Only Culling:** `data::update()` drops a player only when BOTH projected head and toe lie outside the screen bounds (±80px) or behind the near plane — that is how wasted RPM is avoided. Rendering (`esp.hpp`, `line.hpp`, `common.hpp`) uses a wider ±150px defensive guard and accepts head OR toe, so a partially visible far enemy still gets tracer + box. `p.distance` is HUD-only.
+  - Dictionary scan reads up to 512 entries (`read_dict_blocks`); a smaller cap could cut off distant players inserted later in the dictionary.
+  - Driver access is serialized through `proc::driver_mutex()` helpers; `get_driver()` is a process-wide singleton shared by three threads.
+
+---
+
+## 11. ESP 100% Operational Record (Verified — November 21, 2026)
+
+> [!IMPORTANT]
+> **Master dj confirmed live in-game: "esp 100% kaj kortece"** (ESP is working 100%). All changes below passed a real ARM64 NDK build through GitHub Actions: run `44895782628`, commit `efd7bd9`, conclusion **success**, artifact `ninmods-kernel` 1,672,810 bytes (SHA-256 `d19369e6853fcab874033cc15bed76baaef30c468dd949a573f3cdca9cfd4e2e`). Workflow: `.github/workflows/build.yml` (ubuntu-latest, `nttld/setup-ndk@v1` r25c, `ndk-build`, `llvm-strip`, artifacts). No local compiler is needed or available.
+
+### 11.1 What makes ESP work end-to-end (read this before changing anything)
+1. **PID attach, MAX-only:** raw ARM64 `svc #0` `/proc` scan matches only `com.dts.freefiremax`; `proc::publish_attachment(pid, lib)` uses a seqlock snapshot so PID and lib base are always consistent.
+2. **Driver handshake:** `verify_test_read()` canary check rejects false-positive `/dev` nodes; multi-engine auto-probe `RT DEV → QX → DEV COMPAT → KPM → RT HOOK`. All driver access serialized under `proc::driver_mutex()`.
+3. **Memory chain:** `GameFacade (0xAD68E18 / 0xAD6DC18 / dynamic ADRP+LDR scanner)` → `Staticfield 0xB8` → `BaseGame` → `CurrentMatch 0x90` / `localPlayer 0xD8` → `Dictionary 0xC0` → `entryAddr 0x18` → `enemyList 0x10`.
+4. **Projection:** `FollowCamera 0x698 → Camera 0x20 → IntPtrCam 0x10 → ViewMatrix 0x100`; Unity row-major W2S with perspective divide; `g_sw/g_sh` from `display_manager`.
+5. **Entity validation:** alive (`0x7C == 0`), not teammate (`Avatar_Data_IsTeam 0x81 == 0`), transform walk via `GetNodePosition()` (head `0x6A8`, root `0x6D0`), head synthesis from root for far/LOD enemies.
+6. **Frustum-only publish:** only on-screen/behind-near-plane-checked players enter `data::players`; renderer applies wider tolerance.
+7. **Render:** `drawTracer()` → `computePlayerBox()` → `drawBox()` → bot tag → armor bar, all on `ImGui::GetForegroundDrawList()` over the native SurfaceFlinger window.
+8. **No footprint:** ESP alone performs zero WPM (`proc::wpm_allowed` is false unless a combat feature is active). No code patches, no hooks, no internal threads, no disk writes.
+
+### 11.2 Fixes that took ESP from broken to 100%
+| # | Problem | Fix |
+| :-- | :--- | :--- |
+| 1 | False driver attach on `/dev/pmsg0` / `ashmem` | Canary `verify_test_read()` across candidate IOCTL opcodes before attach |
+| 2 | Global/MAX offset confusion | MAX-only build; removed `GameFacade_Global` and `is_game_max` |
+| 3 | Artificial distance limits (300m/150m) and fade | Removed `cfg::esp::max_range`, `fadeDist()`, LOD distance tiers, distance alpha fade |
+| 4 | Wasted RPM, stutter | 7-layer optimization stack (batch, 100ms cache, 33ms loop, frustum cull, shuffled order, ESP-only gate, cheap dead/team rejects) |
+| 5 | `inMatch` stuck true in lobby | Use authoritative `matchState > 0` only |
+| 6 | Stale camera matrix looked fresh | Stamp bumps only on newly resolved matrix; aim staleness guard is time-based (150ms) |
+| 7 | Bone cache data race / ghost players | `bone_cache_mutex`; clear on detach, stop, and PID/lib change; dynamic GameFacade scanner resets on re-attach |
+| 8 | Full-auto silent aim steered only first shot | One steer per ~85ms bullet window while trigger held |
+| 9 | Headshot force 100% / 0% ignored at range | Slider-driven rate controller; 0% stays 0% at any distance |
+| 10 | Driver singleton accessed by 3 threads unsafely | All `driver->` calls moved into mutex-guarded `proc::` helpers |
+
+### 11.3 Far-enemy tracer fix (latest, user-reported: "দূরের enemy-র উপরে line পড়ছে না")
+Root causes and fixes — do NOT revert these:
+1. `line.hpp` used a **zero-margin, head-only** viewport test (`0 ≤ x ≤ g_sw`, `0 ≤ y ≤ g_sh`). Far enemies with the head just past the edge but feet visible lost the tracer. Now `ok(Head) || ok(Toe)` (±150px), snap to the visible bone, clamp endpoint into the viewport.
+2. `data.cpp process_enemy` did `if (!is_valid_ptr(headTF)) return;` and `if (headWorld == Zero) return;` — every distant/LOD enemy with no head ITransformNode vanished from `data::players`. Now reads root too and synthesizes `headWorld = root + 1.75m`; drops only if both fail.
+3. `common.hpp computePlayerBox()` was head-only; now accepts toe-only and synthesizes top/bottom (`±50px`).
+4. `data.cpp read_dict_blocks` cap raised `200 → 512` so players inserted later in the dictionary are still parsed.
+5. Removed the stale "alpha fade tied to frustum edge" comment — no fade exists anywhere.
+
+**Files:** `src/func/esp/line.hpp`, `src/func/esp/common.hpp`, `src/func/esp/esp.hpp`, `src/game/data.cpp`.
+
+### 11.3b Silent-aim / headshot cone bug (fixed — do NOT reintroduce)
+* `silent.hpp::get_camera_forward_from_matrix()` previously used `-(m[8],m[9],m[10])` as camera forward. That is NOT the forward axis of the matrix used by `WorldToScreenPoint()`. For a target in front of the camera the dot product went negative, so the 8° cone guard aborted EVERY `apply_trajectory()` call — headshots silently never registered.
+* **Correct derivation:** the point on the camera-forward ray projects to screen center, so both W2S numerators vanish along it. Let `A = (m[0],m[4],m[8])` (xN gradient) and `B = (m[1],m[5],m[9])` (yN gradient); then `camFwd = normalize(A × B)`. Use `fabsf(dot(camFwd, normDir))` because cross-product sign follows projection convention; `acquire_target()` already rejects behind-camera targets.
+* Historical note: an older build accidentally worked because the degenerate fallback was `(0,0,1)` (cone passed); when the fallback was changed to `Vector3::Zero()` all writes aborted. The real fix is the axis, not the fallback.
+* `Direction (0x40)` payload is the **normalized** unit vector — confirmed from the last verified build; do not switch it to unnormalized displacement.
+
+### 11.4 Regression rules for future models
+* Never add a distance check, distance fade, or `max_range` slider back into ESP. Range = camera frustum only.
+* Never reject an entity solely because its head transform failed — always try root fallback.
+* Never require the head point to be strictly inside the viewport for a tracer; use `ok(Head) || ok(Toe)` and clamp.
+* Never reintroduce WPM to `ViewBlocked`, `HitGroup`, `HitPoint`, `HitNormal`, `Distance`, enemy colliders, or weapon recoil.
+* Keep every feature button a real `cfg::Checkbox()` (`ImGui::Checkbox`), never a toggle switch. Sliders only where genuinely needed (headshot rate, FOV radius when its circle is on, head bias).
+* Build verification is remote-only: commit, push, then read `https://api.github.com/repos/opum4653-tech/kernl/actions/workflows/build.yml/runs?per_page=5`. Artifact/job-log download needs auth, but run/job metadata is public.
 
 

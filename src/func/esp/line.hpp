@@ -18,8 +18,9 @@
 //    - Mode 2 (Bottom Origin): Originates from screen bottom (sw/2, sh) -> snaps to Feet.
 //
 // 3. VISUAL RENDERING:
-//    - Multi-pass laser beam: draws an outer translucent bloom beam (tThick + 1.4f)
-//      and an intense inner laser core beam (tThick) with distance-based alpha fading.
+//    - Multi-pass laser beam: outer translucent bloom (tThick + 1.4f) plus an
+//      intense inner core (tThick). Uniform opacity — the camera frustum is
+//      the only range; no distance fade or artificial cutoff.
 // ==============================================================================================
 
 namespace func::esp {
@@ -28,11 +29,15 @@ namespace func::esp {
     inline void drawTracer(ImDrawList* dl, const PlayerData& p, ImU32 colBase) {
         if (!cfg::esp::tracer) return;
 
-        // Strictly draw tracer ONLY when head point is in front of camera and inside screen bounds
-        if (p.Head.z < 0.05f || p.Head.x < 0.f || p.Head.x > g_sw ||
-            p.Head.y < 0.f || p.Head.y > g_sh) {
-            return;
-        }
+        // ── FRUSTUM GATE (far-enemy fix) ────────────────────────────────────────
+        // The old check demanded the HEAD point be strictly inside [0..g_sw]
+        // × [0..g_sh]. Distant enemies are small and often sit with their head
+        // just past the viewport edge while their feet are still visible —
+        // those tracers were silently dropped. Use the same tolerant frustum
+        // test as data.cpp / esp.hpp and accept either head or toe.
+        const bool headOK = ok(p.Head);
+        const bool toeOK  = ok(p.Toe);
+        if (!headOK && !toeOK) return;
 
         ImVec2 lineStart;
         if (cfg::esp::tracer_pos == 1) {
@@ -46,7 +51,15 @@ namespace func::esp {
             lineStart = ImVec2(g_sw * 0.5f, 0.f);
         }
 
-        ImVec2 target = ImVec2(p.Head.x, p.Head.y);
+        // Snap to whichever bone is actually visible. For a far enemy whose
+        // head sits just outside the viewport, the feet still give a valid
+        // terminal point instead of losing the tracer entirely.
+        ImVec2 target = headOK ? ImVec2(p.Head.x, p.Head.y)
+                               : ImVec2(p.Toe.x, p.Toe.y);
+        // Clamp into the physical viewport so the beam is always drawn to a
+        // visible endpoint (ok() allows a 150px off-screen tolerance).
+        target.x = ImClamp(target.x, 0.0f, (float)g_sw);
+        target.y = ImClamp(target.y, 0.0f, (float)g_sh);
 
         // Uniform alpha — no distance limit, camera frustum is the only range.
         float aa = 1.0f;

@@ -58,8 +58,7 @@ namespace func::esp {
             if (!ok(p.Head) && !ok(p.Toe)) continue;
             if (p.curHP <= 0) continue;
 
-            // No distance limit — the camera frustum is the only range.
-            // Full-opacity color (alpha fade tied to frustum edge, not artificial distance).
+            // No distance limit, no fade — the camera frustum is the only range.
             ImU32 colBase = toU32(cfg::esp::box_col);
 
             // 1. ESP Laser Line (Tracer line originating from top of screen to head - decoupled from box validity)

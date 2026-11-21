@@ -115,22 +115,15 @@ Silent Aim alters bullet trajectory vectors directly in weapon fire memory packe
    * Apply cranial elevation bias: $\vec{P}_{\text{targetHead}}.y += (\text{SkullElevation} + \text{head\_bias})$.
    * Compute scalar Euclidean distance: $dist = \|\vec{D}\|$.
 
-2. **Packet Flooding (`AimInfo` Structure):**
-   * Write raw vector $\vec{D}$ to `AimInfo + Offsets::Aim::Direction` (`0x40`).
-   * Write scalar distance $dist$ to `AimInfo + Offsets::Aim::Distance` (`0x5C`).
-   * Force critical damage group: `AimInfo + Offsets::Aim::HitGroup = 1` (`Head`).
-   * Write `HitPoint` (`0x28`) = $\vec{P}_{\text{targetHead}}$.
-   * Write `HitNormal` (`0x34`) = $\text{Normalize}(\vec{D})$.
-   * Clear view obstruction flags: `ViewBlocked` (`0x71`) = `false`.
+2. **CURRENT SAFE WRITE MODEL (supersedes the old packet-flooding list below):**
+   * Write ONLY the normalized 12-byte `Vector3` to `AimInfo + Offsets::Aim::Direction` (`0x40`), once per estimated bullet (~85ms) while the trigger is held.
+   * Never write `Distance`, `HitGroup`, `HitPoint`, `HitNormal`, or `ViewBlocked` — those cause client/server raycast desync and are a guaranteed ban vector.
+   * Never touch enemy colliders or weapon recoil — entity/heap mutation leaves a WPM footprint.
+   * Enforce an 8° camera cone, per-shot Gaussian jitter, ~12% natural skips, and a rate-controlled headshot percentage instead of forced 100%.
+   * See `kernel-game-mods/SKILL.md` §5 and §11 for the verified implementation details.
 
-3. **Dual Collider Override (Anti-Torso Fallback):**
-   * Extract target's `HeadCollider` pointer (e.g., `target + 0x740`).
-   * Overwrite target's `LockedAimingCollider` slots (`0x80` & `0x78`) with `HeadCollider`.
-   * Forces the game's bullet-physics engine to register a direct headshot collision even if the vector intersects body volume.
-
-4. **Weapon Recoil Stabilization:**
-   * On active trigger, read active `WeaponOnHand` (`LocalPlayer + 0x600`).
-   * Zero out weapon recoil float: `WeaponData + 0x18 = 0.0f`.
+> [!WARNING]
+> The following legacy steps are documented for historical context ONLY. Do NOT implement them in this project: (a) writing `Distance`/`HitGroup`/`HitPoint`/`HitNormal`/`ViewBlocked`, (b) `LockedAimingCollider` override, (c) weapon recoil zeroing. They were removed after forensic review.
 
 ---
 

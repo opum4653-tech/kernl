@@ -511,17 +511,25 @@ namespace data {
                 headWorld = cachedHead;
                 feetWorld = cachedFeet;
             } else {
-                // Cache miss — walk Transform hierarchy (expensive)
+                // Cache miss — walk Transform hierarchy (expensive).
+                // Read both head and root BEFORE deciding to drop the entity.
+                // The old code returned immediately when the head node failed,
+                // which silently removed every distant / LOD enemy from ESP —
+                // the game renders those with a simplified skeleton where the
+                // head ITransformNode is often absent or unresolvable.
                 auto headTF = rpm<uint64_t>(enemy + Offsets::Head); // 0x6A8
-                if (!is_valid_ptr(headTF)) return;
-                headWorld = GetNodePosition(headTF);
-                if (headWorld == Vector3::Zero()) return;
+                if (is_valid_ptr(headTF)) headWorld = GetNodePosition(headTF);
 
                 auto feetTF = rpm<uint64_t>(enemy + Offsets::Root); // 0x6D0
-                if (is_valid_ptr(feetTF)) {
-                    feetWorld = GetNodePosition(feetTF);
-                }
-                if (feetWorld == Vector3::Zero()) {
+                if (is_valid_ptr(feetTF)) feetWorld = GetNodePosition(feetTF);
+
+                if (headWorld == Vector3::Zero()) {
+                    // No usable head bone — synthesize it from the root position.
+                    // A standing player is ~1.75m tall; this keeps far enemies
+                    // on screen without any artificial distance cutoff.
+                    if (feetWorld == Vector3::Zero()) return; // no transform data at all
+                    headWorld = Vector3(feetWorld.x, feetWorld.y + 1.75f, feetWorld.z);
+                } else if (feetWorld == Vector3::Zero()) {
                     feetWorld = Vector3(headWorld.x, headWorld.y - 1.75f, headWorld.z);
                 }
 
@@ -601,7 +609,11 @@ namespace data {
             if (!is_valid_ptr(dictAddr)) return false;
             MonoDictionary dict(dictAddr);
             if (dict.valid && dict.getNumValues() > 0) {
-                int nv = std::min(dict.getNumValues(), 200);
+                // Scan every published entity up to a hard safety ceiling.
+                // The old 200-entry cap could cut off distant players that are
+                // inserted later in the dictionary — they were never parsed,
+                // so no ESP line/box could ever be drawn for them.
+                int nv = std::min(dict.getNumValues(), 512);
                 MonoDictionary::EntryBlock blk{};
                 for (int i = 0; i < nv; i++) {
                     if (i % MonoDictionary::kBlockSize == 0) {

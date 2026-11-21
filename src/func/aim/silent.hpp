@@ -13,17 +13,19 @@
 // ANTI-BAN ARCHITECTURAL PRINCIPLES (Phase 2 — Hardened):
 // ----------------------------------------------------------------------------------------------
 // 0. NEW IN PHASE 2:
+//    - Camera-forward axis FIXED (cross product of W2S gradients) — the old
+//      -(m[8],m[9],m[10]) axis rejected every shot, so headshots never landed.
 //    - Jitter applied to ALL shots (head included) with a tighter head sigma.
 //    - ~12% of bullet windows skipped entirely so bursts are not 100% perfect.
 //    - Cadence jitter (±3ms) on the aim loop breaks machine-periodic timing.
 //    - Cone tightened 12° -> 8°, plus a stale-camera guard on viewMatrix_stamp.
 //    - Final jittered vector re-validated against the cone before the write.
 //
-// 1. ANGULAR DEVIATION CONE GUARD:
-//    - Camera forward is extracted from data::viewMatrix_pub (already-resolved, no extra RPM).
-//      Unity row-major matrix: third ROW = m31,m32,m33 = indices [8],[9],[10] in flat array.
-//      That row is the NEGATED camera forward in world space: camFwd = -( m[8], m[9], m[10] ).
-//    - Cone check: dot(camFwd, normDir) >= MAX_AIM_COS (cos 12°).
+// 1. ANGULAR DEVIATION CONE GUARD (BUG-FIXED):
+//    - Camera forward comes from data::viewMatrix_pub (no extra RPM), derived as
+//      the cross product of the two WorldToScreen numerator gradients — NOT from
+//      -(m[8],m[9],m[10]) which was the wrong axis and rejected every shot.
+//    - Cone check: |dot(camFwd, normDir)| >= MAX_AIM_COS (cos 8°).
 //    - Applied AFTER direction computation but BEFORE jitter mutation of normDir —
 //      so the cone is checked on the clean mathematical aim vector, not on the
 //      noise-added variant. If cone fails, write aborts and bullet fires naturally.
@@ -82,25 +84,33 @@ namespace silent {
         return SafeNormalize(jd);
     }
 
-    // ── Camera forward from the already-resolved data::viewMatrix_pub ────────────
-    // Unity row-major storage layout (matches game.hpp struct matrix):
-    //   m[0]..m[3]  = row 0 (m11..m14)
-    //   m[4]..m[7]  = row 1 (m21..m24)
-    //   m[8]..m[11] = row 2 (m31..m34)  ← this row encodes -camForward
-    //   m[12]..m[15]= row 3 (m41..m44)
-    // camFwd = -(m31, m32, m33) = -(vm[8], vm[9], vm[10])
+    // ── Camera forward from the SAME matrix used by WorldToScreenPoint ───────────
+    // FIX (headshot bug): the old code used -(m[8],m[9],m[10]) as camera forward.
+    // That is not the forward axis of this matrix — it made the cone dot negative
+    // for every target in front of the camera, so EVERY steering write was
+    // rejected and headshots silently never happened.
+    //
+    // Derive it from the projection itself. In math.hpp:
+    //   xN = m11*x + m21*y + m31*z + m41   (flat 0,4,8,12)
+    //   yN = m12*x + m22*y + m32*z + m42   (flat 1,5,9,13)
+    // A point on the camera's forward ray projects to screen center, so both
+    // numerators stay zero along that ray. Therefore forward ⟂ gradient(A)
+    // and forward ⟂ gradient(B) → forward = normalize(A × B).
     static inline Vector3 get_camera_forward_from_matrix(const matrix& vm) {
-        // Reinterpret the struct as a flat float[16] via memcpy to avoid UB aliasing.
         float m[16];
         static_assert(sizeof(matrix) == 16 * sizeof(float), "matrix size mismatch");
         __builtin_memcpy(m, &vm, sizeof(m));
 
-        float fx = -m[8];   // -m31
-        float fy = -m[9];   // -m32
-        float fz = -m[10];  // -m33
+        // A = gradient of xN, B = gradient of yN
+        Vector3 A(m[0], m[4], m[8]);   // m11, m21, m31
+        Vector3 B(m[1], m[5], m[9]);   // m12, m22, m32
+
+        float fx = A.y * B.z - A.z * B.y;
+        float fy = A.z * B.x - A.x * B.z;
+        float fz = A.x * B.y - A.y * B.x;
 
         float lenSq = fx * fx + fy * fy + fz * fz;
-        if (lenSq < 1e-6f || !std::isfinite(lenSq)) {
+        if (lenSq < 1e-8f || !std::isfinite(lenSq)) {
             return Vector3::Zero();
         }
         float invLen = 1.0f / sqrtf(lenSq);
@@ -240,7 +250,9 @@ namespace silent {
 
         Vector3 camFwd = get_camera_forward_from_matrix(vm);
         if (camFwd == Vector3::Zero()) return;
-        float align = Vector3::Dot(camFwd, normDir);
+        // Cross-product sign follows the projection convention; use magnitude.
+        // acquire_target already rejects targets behind the camera (Head.z < 0.05).
+        float align = fabsf(Vector3::Dot(camFwd, normDir));
         if (!std::isfinite(align) || align < MAX_AIM_COS) return;
 
         // ── Jitter on ALL shots (headshots included) ──────────────────────────────
@@ -272,7 +284,7 @@ namespace silent {
 
         // Re-validate cone on the JITTERED vector — jitter must not push the
         // final shot outside the safe deviation cone.
-        float finalAlign = Vector3::Dot(camFwd, finalDir);
+        float finalAlign = fabsf(Vector3::Dot(camFwd, finalDir));
         if (!std::isfinite(finalAlign) || finalAlign < MAX_AIM_COS) {
             finalDir = normDir; // fall back to clean vector (already cone-validated)
         }
