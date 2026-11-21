@@ -148,62 +148,6 @@ static void handleTouchScroll() {
     }
 }
 
-// ----------------------------------------------------------------------------
-// CUSTOM WIDGET: PILL TOGGLE SWITCH
-// Storage is atomic because the worker threads read the same flag this widget
-// writes. The widget edits a local copy and stores it back once per press.
-// ----------------------------------------------------------------------------
-static bool DrawToggleSwitch(const char* label, std::atomic<bool>* v, float row_height = 46.0f, float ui_scale = 1.0f) {
-    ImVec2 curPos = ImGui::GetCursorScreenPos();
-    float availW = ImGui::GetContentRegionAvail().x;
-
-    bool on = v->load(std::memory_order_relaxed);
-
-    char btn_id[128];
-    snprintf(btn_id, sizeof(btn_id), "##SwitchBtn_%s", label);
-
-    bool pressed = ImGui::InvisibleButton(btn_id, ImVec2(availW, row_height));
-    if (pressed) {
-        on = !on;
-        v->store(on, std::memory_order_relaxed);
-    }
-
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-
-    // 1. Label on the left, vertically centered
-    ImFont* font = g_UiFont ? g_UiFont : ImGui::GetFont();
-    float fontSize = 17.0f * ui_scale;
-    ImVec2 tsz = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, label);
-    ImVec2 label_pos(curPos.x + 8.0f * ui_scale, curPos.y + (row_height - tsz.y) * 0.5f);
-    dl->AddText(font, fontSize, label_pos, theme_orchid::ColTextWhite, label);
-
-    // 2. Capsule / Pill switch on the right
-    float switchW = 58.0f * ui_scale;
-    float switchH = 30.0f * ui_scale;
-    float switchRounding = switchH * 0.5f;
-    float switchPadRight = 8.0f * ui_scale;
-
-    ImVec2 sMin(curPos.x + availW - switchW - switchPadRight, curPos.y + (row_height - switchH) * 0.5f);
-    ImVec2 sMax(sMin.x + switchW, sMin.y + switchH);
-
-    // Track color (Solid Green if ON, Dark slate if OFF)
-    ImU32 trackCol = on ? theme_orchid::ColSwitchOnTrack : theme_orchid::ColSwitchOffTrack;
-    dl->AddRectFilled(sMin, sMax, trackCol, switchRounding);
-
-    // Subtle dark track border when OFF
-    if (!on) {
-        dl->AddRect(sMin, sMax, IM_COL32(60, 50, 75, 220), switchRounding, 0, 1.2f);
-    }
-
-    // Circular white knob / thumb
-    float knobRadius = switchRounding - 2.8f * ui_scale;
-    float knobX = on ? (sMax.x - switchRounding) : (sMin.x + switchRounding);
-    float knobY = sMin.y + switchRounding;
-
-    dl->AddCircleFilled(ImVec2(knobX, knobY), knobRadius, theme_orchid::ColSwitchThumb, 32);
-
-    return pressed;
-}
 
 // ----------------------------------------------------------------------------
 // CUSTOM WIDGET: SEGMENTED BUTTON ROW (DYNAMICALLY SCALED & RESPONSIVE)
@@ -669,7 +613,7 @@ void render() {
             if (ImGui::BeginChild("##ColLeftMisc", ImVec2(colW, contentH), true)) {
                 SectionHeader("SYSTEM CONTROLS", ui_scale);
 
-                DrawToggleSwitch("Master Switch", &cfg::master_enabled, 44.0f * ui_scale, ui_scale);
+                cfg::Checkbox("Master Switch", cfg::master_enabled);
                 ImGui::Dummy(ImVec2(0, 8 * ui_scale));
 
                 ImGui::TextDisabled("Kernel Mod Engine");

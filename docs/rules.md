@@ -164,8 +164,10 @@ This document establishes the mandatory design, architecture, and coding rules f
 
 ## 7. Menu Architecture & Single Master Switch Doctrine (একক মাস্টার বাটন নীতি)
 
-1. **Strictly One Master Switch Policy (একক মাস্টার বাটন আইন):**
-   - The global Master Switch (`DrawToggleSwitch("Master Switch", &cfg::master_enabled, ...)`) **MUST EXIST EXCLUSIVELY ON TAB 2 (SYSTEM CONTROLS)**.
+1. **Strictly One Master Checkbox Policy (একক মাস্টার টিকমার্ক বাটন আইন):**
+   - The global Master Switch (`cfg::Checkbox("Master Switch", cfg::master_enabled)`) **MUST BE A STANDARD TICKMARK CHECKBOX**, identical to all other feature toggles.
+   - **Sliding toggle switches / pill switches (`DrawToggleSwitch`) are strictly prohibited** anywhere in the menu.
+   - The master checkbox **MUST EXIST EXCLUSIVELY ON TAB 2 (SYSTEM CONTROLS)**. There must be exactly ONE master button across the entire menu.
    - It is **STRICTLY FORBIDDEN** to duplicate or place a Master Switch on Tab 0 (ESP Visuals), Tab 1 (Aimbot Engine), or any other tab.
    - When the user toggles the Master Switch on Tab 2:
      - `cfg::master_enabled = true` activates all features configured across Tab 0 and Tab 1.
