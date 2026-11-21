@@ -64,28 +64,28 @@ void load_pos() {
 // ----------------------------------------------------------------------------
 // CIRCULAR FLOATING LOGO DRAWING ('N' for NinMods Official Branding)
 // ----------------------------------------------------------------------------
-static void DrawCircularLogo(ImDrawList* dl, ImVec2 center, float radius) {
+static void DrawCircularLogo(ImDrawList* dl, ImVec2 center, float radius, float ui_scale) {
     ImU32 colPrimary = theme_orchid::ColPrimary;
-    ImU32 colDarkBg  = IM_COL32(18, 14, 26, 245);
+    ImU32 colDarkBg  = IM_COL32(18, 14, 26, 248);
     ImU32 colWhite   = IM_COL32(255, 255, 255, 255);
 
-    // 0. Outer Halo Glow
-    dl->AddCircle(center, radius + 2.0f, IM_COL32(230, 80, 180, 70), 64, 2.5f);
+    // 0. Outer Halo Glow (Electric Orchid soft glow)
+    dl->AddCircle(center, radius + 3.0f * ui_scale, IM_COL32(230, 80, 180, 75), 64, 3.0f * ui_scale);
 
     // 1. Base Dark Disc
     dl->AddCircleFilled(center, radius, colDarkBg, 64);
 
     // 2. Clean Solid Outline Border in Active Theme Accent
-    dl->AddCircle(center, radius, colPrimary, 64, 2.5f);
+    dl->AddCircle(center, radius, colPrimary, 64, 3.0f * ui_scale);
 
     // 3. Center "N" Letter with subtle drop shadow
-    ImFont* font = g_LogoFont ? g_LogoFont : ImGui::GetFont();
+    ImFont* font = g_LogoFont ? g_LogoFont : (g_BoldFont ? g_BoldFont : ImGui::GetFont());
     const char* txt = "N";
     float fontSize = radius * 1.15f;
     ImVec2 tsz = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, txt);
     ImVec2 txtPos = ImVec2(center.x - tsz.x * 0.5f, center.y - tsz.y * 0.5f);
 
-    dl->AddText(font, fontSize, ImVec2(txtPos.x + 1.2f, txtPos.y + 1.2f), IM_COL32(0, 0, 0, 180), txt);
+    dl->AddText(font, fontSize, ImVec2(txtPos.x + 1.5f * ui_scale, txtPos.y + 1.5f * ui_scale), IM_COL32(0, 0, 0, 200), txt);
     dl->AddText(font, fontSize, txtPos, colWhite, txt);
 }
 
@@ -96,9 +96,12 @@ void render(float realW, float realH, float ui_scale) {
     s_last_view_w = realW;
     s_last_view_h = realH;
 
-    const float logoRadius = 38.0f * ui_scale;
+    // Sized comfortably for touch: 52px base radius with 48px floor on low-res screens
+    const float logoRadius = std::max(48.0f, 52.0f * ui_scale);
     const float logoMargin = 16.0f * ui_scale;
     const float logoDiameter = logoRadius * 2.0f;
+    const float haloPad = 8.0f * ui_scale;
+    const float winSize = logoDiameter + haloPad * 2.0f;
 
     s_last_radius = logoRadius;
     s_last_margin = logoMargin;
@@ -116,10 +119,10 @@ void render(float realW, float realH, float ui_scale) {
     s_logo_pos.y = std::clamp(s_logo_pos.y, logoMargin, maxY);
 
     // Register the logo's touch zone as a circle matching the disc
-    Touch_AddUiCircle(s_logo_pos.x + logoRadius, s_logo_pos.y + logoRadius, logoRadius + 6.0f * ui_scale);
+    Touch_AddUiCircle(s_logo_pos.x + logoRadius, s_logo_pos.y + logoRadius, logoRadius + 8.0f * ui_scale);
 
-    ImGui::SetNextWindowPos(s_logo_pos, ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(logoDiameter, logoDiameter), ImGuiCond_Always);
+    ImGui::SetNextWindowPos(ImVec2(s_logo_pos.x - haloPad, s_logo_pos.y - haloPad), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(winSize, winSize), ImGuiCond_Always);
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
@@ -134,10 +137,10 @@ void render(float realW, float realH, float ui_scale) {
     if (ImGui::Begin("##NinmodsKernelPill", nullptr, logoFlags)) {
         ImDrawList* dl = ImGui::GetWindowDrawList();
         ImVec2 winP = ImGui::GetWindowPos();
-        ImVec2 center(winP.x + logoRadius, winP.y + logoRadius);
+        ImVec2 center(winP.x + haloPad + logoRadius, winP.y + haloPad + logoRadius);
 
         ImGui::SetCursorPos(ImVec2(0, 0));
-        ImGui::InvisibleButton("##LogoTouchZone", ImVec2(logoDiameter, logoDiameter));
+        ImGui::InvisibleButton("##LogoTouchZone", ImVec2(winSize, winSize));
 
         static ImVec2 s_click_down_pos(0, 0);
         static bool s_moved_drag = false;
@@ -151,7 +154,7 @@ void render(float realW, float realH, float ui_scale) {
         double cur_time = ImGui::GetTime();
 
         if (ImGui::IsItemActivated()) {
-            const float hitR = logoRadius + 6.0f * ui_scale;
+            const float hitR = logoRadius + 8.0f * ui_scale;
             float ddx = mousePos.x - center.x;
             float ddy = mousePos.y - center.y;
             s_was_activated = (ddx * ddx + ddy * ddy) <= (hitR * hitR);
@@ -190,19 +193,15 @@ void render(float realW, float realH, float ui_scale) {
             s_was_activated = false;
         }
 
-        DrawCircularLogo(dl, center, logoRadius);
+        DrawCircularLogo(dl, center, logoRadius, ui_scale);
 
         // Target / Game connection status dot
         bool connected = (proc::pid.load(std::memory_order_relaxed) > 0 && proc::lib.load(std::memory_order_relaxed) > 0);
         ImU32 stCol = connected ? IM_COL32(0, 240, 140, 255) : IM_COL32(255, 90, 90, 255);
-        // 0.68 on both axes is a 45-degree offset, so the true distance from
-        // the logo centre is 0.68 * radius * sqrt(2) = 0.96 * radius. The 6px
-        // halo then pushed the dot past the disc edge. 0.56 lands it at ~0.79r
-        // with room for the halo inside the border.
-        ImVec2 stDot(center.x + logoRadius * 0.56f, center.y - logoRadius * 0.56f);
-        dl->AddCircleFilled(stDot, 6.0f * ui_scale, (stCol & 0x00FFFFFF) | (90u << 24));
-        dl->AddCircleFilled(stDot, 4.0f * ui_scale, (stCol & 0x00FFFFFF) | (180u << 24));
-        dl->AddCircleFilled(stDot, 2.5f * ui_scale, stCol);
+        ImVec2 stDot(center.x + logoRadius * 0.58f, center.y - logoRadius * 0.58f);
+        dl->AddCircleFilled(stDot, 7.0f * ui_scale, (stCol & 0x00FFFFFF) | (80u << 24));
+        dl->AddCircleFilled(stDot, 4.5f * ui_scale, (stCol & 0x00FFFFFF) | (180u << 24));
+        dl->AddCircleFilled(stDot, 3.0f * ui_scale, stCol);
     }
     ImGui::End();
     ImGui::PopStyleVar(2);

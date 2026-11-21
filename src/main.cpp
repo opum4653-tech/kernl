@@ -79,11 +79,17 @@ static void LoadCustomFonts(ImGuiIO& io) {
     ImFontConfig cfg;
     cfg.FontDataOwnedByAtlas = false;
 
-    cfg.SizePixels = 22.0f;
-    io.Fonts->AddFontFromMemoryTTF((void*)inter_medium, sizeof(inter_medium), 22.0f, &cfg, io.Fonts->GetGlyphRangesCyrillic());
+    cfg.SizePixels = 18.0f;
+    g_UiFont = io.Fonts->AddFontFromMemoryTTF((void*)inter_medium, sizeof(inter_medium), 18.0f, &cfg, io.Fonts->GetGlyphRangesCyrillic());
 
     cfg.SizePixels = 25.0f;
     g_BoldFont = io.Fonts->AddFontFromMemoryTTF((void*)inter_bold, sizeof(inter_bold), 25.0f, &cfg, io.Fonts->GetGlyphRangesCyrillic());
+
+    cfg.SizePixels = 14.0f;
+    g_EspFont = io.Fonts->AddFontFromMemoryTTF((void*)inter_medium, sizeof(inter_medium), 14.0f, &cfg, io.Fonts->GetGlyphRangesCyrillic());
+
+    cfg.SizePixels = 64.0f;
+    g_LogoFont = io.Fonts->AddFontFromMemoryTTF((void*)inter_bold, sizeof(inter_bold), 64.0f, &cfg, io.Fonts->GetGlyphRangesCyrillic());
 
     io.Fonts->Build();
 }

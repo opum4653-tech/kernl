@@ -26,9 +26,10 @@ This document establishes the mandatory design, architecture, and coding rules f
 ## 2. Floating UI & Touch Target Invariants
 
 1. **Floating Logo Visibility & Sizing:**
-   - The floating circular 'N' logo must remain prominent and effortlessly touchable on high-DPI screens.
-   - Logo base radius must be maintained at **`38.0f * ui_scale`** (diameter ~76px).
-   - Never shrink the logo below `35.0f * ui_scale` on modern high-resolution displays.
+   - The floating circular 'N' logo must remain prominent and effortlessly touchable on all high-DPI and standard screens.
+   - Logo base radius is set to **`std::max(48.0f, 52.0f * ui_scale)`** (diameter ~104px at 1080p, minimum 96px).
+   - Window size has padding (`haloPad = 8.0f * ui_scale`) around the disc so outer halo glow renders unclipped.
+   - Dedicated 64px native atlas font (`g_LogoFont`) rasterizes the "N" letter crisply.
    - The logo incorporates:
      - Dark disc base (`IM_COL32(18, 14, 26, 245)`)
      - Electric Orchid outer border (`theme_orchid::ColPrimary`)
