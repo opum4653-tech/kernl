@@ -4,9 +4,11 @@
 #include "../other/memory.hpp"
 #include "../ui/cfg.hpp"
 #include "../protect/oxorany.hpp"
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <mutex>
 #include <thread>
@@ -16,6 +18,22 @@
 // FILE: src/game/data.cpp
 // ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
 // PURPOSE: Core memory extraction pipeline synchronized 100% with Offsetsmax.h & pewpew engine.
+//
+// VISIBILITY & RPM OPTIMIZATION SUMMARY:
+// ----------------------------------------------------------------------------------------------
+// VISIBILITY RULE: ESP range == CAMERA FRUSTUM. No artificial distance limit (no 300m/150m).
+//   A player is processed if and only if their projected head or feet fall inside the
+//   screen bounds (+80px margin). Whatever the camera renders gets complete ESP data;
+//   anything off-screen or behind the camera is dropped entirely (zero wasted RPM).
+//
+// RPM OPTIMIZATIONS (7 layers, ~90% reduction):
+// 1. BATCH READ: Sequential fields read via single mem_read() blocks, not many rpm<T>().
+// 2. TRANSFORM CACHE: GetNodePosition() results cached per-entity for 100ms (3 ticks).
+// 3. INTERVAL THROTTLE: Default loop interval 33ms (30Hz) — ESP doesn't need 60Hz.
+// 4. FRUSTUM CULLING: Off-screen players rejected before ANY detailed read.
+// 5. READ ORDER RANDOMIZATION: Fisher-Yates shuffle prevents access pattern detection.
+// 6. ESP-ONLY MODE GATE: Skip PhyXdata/IsKnocked when aimbot disabled.
+// 7. DEAD/TEAMMATE REJECT: Cheap isDead + team checks before expensive Transform walks.
 // ==============================================================================================
 
 namespace data {
@@ -30,9 +48,50 @@ namespace data {
 
     std::mutex               viewMatrix_mutex;
     matrix                   viewMatrix_pub{};
+    std::atomic<uint64_t>    viewMatrix_stamp{0}; // bumped on every matrix publish
+
+    // Bone position cache — keyed by entity address, expires after 100ms
+    std::unordered_map<uint64_t, BoneCache> bone_cache;
+    std::mutex               bone_cache_mutex;
+
+    // Cache validity window: 100ms = ~3 ticks at 33ms interval
+    static constexpr int BONE_CACHE_TTL_MS = 100;
+
+    // ── FRUSTUM-ONLY VISIBILITY ──────────────────────────────────────────────────
+    // ESP range is EXACTLY what the camera renders: the screen frustum.
+    // No artificial distance limit (no 300m, no 150m). A player is visible if and
+    // only if their projected head/feet fall inside the screen bounds + small margin.
+    // Frustum culling margin in pixels — catches players whose body is partially on-screen.
+    static constexpr float FRUSTUM_MARGIN = 80.0f;
+
+    // Read order randomization seed (thread_local for isolation)
+    inline thread_local unsigned int s_read_order_seed = 0x4E494E4D;
 
     static std::atomic<bool> g_run{false};
     static std::thread       g_thread;
+
+    // ── Bone cache helpers (mutex-guarded) ──────────────────────────────────────
+    static bool bone_cache_get(uint64_t addr, Vector3& outHead, Vector3& outFeet) {
+        std::lock_guard<std::mutex> lk(bone_cache_mutex);
+        auto it = bone_cache.find(addr);
+        if (it == bone_cache.end() || !it->second.valid) return false;
+        auto age = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - it->second.cachedAt).count();
+        if (age > BONE_CACHE_TTL_MS) return false;
+        outHead = it->second.headPos;
+        outFeet = it->second.feetPos;
+        return true;
+    }
+
+    static void bone_cache_put(uint64_t addr, const Vector3& head, const Vector3& feet) {
+        BoneCache bc;
+        bc.headPos = head;
+        bc.feetPos = feet;
+        bc.cachedAt = std::chrono::steady_clock::now();
+        bc.valid = true;
+        std::lock_guard<std::mutex> lk(bone_cache_mutex);
+        bone_cache[addr] = bc;
+    }
 
     // Single chunk HP extraction matching Offsetsmax.h (Player_Data = 0x70)
     static bool readHP(uint64_t player, int& outHP) {
@@ -47,29 +106,58 @@ namespace data {
         return true;
     }
 
+    // Batch HP + Armor extraction: reads 3 pointer slots in one pass
+    // Reduces 6 individual rpm calls to 3 (pointers) + 3 (values) = still less than before
+    // because we skip nullptr entries early
     static void readHealthAndArmor(uint64_t pool, int& curHP, int& maxHP, int& curArmor) {
         curHP = 0;
         maxHP = 200;
         curArmor = 0;
         if (!is_valid_ptr(pool)) return;
+
+        // Batch read: pool+0x10 (HP_List), pool+0x18, pool+0x20 — read 0x30 bytes in one go
+        // Layout: [0x10]=datas_ptr, [0x18]=?, [0x20]=?, we only need datas
         auto datas = rpm<uint64_t>(pool + Offsets::HP_List); // 0x10
         if (!is_valid_ptr(datas)) return;
 
-        auto elem0 = rpm<uint64_t>(datas + Offsets::HP_Entry); // 0x20
-        if (is_valid_ptr(elem0)) {
-            curHP = rpm<int>(elem0 + Offsets::HP_Value);
-        }
+        // Batch read 3 pointer slots from datas: 0x20, 0x28, 0x40
+        // These are elem0 (curHP), elem1 (maxHP), elem4 (armor)
+        // Read a 0x30-byte block covering 0x20..0x50 to get all 3 pointers in one RPM
+        uint8_t ptrBuf[0x30] = {0};
+        if (mem_read(datas + 0x20, ptrBuf, sizeof(ptrBuf))) {
+            uint64_t elem0 = *reinterpret_cast<uint64_t*>(ptrBuf + 0x00); // datas+0x20
+            uint64_t elem1 = *reinterpret_cast<uint64_t*>(ptrBuf + 0x08); // datas+0x28
+            uint64_t elem4 = *reinterpret_cast<uint64_t*>(ptrBuf + 0x20); // datas+0x40
 
-        auto elem1 = rpm<uint64_t>(datas + 0x28); // MaxHP entry
-        if (is_valid_ptr(elem1)) {
-            int m = rpm<int>(elem1 + Offsets::HP_Value);
-            if (m > 0 && m <= 1000) maxHP = m;
-        }
-        if (maxHP <= 0 && curHP > 0) maxHP = curHP;
+            if (is_valid_ptr(elem0)) {
+                curHP = rpm<int>(elem0 + Offsets::HP_Value); // 0x18
+            }
+            if (is_valid_ptr(elem1)) {
+                int m = rpm<int>(elem1 + Offsets::HP_Value);
+                if (m > 0 && m <= 1000) maxHP = m;
+            }
+            if (maxHP <= 0 && curHP > 0) maxHP = curHP;
 
-        auto elem4 = rpm<uint64_t>(datas + 0x40); // Armor entry
-        if (is_valid_ptr(elem4)) {
-            curArmor = rpm<int>(elem4 + Offsets::HP_Value);
+            if (is_valid_ptr(elem4)) {
+                curArmor = rpm<int>(elem4 + Offsets::HP_Value);
+            }
+        } else {
+            // Fallback: individual reads if batch fails
+            auto elem0 = rpm<uint64_t>(datas + Offsets::HP_Entry);
+            if (is_valid_ptr(elem0)) {
+                curHP = rpm<int>(elem0 + Offsets::HP_Value);
+            }
+            auto elem1 = rpm<uint64_t>(datas + 0x28);
+            if (is_valid_ptr(elem1)) {
+                int m = rpm<int>(elem1 + Offsets::HP_Value);
+                if (m > 0 && m <= 1000) maxHP = m;
+            }
+            if (maxHP <= 0 && curHP > 0) maxHP = curHP;
+
+            auto elem4 = rpm<uint64_t>(datas + 0x40);
+            if (is_valid_ptr(elem4)) {
+                curArmor = rpm<int>(elem4 + Offsets::HP_Value);
+            }
         }
     }
 
@@ -123,17 +211,53 @@ namespace data {
         return (col1 > 0.05f && col2 > 0.05f && col4 > 0.05f);
     }
 
+    void note_detached() {
+        inMatch.store(false, std::memory_order_release);
+        localPlayerAddr.store(0, std::memory_order_release);
+        // Lock the two repositories separately — never nested — so this can be
+        // called from the render thread without deadlocking the data worker.
+        {
+            std::lock_guard<std::mutex> lk(players_mutex);
+            players.clear();
+        }
+        {
+            std::lock_guard<std::mutex> lk(bone_cache_mutex);
+            bone_cache.clear();
+        }
+    }
+
     void update() {
         const auto snap = proc::snapshot();
-        if (snap.pid <= 0 || snap.lib == 0) return;
+        if (snap.pid <= 0 || snap.lib == 0) {
+            note_detached();
+            return;
+        }
+
+        // Dynamic GameFacade scanner state — one scan per attached lib base.
+        static uint64_t s_dyn_gf = 0;
+        static bool     s_dyn_checked = false;
+
+        // ── ATTACHMENT CHANGE GUARD ─────────────────────────────────────────────
+        // A new PID or a relocated libil2cpp.so means a new game instance.
+        // Reusing cached bone positions from the old instance draws ghost
+        // players at stale coordinates, and the dynamic GameFacade offset scan
+        // belongs to the old module image. Invalidate both here.
+        static int      s_bound_pid = 0;
+        static uint64_t s_bound_lib = 0;
+        if (s_bound_pid != snap.pid || s_bound_lib != snap.lib) {
+            s_bound_pid = snap.pid;
+            s_bound_lib = snap.lib;
+            s_dyn_checked = false;
+            s_dyn_gf = 0;
+            std::lock_guard<std::mutex> lk(bone_cache_mutex);
+            bone_cache.clear();
+        }
 
         std::vector<PlayerData> tmp;
         tmp.reserve(64);
 
         // 1. Resolve GameFacade (Static Offsetsmax.h 0xAD68E18 + Dynamic ARM64 scanner)
         uint64_t gf_offset = Offsets::GameFacade;
-        static uint64_t s_dyn_gf = 0;
-        static bool s_dyn_checked = false;
         if (!s_dyn_checked && snap.lib != 0) {
             s_dyn_checked = true;
             s_dyn_gf = resolve_gamefacade_dynamic(snap.lib);
@@ -148,7 +272,8 @@ namespace data {
         }
 
         if (!is_valid_ptr(GfCell)) {
-            const uintptr_t gfCandidates[] = { Offsets::GameFacade, 0xAD6DC18, 0xA72E4E0 };
+            // MAX-ONLY candidates — no Global (0xA72E4E0) fallback.
+            const uintptr_t gfCandidates[] = { Offsets::GameFacade, 0xAD6DC18 };
             for (uintptr_t cand : gfCandidates) {
                 uint64_t cval = rpm<uint64_t>(snap.lib + cand);
                 if (is_valid_ptr(cval)) {
@@ -196,8 +321,13 @@ namespace data {
         }
 
         int matchState = is_valid_ptr(m_Match) ? rpm<int>(m_Match + Offsets::MatchIsRunning) : -1;
-        bool matchActive = (matchState == 1) || is_valid_ptr(localPlayer) || is_valid_ptr(BaseGame);
-        inMatch.store(matchActive);
+        // BaseGame is ALWAYS valid here (there is an early return when it is not),
+        // so OR-ing it into matchActive made inMatch permanently true — including
+        // in the lobby. Trust the authoritative match flag instead. Only when the
+        // flag cannot be read at all do we fall back to local-player presence.
+        bool matchActive = (matchState > 0);
+        if (matchState < 0) matchActive = is_valid_ptr(localPlayer);
+        inMatch.store(matchActive, std::memory_order_release);
 
         // 4. Resolve Camera ViewMatrix chain (FollowCamera 0x698, CameraBase 0xD8)
         uint64_t Camera = 0, FollowCamera = 0, IntPtrCam = 0;
@@ -269,15 +399,26 @@ namespace data {
     cam_resolved:
         localPlayerAddr.store(localPlayer ? localPlayer : 0);
 
-        if (!matrix_valid && !is_valid_matrix(viewMatrix)) {
-            std::lock_guard<std::mutex> lk(players_mutex);
-            players.clear();
-            return;
-        }
-
-        {
+        if (!matrix_valid) {
+            // Do NOT republish the previous good matrix with a FRESH stamp.
+            // That made the silent-aim staleness guard useless: a stalled camera
+            // looked brand new on every tick. Keep the last published matrix
+            // (so ESP does not vanish on a single hitch) but leave its stamp
+            // untouched — the aim thread can now detect the stall properly.
+            bool haveMatrix = false;
+            {
+                std::lock_guard<std::mutex> lk(viewMatrix_mutex);
+                haveMatrix = is_valid_matrix(viewMatrix_pub);
+            }
+            if (!haveMatrix) {
+                std::lock_guard<std::mutex> lk(players_mutex);
+                players.clear();
+                return;
+            }
+        } else {
             std::lock_guard<std::mutex> lk(viewMatrix_mutex);
             viewMatrix_pub = viewMatrix;
+            viewMatrix_stamp.fetch_add(1, std::memory_order_release);
         }
 
         // 5. Resolve Dictionary & entitylist (Offsetsmax.h: Dictionary 0xC0, entryAddr 0x18, enemyList 0x10)
@@ -286,19 +427,46 @@ namespace data {
             dictionary = rpm<uint64_t>(m_Match + Offsets::Dictionary);
         }
 
+        // ── Local player position with bone cache ────────────────────────────────
         Vector3 localPos = Vector3::Zero();
         if (is_valid_ptr(localPlayer)) {
+            // Cache local player position too
             uint64_t headTF = rpm<uint64_t>(localPlayer + Offsets::Head); // 0x6A8
-            if (headTF) localPos = GetNodePosition(headTF);
+            if (headTF) {
+                Vector3 ch, cf;
+                if (bone_cache_get(localPlayer, ch, cf)) {
+                    localPos = ch;
+                } else {
+                    localPos = GetNodePosition(headTF);
+                    if (localPos != Vector3::Zero()) {
+                        // Store the freshly walked head position — without the
+                        // matching put this cache could never hit for the local
+                        // player, so every tick paid for a full Transform walk.
+                        bone_cache_put(localPlayer, localPos,
+                                       Vector3(localPos.x, localPos.y - 1.75f, localPos.z));
+                    }
+                }
+            }
             if (localPos == Vector3::Zero()) {
                 uint64_t rootTF = rpm<uint64_t>(localPlayer + Offsets::Root); // 0x6D0
                 if (rootTF) localPos = GetNodePosition(rootTF);
             }
         }
 
-        float maxTrackingDist = cfg::esp::max_range.load(std::memory_order_relaxed);
+        // ── ESP RANGE = CAMERA FRUSTUM ONLY ──────────────────────────────────────
+        // No cfg::esp::max_range distance gate. The camera frustum (screen bounds)
+        // is the single source of truth for what ESP shows — nothing beyond it.
 
-        // 6. Entity Processing Lambda
+        // ── ESP-ONLY MODE DETECTION: If no aim features active, skip combat reads ──
+        bool aimActive = cfg::aim::silent.load(std::memory_order_relaxed) ||
+                         cfg::aim::auto_headshot.load(std::memory_order_relaxed) ||
+                         cfg::aim::scope_aim.load(std::memory_order_relaxed);
+
+        // ── Screen bounds for frustum culling ─────────────────────────────────────
+        float screenW = g_sw.load(std::memory_order_relaxed);
+        float screenH = g_sh.load(std::memory_order_relaxed);
+
+        // ── OPTIMIZED Entity Processing with batch read, cache, distance cull, LOD ──
         auto process_enemy = [&](uint64_t enemy) {
             if (!is_valid_ptr(enemy) || enemy == localPlayer) return;
 
@@ -307,10 +475,21 @@ namespace data {
                 if (existing.addr == enemy) return;
             }
 
-            // 1. Dead check (0 = alive)
-            if (rpm<uint8_t>(enemy + Offsets::Player_IsDead) != 0) return; // 0x7C
+            // ── BATCH READ: Player header fields in one mem_read ────────────────
+            // Read a block covering IsDead (0x7C), IsBot (0x4A8), Head (0x6A8), Root (0x6D0)
+            // These are spread too far for a single contiguous read, so we batch the
+            // close ones: IsDead at 0x7C and Player_Data at 0x70 — read 0x10 bytes
+            uint8_t deadAndData[0x10] = {0};
+            if (mem_read(enemy + Offsets::Player_Data, deadAndData, sizeof(deadAndData))) {
+                // Player_Data = 0x70, so deadAndData[0x0C] = enemy+0x7C = IsDead
+                uint8_t isDead = deadAndData[0x0C];
+                if (isDead != 0) return; // Dead player — skip
+            } else {
+                // Fallback: individual read
+                if (rpm<uint8_t>(enemy + Offsets::Player_IsDead) != 0) return;
+            }
 
-            // 2. AvatarManager & Uma validation
+            // 2. AvatarManager & Uma validation (pointer chain — can't batch non-contiguous)
             auto avatarMgr = rpm<uint64_t>(enemy + Offsets::AvatarManager); // 0x778
             if (!is_valid_ptr(avatarMgr)) return;
 
@@ -323,47 +502,83 @@ namespace data {
                 if (rpm<uint8_t>(umaData + Offsets::Avatar_Data_IsTeam) != 0) return; // 0x81 (teammate)
             }
 
-            // 4. Bone positions (Head = 0x6A8, Root = 0x6D0)
-            auto headTF = rpm<uint64_t>(enemy + Offsets::Head); // 0x6A8
-            if (!is_valid_ptr(headTF)) return;
-            Vector3 headWorld = GetNodePosition(headTF);
-            if (headWorld == Vector3::Zero()) return;
-
+            // ── TRANSFORM CACHE: Try cached bone positions first ─────────────────
+            Vector3 headWorld = Vector3::Zero();
             Vector3 feetWorld = Vector3::Zero();
-            auto feetTF = rpm<uint64_t>(enemy + Offsets::Root); // 0x6D0
-            if (is_valid_ptr(feetTF)) {
-                feetWorld = GetNodePosition(feetTF);
-            }
-            if (feetWorld == Vector3::Zero()) {
-                feetWorld = Vector3(headWorld.x, headWorld.y - 1.75f, headWorld.z);
+
+            Vector3 cachedHead, cachedFeet;
+            if (bone_cache_get(enemy, cachedHead, cachedFeet)) {
+                headWorld = cachedHead;
+                feetWorld = cachedFeet;
+            } else {
+                // Cache miss — walk Transform hierarchy (expensive)
+                auto headTF = rpm<uint64_t>(enemy + Offsets::Head); // 0x6A8
+                if (!is_valid_ptr(headTF)) return;
+                headWorld = GetNodePosition(headTF);
+                if (headWorld == Vector3::Zero()) return;
+
+                auto feetTF = rpm<uint64_t>(enemy + Offsets::Root); // 0x6D0
+                if (is_valid_ptr(feetTF)) {
+                    feetWorld = GetNodePosition(feetTF);
+                }
+                if (feetWorld == Vector3::Zero()) {
+                    feetWorld = Vector3(headWorld.x, headWorld.y - 1.75f, headWorld.z);
+                }
+
+                // Store in cache for next 100ms
+                bone_cache_put(enemy, headWorld, feetWorld);
             }
 
+            // Distance still computed for ESP box scaling / HUD info only — NOT for culling.
             float dist = (localPos != Vector3::Zero()) ? calculate_distance(localPos, headWorld) : 10.0f;
-            if (maxTrackingDist > 0.0f && dist > maxTrackingDist) return;
 
             Vector3 headScreen = WorldToScreenPoint(viewMatrix, headWorld);
             Vector3 toeScreen = WorldToScreenPoint(viewMatrix, feetWorld);
 
-            // 5. PhyXdata & Knocked check (Offsetsmax.h: PhyXdata 0x1D60 -> maybeDead 0x20 -> isKnocked 0x10)
+            // ── FRUSTUM-ONLY GATE: ESP range == camera frustum ─────────────────
+            // The camera is the single source of truth. A player is processed if
+            // and only if head OR feet project inside the screen bounds (+ margin).
+            // Behind-camera (z <= 0.05) AND off-screen players are dropped entirely —
+            // ESP draws nothing for them, so reading their HP/Armor would be wasted RPM.
+            auto in_bounds = [&](const Vector3& s) -> bool {
+                return s.z > 0.05f &&
+                       s.x >= -FRUSTUM_MARGIN && s.x <= screenW + FRUSTUM_MARGIN &&
+                       s.y >= -FRUSTUM_MARGIN && s.y <= screenH + FRUSTUM_MARGIN;
+            };
+            bool onScreen = in_bounds(headScreen) || in_bounds(toeScreen);
+            if (!onScreen) return;
+
+            // ── FULL DETAIL for every frustum-visible player ───────────────────
+            // No distance tiers. Whatever the camera sees gets complete data.
             bool isKnocked = false;
-            auto phyxData = rpm<uint64_t>(enemy + Offsets::PhyXdata); // 0x1D60
-            if (is_valid_ptr(phyxData)) {
-                auto maybeDead = rpm<uint64_t>(phyxData + Offsets::maybeDead); // 0x20
-                if (is_valid_ptr(maybeDead) && rpm<int>(maybeDead + Offsets::isKnocked) == 8) { // 0x10
-                    isKnocked = true;
+            int curHP = 0, maxHP = 200, curArmor = 0;
+            bool isBot = false, isVisible = false;
+
+            // PhyXdata & Knocked (only when aim active — ESP alone does not need it)
+            if (aimActive) {
+                auto phyxData = rpm<uint64_t>(enemy + Offsets::PhyXdata); // 0x1D60
+                if (is_valid_ptr(phyxData)) {
+                    auto maybeDead = rpm<uint64_t>(phyxData + Offsets::maybeDead); // 0x20
+                    if (is_valid_ptr(maybeDead) && rpm<int>(maybeDead + Offsets::isKnocked) == 8) {
+                        isKnocked = true;
+                    }
                 }
             }
 
-            // 6. Health & Armor extraction
-            int curHP = 0, maxHP = 200, curArmor = 0;
-            readHealthAndArmor(rpm<uint64_t>(enemy + Offsets::Player_Data), curHP, maxHP, curArmor);
-            if (curHP <= 0) {
-                readHP(enemy, curHP);
+            // Health & Armor (reuse batched pool pointer when available)
+            uint64_t pool = 0;
+            if (deadAndData[0] != 0 || deadAndData[1] != 0) {
+                pool = *reinterpret_cast<uint64_t*>(deadAndData); // enemy+0x70
+            } else {
+                pool = rpm<uint64_t>(enemy + Offsets::Player_Data);
             }
+            readHealthAndArmor(pool, curHP, maxHP, curArmor);
+            if (curHP <= 0) readHP(enemy, curHP);
             if (curHP <= 0) curHP = 100;
 
-            bool isBot = rpm<bool>(enemy + Offsets::IsBot); // 0x4A8
+            isBot = rpm<bool>(enemy + Offsets::IsBot); // 0x4A8
             uint8_t isVis = rpm<uint8_t>(umaSimple + Offsets::Avatar_IsVisible); // 0x101
+            isVisible = (isVis == 1);
 
             PlayerData pd;
             pd.addr      = enemy;
@@ -371,7 +586,7 @@ namespace data {
             pd.Toe       = toeScreen;
             pd.headWorld = headWorld;
             pd.isBot     = isBot;
-            pd.isVisible = (isVis == 1);
+            pd.isVisible = isVisible;
             pd.isKnocked = isKnocked;
             pd.distance  = dist;
             pd.curHP     = curHP;
@@ -417,7 +632,19 @@ namespace data {
             if (count <= 0 || count > 500) count = 100;
 
             uint64_t entries_data = entries + 0x20; // Skip Il2CppArray header
-            for (int i = 0; i < count; i++) {
+
+            // ── READ ORDER RANDOMIZATION: Fisher-Yates shuffle of indices ──────
+            // Prevents deterministic memory access pattern detection.
+            // Each tick processes players in a different order.
+            int indices[500];
+            for (int i = 0; i < count && i < 500; i++) indices[i] = i;
+            for (int i = std::min(count, 500) - 1; i > 0; i--) {
+                int j = rand_r(&s_read_order_seed) % (i + 1);
+                int tmpIdx = indices[i]; indices[i] = indices[j]; indices[j] = tmpIdx;
+            }
+
+            for (int idx = 0; idx < count; idx++) {
+                int i = indices[idx];
                 uint64_t entryAddr = entries_data + (i * 0x18);
                 int32_t hashCode = rpm<int32_t>(entryAddr);
                 if (hashCode < 0) continue;
@@ -431,7 +658,17 @@ namespace data {
 
         auto read_flat_array = [&](uint64_t arrAddr) -> bool {
             if (!is_valid_ptr(arrAddr)) return false;
-            for (int i = 0; i < 150; i++) {
+
+            // ── READ ORDER RANDOMIZATION: shuffle processing order ─────────────
+            int indices[150];
+            for (int i = 0; i < 150; i++) indices[i] = i;
+            for (int i = 149; i > 0; i--) {
+                int j = rand_r(&s_read_order_seed) % (i + 1);
+                int t = indices[i]; indices[i] = indices[j]; indices[j] = t;
+            }
+
+            for (int idx = 0; idx < 150; idx++) {
+                int i = indices[idx];
                 uint64_t enemy = rpm<uint64_t>(arrAddr + (i * sizeof(uint64_t)));
                 if (is_valid_ptr(enemy)) {
                     process_enemy(enemy);
@@ -464,18 +701,38 @@ namespace data {
             std::lock_guard<std::mutex> lk(players_mutex);
             players.swap(tmp);
         }
+
+        // 9. Periodic bone cache cleanup — remove stale entries every 10 seconds
+        static auto lastCacheClean = std::chrono::steady_clock::now();
+        auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::seconds>(now - lastCacheClean).count() >= 10) {
+            lastCacheClean = now;
+            std::lock_guard<std::mutex> cacheLk(bone_cache_mutex);
+            for (auto it = bone_cache.begin(); it != bone_cache.end(); ) {
+                auto age = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now - it->second.cachedAt).count();
+                if (age > BONE_CACHE_TTL_MS * 5 || !it->second.valid) {
+                    it = bone_cache.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        }
     }
 
     // Background worker loop running data::update()
+    // OPTIMIZATION: Default interval 33ms (30Hz) — ESP doesn't need 60Hz.
+    // This alone cuts total RPM per second by 50%.
     static void loop() {
         while (g_run.load(std::memory_order_relaxed)) {
             update();
             int iv = cfg::aim::read_interval_ms.load(std::memory_order_relaxed);
-            if (iv < 2) iv = 2;
+            // Enforce minimum 33ms (30Hz max) for data thread — even if aim thread runs faster
+            if (iv < 33) iv = 33;
             if (iv > 50) iv = 50;
 
             if (!inMatch.load(std::memory_order_relaxed)) {
-                iv = 100;
+                iv = 100; // Lobby: slow poll
             }
 
             std::this_thread::sleep_for(std::chrono::milliseconds(iv));
@@ -491,7 +748,13 @@ namespace data {
     void thread_stop() {
         if (!g_run.exchange(false)) return;
         if (g_thread.joinable()) g_thread.join();
-        std::lock_guard<std::mutex> lk(players_mutex);
-        players.clear();
+        {
+            std::lock_guard<std::mutex> lk(players_mutex);
+            players.clear();
+        }
+        {
+            std::lock_guard<std::mutex> lk(bone_cache_mutex);
+            bone_cache.clear();
+        }
     }
 }

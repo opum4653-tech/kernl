@@ -19,7 +19,7 @@ namespace Offsets {
         constexpr uintptr_t GameFacade           = Offsets::GameFacade;
         constexpr uintptr_t GameFacade_TypeInfo  = Offsets::GameFacade_TypeInfo;
         constexpr uintptr_t GameFacade_Alt       = 0xAD6DC18;
-        constexpr uintptr_t GameFacade_Global    = 0xA72E4E0;
+        // GameFacade_Global (0xA72E4E0) removed — MAX-ONLY build, Global unsupported.
         constexpr uintptr_t GameFacade_P2        = Offsets::Staticfield;
         constexpr uintptr_t Staticfield          = Offsets::Staticfield;
         constexpr uintptr_t StaticGameFacade     = Offsets::StaticGameFacade;

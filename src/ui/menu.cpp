@@ -553,9 +553,9 @@ void render() {
             if (ImGui::BeginChild("##ColRightESP", ImVec2(colW, contentH), true)) {
                 SectionHeader("SETTINGS & STYLING", ui_scale);
 
-                ImGui::SetNextItemWidth(-1);
-                cfg::SliderFloat("##MaxRange", cfg::esp::max_range, 0.0f, 500.0f, "%.0f m");
-                ImGui::TextDisabled("Max Render Distance (0m = Unlimited)");
+                ImGui::TextDisabled("Range: camera view (frustum-only)");
+                ImGui::TextWrapped("ESP shows only players visible on screen. "
+                                   "No distance cap — if you can see it, ESP marks it.");
 
                 handleTouchScroll();
             }
@@ -579,10 +579,15 @@ void render() {
                 cfg::SliderInt("##HeadshotRate", cfg::aim::headshot_rate, 0, 100, "%d%% Headshot Rate");
 
                 int hsRate = cfg::aim::headshot_rate.load(std::memory_order_relaxed);
-                if (hsRate > 70) {
+                bool hsEnabled = cfg::aim::auto_headshot.load(std::memory_order_relaxed);
+                if (!hsEnabled) {
+                    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "OFF - enable Auto Headshot to use rate");
+                } else if (hsRate > 70) {
                     ImGui::TextColored(ImVec4(1.0f, 0.25f, 0.25f, 1.0f), "[RISK] >70%% Ban Risk (ML Outlier)");
+                    ImGui::TextDisabled("Effective rate drops with distance");
                 } else {
                     ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.4f, 1.0f), "[SAFE] %d%% Natural Player Rate", hsRate);
+                    ImGui::TextDisabled("Effective rate drops with distance");
                 }
 
                 handleTouchScroll();
@@ -679,7 +684,7 @@ void render() {
                     }
                 };
 
-                const char* dName = driver ? driver->get_driver_name() : "ARMED";
+                const char* dName = proc::driver_status().name;
 
                 char pidStr[32];
                 if (proc::pid.load(std::memory_order_relaxed) > 0) {

@@ -16,7 +16,7 @@
 //
 // 2. READERS (Lock-Free Cross-Thread Consumers):
 //    - Visuals (ESP Subsystem):
-//      * src/func/esp/esp.hpp    -> Reads box, armor, tracer, bot_tag, max_range.
+//      * src/func/esp/esp.hpp    -> Reads box, armor, tracer, bot_tag (frustum-only range).
 //      * src/func/esp/health.hpp -> Reads cfg::esp::armor.
 //      * src/func/esp/info.hpp   -> Reads cfg::esp::bot_tag.
 //      * src/func/esp/line.hpp   -> Reads cfg::esp::tracer, tracer_pos, tracer_thickness.
@@ -26,7 +26,7 @@
 //      * src/func/aim/silent.hpp -> Reads head_bias, silent, auto_headshot, scope_aim.
 //      * src/func/aim/fov.hpp    -> Reads show_fov, get_fov_radius().
 //    - Memory Scraper Engine:
-//      * src/game/data.cpp       -> Reads any_feature_enabled() and cfg::esp::max_range.
+//      * src/game/data.cpp       -> Reads aim toggles for the ESP-only gate; frustum defines range.
 // ==============================================================================================
 
 namespace cfg {
@@ -41,7 +41,8 @@ namespace esp {
     inline std::atomic<bool>  armor            {false}; // Feature 3: ESP Armor Bar
     inline std::atomic<bool>  tracer           {false}; // Feature 4: ESP Laser Line
     inline std::atomic<bool>  bot_tag          {false}; // Feature 5: ESP Bot Tag
-    inline std::atomic<float> max_range        {300.0f}; // 300.0f default: standard render range slider baseline
+    // FRUSTUM-ONLY RANGE: ESP visibility is governed purely by what the camera renders.
+    // No artificial max_range slider — the camera frustum (screen bounds) is the range.
 
     // Visual geometry and style parameters
     inline std::atomic<int>   box_type         {0};     // 0 = Default
@@ -61,8 +62,8 @@ namespace aim {
     inline std::atomic<int>   read_interval_ms {16};    // Natural game frame polling cadence (16ms = ~60Hz baseline)
     inline std::atomic<bool>  silent           {false}; // Feature 8: Aim Silent
     inline std::atomic<bool>  scope_aim        {false}; // Feature 9: Scope Aim (Instant Head)
-    inline std::atomic<bool>  auto_headshot    {false}; // Feature 10: Auto Headshot
-    inline std::atomic<int>   headshot_rate    {50};    // Headshot Rate: 0% to 100% (>70% High Risk)
+    inline std::atomic<bool>  auto_headshot    {false}; // Feature 10: Auto Headshot = RATE CONTROLLER enable (no 100% force)
+    inline std::atomic<int>   headshot_rate    {50};    // Base headshot rate 0-100%. Effective rate decays with distance (>70% High Risk)
     inline std::atomic<bool>  ignore_knocked   {false}; // Feature 11: Ignore Knocked
     inline std::atomic<bool>  show_fov         {false}; // Feature 12: Draw FOV Circle
     inline std::atomic<float> head_bias        {0.00f}; // Feature 13: Elevation Bias (0.00 default)

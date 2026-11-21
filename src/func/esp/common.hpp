@@ -25,7 +25,8 @@
 //    - src/func/esp/esp.hpp -> func::esp::draw():
 //      * Calls is_active() to verify if any visual switch is enabled.
 //      * Calls computePlayerBox() to calculate 2D screen bounding rectangles.
-//      * Calls fadeDist() to apply soft distance-based alpha attenuation.
+//      * Uses ok() for frustum screen-bounds guard (range = camera view only).
+//    - No distance limit or distance fade exists anywhere — frustum is the only range.
 //    - src/func/esp/box.hpp, line.hpp, health.hpp, info.hpp:
 //      * Uses color manipulation helpers (toU32, withAlpha, armorColor).
 //
@@ -60,12 +61,8 @@ namespace func::esp {
         return (c & 0x00FFFFFF) | ((ImU32)(uint32_t)a << 24);
     }
 
-    // Applies linear distance attenuation to fade visuals softly as enemies approach max range
-    inline ImU32 fadeDist(ImU32 base, float dist, float maxRange) {
-        if (maxRange <= 0.0f) return base;
-        float t = ImClamp(1.f - dist / maxRange, 0.35f, 1.f);
-        return withAlpha(base, t);
-    }
+    // No distance-based fade — ESP range is the camera frustum only.
+    // (fadeDist removed: distance is never used to limit or attenuate ESP visuals.)
 
     // Computes dynamic health gradient: Green (100%) -> Yellow (50%) -> Red (0%)
     inline ImU32 hpColor(float t) {

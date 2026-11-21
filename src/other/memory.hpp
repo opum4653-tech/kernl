@@ -4,6 +4,7 @@
 #include <cstring>
 #include <cstdio>
 #include <atomic>
+#include <mutex>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/uio.h>
@@ -20,21 +21,104 @@
 namespace proc {
     inline std::atomic<int>      pid{-1};
     inline std::atomic<uint64_t> lib{0};
-    inline std::atomic<bool>     is_game_max{false}; // True if Free Fire Max, false if Free Fire Global
     inline std::atomic<bool>     wpm_allowed{false}; // Pure ESP Zero-WPM hardware write protection gate
+    // Seqlock. Odd epoch means a publish is in progress. snapshot() retries until it
+    // observes the same even epoch before and after the two loads.
+    inline std::atomic<uint32_t> epoch{0};
+
+    // MAX-ONLY BUILD: targets com.dts.freefiremax exclusively.
+    // Free Fire Global (com.dts.freefireth) is intentionally not supported.
 
     struct Snapshot {
         int      pid;    // Target process ID
         uint64_t lib;    // Target libil2cpp.so base virtual address
-        bool     is_max; // True if Free Fire Max
     };
 
-    // Lock-free atomic snapshot returning coherent pid and libBase
+    // Publishes pid and lib base as one atomic snapshot.
+    inline void publish_attachment(int new_pid, uint64_t new_lib) {
+        epoch.fetch_add(1, std::memory_order_release);
+        pid.store(new_pid, std::memory_order_relaxed);
+        lib.store(new_lib, std::memory_order_relaxed);
+        epoch.fetch_add(1, std::memory_order_release);
+    }
+
     inline Snapshot snapshot() {
         Snapshot s;
-        s.pid = pid.load(std::memory_order_acquire);
-        s.lib = lib.load(std::memory_order_acquire);
-        s.is_max = is_game_max.load(std::memory_order_acquire);
+        uint32_t e1 = 0;
+        uint32_t e2 = 1;
+        do {
+            e1 = epoch.load(std::memory_order_acquire);
+            if (e1 & 1u) continue;
+            s.pid = pid.load(std::memory_order_relaxed);
+            s.lib = lib.load(std::memory_order_relaxed);
+            e2 = epoch.load(std::memory_order_acquire);
+        } while ((e1 & 1u) || e1 != e2);
+        return s;
+    }
+
+    // ── Driver singleton serialization ──────────────────────────────────────────
+    // get_driver() is one process-wide c_driver instance shared by the data
+    // worker, the aim worker and the render/watchdog thread. Its PID binding,
+    // device handles and lazy-init flags are mutable, so every access must be
+    // serialized. DO NOT call driver-> directly outside this block.
+    inline std::mutex& driver_mutex() {
+        static std::mutex m;
+        return m;
+    }
+
+    inline int driver_bound_pid = -1; // guarded by driver_mutex()
+
+    // Caller must hold driver_mutex().
+    inline bool driver_bind_locked(int targetPid) {
+        if (targetPid <= 0 || !driver || !driver->is_driver_loaded()) return false;
+        if (driver_bound_pid != targetPid) {
+            driver->initialize(static_cast<pid_t>(targetPid));
+            driver_bound_pid = targetPid;
+        }
+        return true;
+    }
+
+    inline bool driver_read(int targetPid, uint64_t addr, void* buf, size_t len) {
+        std::lock_guard<std::mutex> lk(driver_mutex());
+        if (!driver_bind_locked(targetPid)) return false;
+        return driver->read(static_cast<uintptr_t>(addr), buf, len);
+    }
+
+    inline bool driver_write(int targetPid, uint64_t addr, const void* buf, size_t len) {
+        std::lock_guard<std::mutex> lk(driver_mutex());
+        if (!driver_bind_locked(targetPid)) return false;
+        return driver->write(static_cast<uintptr_t>(addr), buf, len);
+    }
+
+    inline uintptr_t driver_module_base(int targetPid, const char* name) {
+        std::lock_guard<std::mutex> lk(driver_mutex());
+        if (!driver_bind_locked(targetPid)) return 0;
+        return driver->getModuleBase(name);
+    }
+
+    // Watchdog one-shot setup: bind PID, install driver key, hide the process.
+    inline void driver_setup(int targetPid, const char* key) {
+        std::lock_guard<std::mutex> lk(driver_mutex());
+        if (targetPid <= 0 || !driver) return;
+        driver->initialize(static_cast<pid_t>(targetPid));
+        driver_bound_pid = targetPid;
+        if (key && *key) driver->init_key(const_cast<char*>(key));
+        driver->hide_process();
+    }
+
+    struct DriverStatus {
+        const char* name = "ARMED";
+        int  option = 0;
+        bool loaded = false;
+    };
+
+    inline DriverStatus driver_status() {
+        std::lock_guard<std::mutex> lk(driver_mutex());
+        DriverStatus s;
+        if (!driver) return s;
+        s.loaded = driver->is_driver_loaded();
+        s.option = driver->getDriverSelectionCached();
+        if (s.loaded) s.name = driver->get_driver_name();
         return s;
     }
 }
@@ -118,9 +202,9 @@ static inline void wipe(void* p, size_t n) {
 }
 
 // Memory boundary validation check (guards against null pointers & kernel addresses)
+// Validates that the address falls within the user-space virtual address range [0x10000, 0x7FFFFFFFFFFF].
 inline bool is_valid_ptr(uint64_t a) {
-    uint64_t p = a & 0x0000FFFFFFFFFFFFULL;
-    return (p >= 0x10000ULL && p <= 0x00007FFFFFFFFFFFULL);
+    return (a >= 0x10000ULL && a <= 0x00007FFFFFFFFFFFULL);
 }
 
 inline bool addr_valid(uint64_t a) { return is_valid_ptr(a); }
@@ -132,13 +216,7 @@ inline bool mem_read(uint64_t a, void* b, size_t l) {
     int curPid = proc::pid.load(std::memory_order_relaxed);
     if (curPid <= 0) return false;
 
-    // 100% Ring-0 Kernel Driver Dispatch
-    if (driver && driver->is_driver_loaded()) {
-        driver->initialize(static_cast<pid_t>(curPid));
-        if (driver->read(static_cast<uintptr_t>(a), b, l)) {
-            return true;
-        }
-    }
+    if (proc::driver_read(curPid, a, b, l)) return true;
 
     memset(b, 0, l);
     return false;
@@ -176,15 +254,7 @@ inline bool mem_write(uint64_t a, const void* b, size_t l) {
     int curPid = proc::pid.load(std::memory_order_relaxed);
     if (curPid <= 0) return false;
 
-    // 6. 100% Ring-0 Kernel Driver Dispatch
-    if (driver && driver->is_driver_loaded()) {
-        driver->initialize(static_cast<pid_t>(curPid));
-        if (driver->write(static_cast<uintptr_t>(a), const_cast<void*>(b), l)) {
-            return true;
-        }
-    }
-
-    return false;
+    return proc::driver_write(curPid, a, b, l);
 }
 
 // Templated single-value memory read (RPM)
@@ -199,15 +269,14 @@ template<typename T> inline bool wpm(uint64_t a, const T& d) {
     return mem_write(a, &d, sizeof(T));
 }
 
-// Scans /proc using direct raw assembly syscalls to detect game process PID
-// Seamlessly auto-detects BOTH Free Fire Max and Free Fire Global
+// Scans /proc using direct raw assembly syscalls to detect the game process PID.
+// MAX-ONLY: matches com.dts.freefiremax exclusively. Free Fire Global is not targeted.
 inline int get_pid() {
     int pfd = sys::openat(AT_FDCWD, oxorany("/proc"), O_RDONLY | O_DIRECTORY);
     if (pfd < 0) return -1;
 
     char buf[4096];
     int found_pid = -1;
-    bool found_is_max = false;
 
     while (true) {
         long nr = sys::getdents64(pfd, buf, sizeof(buf));
@@ -247,15 +316,9 @@ inline int get_pid() {
 
                         if (b > 0) {
                             cmd[b] = '\0';
-                            // Target package matching: Free Fire Max OR Free Fire Global
+                            // MAX-ONLY target package
                             if (strstr(cmd, "com.dts.freefiremax")) {
                                 found_pid = pid;
-                                found_is_max = true;
-                                wipe(cmd, sizeof(cmd));
-                                break;
-                            } else if (strstr(cmd, "com.dts.freefireth")) {
-                                found_pid = pid;
-                                found_is_max = false;
                                 wipe(cmd, sizeof(cmd));
                                 break;
                             }
@@ -273,12 +336,6 @@ inline int get_pid() {
     sys::close(pfd);
     wipe(buf, sizeof(buf));
 
-    proc::is_game_max.store(found_is_max, std::memory_order_relaxed);
-
-    if (found_pid > 0 && driver) {
-        driver->initialize(static_cast<pid_t>(found_pid));
-    }
-
     return found_pid;
 }
 
@@ -289,18 +346,17 @@ inline uint64_t get_lib(const char* targetName = "libil2cpp.so") {
     if (curPid <= 0) return 0;
 
     // Strategy 1: Active Kernel Driver Module
-    if (driver && driver->is_driver_loaded()) {
-        uintptr_t base = driver->getModuleBase(targetName);
+    {
+        uintptr_t base = proc::driver_module_base(curPid, targetName);
         if (base > 0) {
             uint32_t magic = rpm<uint32_t>(base);
             if (magic == 0x464C457F) { // \x7FELF
                 return static_cast<uint64_t>(base);
             }
-            // Even if magic isn't read via driver, test if it resolves GameFacade
+            // Even if magic isn't read via driver, test if it resolves GameFacade (MAX offsets only)
             uint64_t gf1 = rpm<uint64_t>(base + Offsets::Base::GameFacade);
             uint64_t gf2 = rpm<uint64_t>(base + Offsets::Base::GameFacade_Alt);
-            uint64_t gf3 = rpm<uint64_t>(base + Offsets::Base::GameFacade_Global);
-            if (gf1 > 0x10000000 || gf2 > 0x10000000 || gf3 > 0x10000000) {
+            if (gf1 > 0x10000000 || gf2 > 0x10000000) {
                 return static_cast<uint64_t>(base);
             }
         }
@@ -383,16 +439,14 @@ inline uint64_t get_lib(const char* targetName = "libil2cpp.so") {
     sys::close(mfd);
     wipe(buf, sizeof(buf));
 
-    // Forensic validation: test if candidate base directly resolves GameFacade static pointer
+    // Forensic validation: test if candidate base resolves GameFacade (MAX offsets only)
     for (int i = 0; i < candCount; i++) {
         uint64_t cand = candidates[i];
         if (cand == 0) continue;
-        uint64_t gf1 = rpm<uint64_t>(cand + Offsets::Base::GameFacade); // Free Fire Max (maxff.h primary)
+        uint64_t gf1 = rpm<uint64_t>(cand + Offsets::Base::GameFacade); // maxff.h primary
         if (gf1 > 0x10000000) return cand;
-        uint64_t gf2 = rpm<uint64_t>(cand + Offsets::Base::GameFacade_Alt); // Free Fire Max (STORM_MODS alt)
+        uint64_t gf2 = rpm<uint64_t>(cand + Offsets::Base::GameFacade_Alt); // STORM_MODS alt
         if (gf2 > 0x10000000) return cand;
-        uint64_t gf3 = rpm<uint64_t>(cand + Offsets::Base::GameFacade_Global); // Free Fire Global (1.132.x primary)
-        if (gf3 > 0x10000000) return cand;
     }
 
     if (candCount > 0) return candidates[0];

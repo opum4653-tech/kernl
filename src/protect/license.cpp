@@ -26,7 +26,22 @@ static void save_state_to_disk() {
     // Zero disk footprint
 }
 
+// Caller must hold s_lic_mutex.
+// Detects a backward clock jump relative to the last server-acknowledged time.
+// Rolling the device clock back is the classic way to keep an expired online
+// license "valid" forever. Up to 5 minutes of negative drift is tolerated so
+// normal NTP corrections do not lock out legitimate users.
+static void detect_clock_tamper(time_t now) {
+    if (s_clock_tampered || s_last_seen_ts <= 0) return;
+    static constexpr time_t kMaxBackwardSkewSec = 300; // 5 minutes
+    if (now < s_last_seen_ts - kMaxBackwardSkewSec) {
+        s_clock_tampered = true;
+        s_is_valid = false;
+    }
+}
+
 static void evaluate_state(time_t now) {
+    detect_clock_tamper(now);
     if (s_clock_tampered) {
         s_is_valid = false;
         return;
@@ -51,11 +66,18 @@ static void evaluate_state(time_t now) {
 
 namespace lic {
 
-    time_t expiry_date() {
+    // Caller must hold s_lic_mutex — avoids a nested (non-recursive) lock in
+    // status_text() while still removing the unsynchronized read in callers.
+    static time_t expiry_date_unlocked() {
         if (s_online_verified && s_online_expiry_ts > 0) {
             return s_online_expiry_ts;
         }
         return 0;
+    }
+
+    time_t expiry_date() {
+        std::lock_guard<std::mutex> lock(s_lic_mutex);
+        return expiry_date_unlocked();
     }
 
     static bool verify_license_online(const std::string& key);
@@ -177,8 +199,9 @@ namespace lic {
             curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
             curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_string_cb);
             curl_easy_setopt(curl, CURLOPT_WRITEDATA, &curl_resp);
-            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
-            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+            // SSL certificate verification enabled for MITM protection
+            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+            curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
             curl_easy_setopt(curl, CURLOPT_TIMEOUT, 12L);
             curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 8L);
 
@@ -189,39 +212,6 @@ namespace lic {
             if (res == CURLE_OK && !curl_resp.empty()) {
                 strncpy(response, curl_resp.c_str(), sizeof(response) - 1);
                 executed = true;
-            }
-        }
-
-        if (!executed) {
-            const char* clients[] = {
-                "curl -k -s -m 12",
-                "/system/bin/curl -k -s -m 12",
-                "/system/xbin/curl -k -s -m 12",
-                "wget -q --no-check-certificate -O - -T 12"
-            };
-
-            for (const char* client : clients) {
-                char cmd[1536];
-                if (strstr(client, "wget")) {
-                    snprintf(cmd, sizeof(cmd),
-                        "%s --header='Content-Type: application/json' --post-data='{\"license_key\":\"%s\",\"hwid\":\"%s\"}' %s/api/v2/app/activate 2>/dev/null",
-                        client, key.c_str(), hwid.c_str(), server_url.c_str());
-                } else {
-                    snprintf(cmd, sizeof(cmd),
-                        "%s -X POST -H 'Content-Type: application/json' -d '{\"license_key\":\"%s\",\"hwid\":\"%s\"}' %s/api/v2/app/activate 2>/dev/null",
-                        client, key.c_str(), hwid.c_str(), server_url.c_str());
-                }
-
-                FILE* fp = popen(cmd, "r");
-                if (fp) {
-                    size_t bytesRead = fread(response, 1, sizeof(response) - 1, fp);
-                    pclose(fp);
-                    if (bytesRead > 0) {
-                        response[bytesRead] = 0;
-                        executed = true;
-                        break;
-                    }
-                }
             }
         }
 
@@ -279,7 +269,8 @@ namespace lic {
     const char* status_text() {
         std::lock_guard<std::mutex> lock(s_lic_mutex);
         time_t now = time(nullptr);
-        time_t t_exp = expiry_date();
+        detect_clock_tamper(now);
+        time_t t_exp = expiry_date_unlocked();
 
         if (s_clock_tampered) return "INVALID";
         if (s_stored_key.empty()) return "NO KEY";

@@ -2,6 +2,8 @@
 #include <vector>
 #include <mutex>
 #include <atomic>
+#include <unordered_map>
+#include <chrono>
 #include "player.hpp"
 #include "math.hpp"
 
@@ -10,26 +12,31 @@
 // ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
 // PURPOSE: Public interface and state declarations for the game memory scraping pipeline.
 //
-// CROSS-FILE CALL GRAPH & CONSUMERS:
+// VISIBILITY & RPM OPTIMIZATION:
 // ----------------------------------------------------------------------------------------------
-// 1. LIFECYCLE MANAGEMENT:
-//    - src/main.cpp:
-//      * Calls data::thread_start() upon detecting valid game PID and libil2cpp.so base address.
-//      * Calls data::thread_stop() when the target game terminates or overlay shuts down.
+// VISIBILITY RULE: ESP range == CAMERA FRUSTUM (no distance limit).
+//   Only players whose head/feet project inside the screen bounds are processed.
 //
-// 2. DATA SYNCHRONIZATION & THREAD ACCESS:
-//    - src/game/data.cpp:
-//      * Implements data::update() on a dedicated background thread (data::g_thread).
-//      * Continuously extracts entities, runs WorldToScreen, and publishes into data::players.
-//    - src/func/esp/esp.hpp:
-//      * Acquires data::players_mutex to copy data::players snapshot for rendering.
-//    - src/func/aim/target.hpp:
-//      * Acquires data::players_mutex to scan enemies for optimal trajectory target locking.
-//    - src/func/aim/aim.hpp:
-//      * Reads data::inMatch and data::localPlayerAddr to govern trajectory calculations.
+// RPM OPTIMIZATIONS:
+// 1. BATCH READ: Sequential fields read via single mem_read() call, not many rpm<T>()
+// 2. TRANSFORM CACHE: GetNodePosition() results cached for 100ms (3 ticks @ 33ms)
+// 3. INTERVAL THROTTLE: Default data loop runs at 33ms (30Hz) not 16ms (60Hz)
+// 4. FRUSTUM CULLING: Off-screen/behind-camera players skipped before all detailed reads
+// 5. READ ORDER RANDOMIZATION: Fisher-Yates shuffle prevents pattern detection
+// 6. ESP-ONLY GATE: Skip combat reads (PhyXdata/IsKnocked) when aim is disabled
+// 7. DEAD/TEAMMATE REJECT: Cheap flags checked before expensive bone walks
 // ==============================================================================================
 
 namespace data {
+
+    // Transform position cache entry — avoids re-walking Unity bone hierarchy every tick
+    struct BoneCache {
+        Vector3 headPos;
+        Vector3 feetPos;
+        std::chrono::steady_clock::time_point cachedAt;
+        bool valid;
+    };
+
     // Executes a single complete memory walk cycle: reads BaseGame, Match, Camera, and PlayerDict
     void update();
 
@@ -38,6 +45,10 @@ namespace data {
 
     // Safely joins the background thread and flushes active player memory lists
     void thread_stop();
+
+    // Drops published match state without joining the worker. Used when the game
+    // process exits so the render thread does not block on thread_stop().
+    void note_detached();
 
     // Thread-safe repository of active parsed enemy entities
     extern std::vector<PlayerData> players;
@@ -55,4 +66,17 @@ namespace data {
     // Consumers: silent.hpp cone guard — read under viewMatrix_mutex.
     extern std::mutex              viewMatrix_mutex;
     extern matrix                  viewMatrix_pub;
+
+    // Monotonic tick counter bumped whenever viewMatrix_pub is refreshed.
+    // Silent aim uses this to reject stale camera data during fast flicks.
+    extern std::atomic<uint64_t>   viewMatrix_stamp;
+
+    // Bone position cache: addr → cached head/feet positions (reduces Transform walks ~70%)
+    // Entries expire after 100ms. Cleared on note_detached(), thread_stop() and
+    // whenever the attached PID/lib base changes.
+    extern std::unordered_map<uint64_t, BoneCache> bone_cache;
+
+    // Guards bone_cache. The data worker reads/writes it while the render thread
+    // may call note_detached() on game exit — without this lock that was a data race.
+    extern std::mutex              bone_cache_mutex;
 }

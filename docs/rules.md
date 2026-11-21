@@ -91,7 +91,7 @@ This document establishes the mandatory design, architecture, and coding rules f
      `"Match results is still being calculated and will be available in match history after you return to the lobby."`
 
 2. **Pure Raycast Direction Vector Steering (0x40 Only):**
-   - Trajectory steering must write **strictly and exclusively** to `AimInfo + Offsets::Aim::Direction` (`0x40`) with a normalized unit vector (`diff.normalized()`), and reset `AimInfo + 0x71` (`ViewBlocked` / adjustment flag).
+   - Trajectory steering must write **strictly and exclusively** to `AimInfo + Offsets::Aim::Direction` (`0x40`) with a normalized unit vector. `ViewBlocked` (`0x71`) is not written.
    - Unity's native weapon physics engine performs the raycast naturally along this direction vector, intersecting the enemy's head collider and generating an authentic, 100% legitimate server-validated damage packet.
 
 3. **Hitbox Vertical Elevation Bias (+0.20m to +0.24m):**

@@ -19,13 +19,14 @@
 // 2. INPUT DATA:
 //    - Parsed enemy repository: data::players (from src/game/data.hpp).
 //    - Visual configuration toggles: cfg::esp::box, cfg::esp::tracer, cfg::esp::armor,
-//      cfg::esp::bot_tag, cfg::esp::max_range (from src/ui/cfg.hpp).
+//      cfg::esp::bot_tag (from src/ui/cfg.hpp).
+//    - Range is FRUSTUM-ONLY: no distance slider. The camera view defines visibility.
 //
 // 3. EXECUTION DISPATCH (Per-Player Render Sequence):
 //    Step 1: Check master active switch (is_active()).
-//    Step 2: Obtain ImGui background draw list (dl = ImGui::GetBackgroundDrawList()).
+//    Step 2: Obtain ImGui foreground draw list.
 //    Step 3: Acquire data::players_mutex and copy snapshot of data::players.
-//    Step 4: Filter out-of-range (> max_range) or behind-camera (z < 0.5f) entities.
+//    Step 4: Filter off-screen entities via ok() (frustum screen-bounds guard).
 //    Step 5: Compute 2D bounding box dimensions via computePlayerBox() (in box.hpp).
 //    Step 6: Render active visual layers:
 //      * Layer 1: Kernel Target Line (drawTracer() in line.hpp).
@@ -52,16 +53,14 @@ namespace func::esp {
 
         // Iterate all active enemies in snapshot
         for (const auto& p : snap) {
-            // Reject entities behind near clipping plane or dead entities
-            if (p.Head.z < 0.05f) continue;
+            // Frustum-only visibility: ESP shows exactly what the camera renders.
+            // data.cpp already culls off-screen players; this is a defensive screen-bounds guard.
+            if (!ok(p.Head) && !ok(p.Toe)) continue;
             if (p.curHP <= 0) continue;
 
-            // Reject entities beyond the configured max render distance slider (0.0f = Unlimited)
-            if (cfg::esp::max_range > 0.0f && p.distance > cfg::esp::max_range) continue;
-
-            // Distance-based alpha fade for soft aesthetic blending at range boundaries
+            // No distance limit — the camera frustum is the only range.
+            // Full-opacity color (alpha fade tied to frustum edge, not artificial distance).
             ImU32 colBase = toU32(cfg::esp::box_col);
-            colBase = fadeDist(colBase, p.distance, (cfg::esp::max_range > 0.0f ? cfg::esp::max_range.load() : 500.0f));
 
             // 1. ESP Laser Line (Tracer line originating from top of screen to head - decoupled from box validity)
             if (cfg::esp::tracer) {

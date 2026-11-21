@@ -1,192 +1,156 @@
-# NINMODS KERNEL — System Architecture & Technical Documentation
+# NINMODS KERNEL — Current Architecture
 
-This document defines the architecture, kernel communication protocol, offset matrix, and operational contracts of the **NinMods Kernel** floating engine (`ninmods-kernel`).
+This file describes the tree as it is. Offset numbers come from `Offsetsmax.h` (dated 16 September 2026). Older tables in this file that named OB55 `1.132.1` and `GameFacade = 0xA72E4E0` as the live chain were wrong.
 
 ---
 
-## 1. System Architecture & Scope
+## 1. What the binary is
 
-- **Module Name:** `ninmods-kernel`
-- **Menu Brand Name:** `NinMods`
-- **Primary Theme Color:** Cyber Purple / Violet (`#AD47FA` / `ImVec4(0.68f, 0.28f, 0.98f, 1.0f)`)
-- **Execution Domain:** Linux / Android ARM64-v8a Native Executable
-- **Privilege Requirement:** Root (UID 0) + Ring 0 Linux Kernel Driver
-- **Memory Operation Mode:** Strictly Kernel-Space Memory Operations (Zero userspace `process_vm_readv` or `/proc/pid/mem` fallbacks)
+- Module: `ninmods-kernel`
+- Menu name: NinMods
+- Domain: Android ARM64 native executable, root, plus a loaded kernel driver
+- Game package scanned from `/proc`: `com.dts.freefiremax` only (MAX-only build; Free Fire Global / `com.dts.freefireth` is not supported)
+- Memory path: the selected kernel driver. `mem_read` / `mem_write` do not fall back to `process_vm_readv` or `/proc/<pid>/mem`
 
 ```text
-┌────────────────────────────────────────────────────────┐
-│                   Target Application                   │
-│          com.dts.freefireth (Unity Player)             │
-└──────────────────────────▲─────────────────────────────┘
-                           │ (Ring 0 Memory Read / Write)
-┌──────────────────────────┴─────────────────────────────┐
-│              Linux Kernel Space (Ring 0)               │
-│        Driver: RT Hook / RT DEV / DEV / QX / KPM       │
-└──────────────────────────▲─────────────────────────────┘
-                           │ IOCTL (0x801 / 0x802 / KPM)
-┌──────────────────────────┴─────────────────────────────┐
-│             NinMods Kernel Floating Engine             │
-│            Executable: /dev/ninmods-kernel             │
-│   SurfaceComposer Native Window + ImGui Cyber Purple   │
-└────────────────────────────────────────────────────────┘
+target process (libil2cpp.so)
+        ^
+        | ioctl / prctl of the selected driver
+driver client (includes/driver.h)
+        ^
+overlay (src/main.cpp, ImGui, native surface)
 ```
 
 ---
 
-## 2. Kernel Driver Dependency Contract
+## 2. Build
 
-`ninmods-kernel` is engineered strictly as a client to a Ring 0 Kernel Driver. It does not perform unprivileged userspace memory probing.
+Shipping builds run in GitHub Actions (`.github/workflows/build.yml`):
 
-### Supported Driver Channels
-1. **RT Hook:** Direct kernel hook interface via character device nodes.
-2. **RT DEV:** Real-time character device driver binding.
-3. **DEV (Generic):** Standard high-compatibility device communication node.
-4. **QX Daemon:** QX 10.x - 11.4 specialized protocol interface.
-5. **KPM (Neo):** Kernel Patch Module interface utilizing custom `prctl` syscall dispatch.
+- NDK r25c
+- `ndk-build NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=jni/Android.mk NDK_APPLICATION_MK=jni/Application.mk`
+- Artifact: `libs/arm64-v8a/ninmods-kernel`, then `llvm-strip`
 
-### Strict Driver Initialization Invariant
-During startup, `driver->initialize((pid_t)game_pid)` attempts to acquire a valid communication channel:
-- If a valid driver node or KPM interface is not active, the engine terminates immediately:
-  ```text
-  [FATAL] Driver not loaded! Exiting...
-  ```
-- Users must load the matching kernel driver via **DriverLoader** prior to launching the floating engine.
+`CMakeLists.txt` is a second description of the same target. The workflow does not call CMake. A green local CMake configure does not mean the Actions job passed.
+
+There is no `crash_handler.cpp`. Signals are not installed by this tree.
 
 ---
 
-## 3. Game Target & Offset Synchronization (OB55 / 1.132.1)
+## 3. Process lifecycle (`src/main.cpp`)
 
-The engine synchronizes with `libil2cpp.so` and `libunity.so` structures for target version **OB55 (1.132.1)**:
+1. `PR_SET_DUMPABLE` 0, `PR_SET_NAME` `kworker/u16:1`, then license check (`src/protect/license.cpp`).
+2. `start_overlay()` reads display size, creates the native surface, loads fonts, starts touch.
+3. Once a second the render loop looks for the game:
+   - `get_pid()` walks `/proc` with direct syscalls.
+   - `proc::publish_attachment(pid, lib, is_max)` stores pid, `libil2cpp.so` base, and the Max/TH flag as one seqlock snapshot (`src/other/memory.hpp`).
+   - `driver->initialize(pid)` runs when the pid changes, not on every read.
+   - `get_lib("libil2cpp.so")` resolves the base. Then `data::thread_start()` and `trajectory::thread_start()` run. Both are idempotent if the worker is already up.
+4. If `/proc/<pid>` disappears, the loop publishes pid 0 and calls `data::note_detached()`. It does not `join` the workers. A join on this thread froze the frame while a worker sat inside a driver read.
+5. `data::thread_stop()` and `trajectory::thread_stop()` run only when the overlay loop exits.
 
-| Symbol / Field | Offset (Hex) | Description |
+`g_ShowMenu` starts false. The menu opens from the floating logo tap and closes from the menu X (`src/ui/menu.cpp`, `src/ui/floating_logo.cpp`).
+
+---
+
+## 4. Driver client (`includes/driver.h`)
+
+Startup probes, in order, when selection is 0: RT DEV, QX, DEV COMPAT, KPM, RT HOOK. The first success sets `m_selection` to 1..5.
+
+After that, `read` and `write` call only that engine. They do not walk the other loaded drivers on failure. The walk remains only while `m_selection` is still 0.
+
+Options: 1 RT Hook, 2 RT DEV, 3 DEV COMPAT, 4 QX, 5 KPM (TB `prctl` `0x63687501` / Neo `prctl` `0x4E41`).
+
+---
+
+## 5. Memory access (`src/other/memory.hpp`)
+
+`mem_read` rejects non-userspace pointers, a dead pid, and a missing driver. On failure it zeroes the caller buffer.
+
+`mem_write` returns before any ioctl when any of these fail:
+
+- `proc::wpm_allowed` is false (set true only while master + an aim toggle is on, `src/func/aim/aim.hpp`)
+- size is not 1, 2, 4, 8, or 12
+- size >= 4 and the address is not 4-byte aligned
+- the address falls in `[libBase, libBase + 0x1500000)`
+
+`proc::snapshot()` retries until the seqlock epoch is even and unchanged across the pid, lib, and variant loads.
+
+---
+
+## 6. Offsets
+
+Live constants are `Offsetsmax.h`, re-exported by `src/offsets/offsets.hpp`.
+
+| Field | Value | Where |
 | :--- | :--- | :--- |
-| `GameFacade` | `0xA72E4E0` | Global facade manager entry point |
-| `Player_Rotation` | `0x614` | View angle / orientation quaternion |
-| `Player_HeadTF` | `0x6A0` | Head transform node pointer |
-| `Player_FootTF` | `0x6E8` | Foot / root transform node pointer |
-| `Player_Camera` | `0x690` | Active camera follow transform |
-| `Player_IsFiring` | `0x848` | Firing state boolean |
-| `Player_Avatar` | `0x770` | Character model transform collection |
-| `Player_HedColider` | `0x738` | Head collider component reference |
-| `Player_DeathInfo` | `0x24A8` | Player death / knock-down state |
-| `Player_IsBot` | `0x4A0` | AI / Bot discriminator flag |
-| `Player_Name` | `0x490` | Player nickname string pointer |
-| `Camera_Follow` | `0x28` | Main camera follow matrix pointer |
-| `WeaponData` | `0x80` | Current active weapon state offset |
-| `Bullet_SpawnPos` | `0x4C` | Muzzle spawn position (`hitPos`) |
-| `Bullet_DirWrite` | `0x40` | Direction vector write (`firePos`) |
+| `GameFacade` | `0xAD68E18` | `Offsetsmax.h`. `offsets.hpp` also keeps `GameFacade_Alt` `0xAD6DC18` as a MAX probe inside `get_lib`. The former `GameFacade_Global` `0xA72E4E0` probe was removed (MAX-only build) |
+| `CurrentMatch` | `0x90` | from the resolved base game object |
+| `localPlayer` | `0xD8` | |
+| `Dictionary` | `0xC0` | entity list |
+| `Head` | `0x6A8` | |
+| `Hip` / `Spine` / `Root` | `0x6B0` / `0x6B8` / `0x6D0` | |
+| `FollowCamera` | `0x698` | |
+| `isFiring` | `0x850` | `IsFiring_Alt` `0x848` is a second probe in `target.hpp` |
+| `aimInfo` | `0xE58` | `silent.hpp` also probes `0xE50` |
+| `HedColider` | `0x740` | read-only from this tree |
+| `raycast` (`Aim::Direction`) | `0x40` | the only trajectory store |
+| `startPos` | `0x4C` | muzzle read |
+
+`data::update()` (`src/game/data.cpp`) walks GameFacade, match, camera view matrix, and the player dictionary. The view matrix is stored in `data::viewMatrix_pub` under `data::viewMatrix_mutex`.
+
+World-to-screen is `src/game/math.hpp`. Screen size comes from `g_sw` / `g_sh`, set from the display in `start_overlay()`.
 
 ---
 
-## 4. Zero-Trace Display & Crash-Proof Architecture
+## 7. Trajectory (`src/func/aim/`)
 
-To prevent runtime crashes and memory leaks across Android 10 through 15:
+`trajectory::loop` sleeps `cfg::aim::read_interval_ms`, clamped to 8..33 ms, otherwise 16. It does not drop to 4 ms in a match.
 
-### 1. Hardware Direct Display Probing (`display_manager.cpp`)
-- **Zero-Fork Kernel Nodes:** Reads `/sys/class/graphics/fb0/virtual_size` and `/sys/class/graphics/fb0/modes` directly (0.05ms execution time, 0% CPU overhead, 0 fork syscalls).
-- **Framebuffer IOCTL:** Hardware-level query via `FBIOGET_VSCREENINFO` on `/dev/graphics/fb0`.
-- **System Properties:** In-memory Bionic property fallback (`ro.surface_flinger.max_graphics_width/height`).
-- **RAM Caching:** Display parameters are queried once at initialization and cached in RAM. Render loops execute with zero external syscalls.
+`trajectory::update` calls `apply_trajectory` only on the rising edge of `isFiring` (false to true). Holding fire does not write every tick. `triggerActive` is not a write gate. That flag is forced on whenever silent or auto-headshot is enabled, so using it as the write condition wrote on every poll.
 
-### 2. Isolated Native Surface (`ANativeWindowCreator.h`)
-- Volatile `libgui.so` binder calls (`getDisplayState` and `getInternalDisplayToken`) that cause `SIGSEGV (Signal 11)` on modern Android systems are decoupled and replaced with the safe display provider.
+`apply_trajectory` (`silent.hpp`):
 
-### 3. Modular Crash Guard (`crash_handler.cpp`)
-- Configures an alternate signal stack (`sigaltstack`) with 64 KB of dedicated memory.
-- Installs zeroed `sigaction` handlers for `SIGSEGV`, `SIGBUS`, `SIGFPE`, `SIGILL`, and `SIGABRT` to cleanly catch and intercept memory exceptions without terminal aborts.
+1. Resolves the aim-info pointer.
+2. Reads start position at `0x4C`. If that vector is unusable, falls back to the local head bone.
+3. Picks head or body from `lockToHead`, `auto_headshot`, or `headshot_rate`.
+4. Builds a unit direction.
+5. Copies `viewMatrix_pub` and takes camera forward as `-(m31, m32, m33)`. If that vector is degenerate, it returns without a write.
+6. If `dot(cameraForward, direction) < 0.97815` (`cos(12°)`), it returns without a write.
+7. For a body aim, applies Gaussian jitter after the cone check. Sigma is 0.012 at 10 m and 0.045 at 100 m. Vertical scale is half. Head aims are not jittered.
+8. Writes one `Vector3` to `AimInfo + 0x40`.
 
-### 4. Zero-Trace Persistent Anchor
-- Floating logo position is stored in pure memory-backed file descriptor paths (`/dev/.nin_logo_pos.txt`), ensuring zero persistent trace on `/data/local/tmp`.
+Not written: `HitNormal`, `HitPoint`, `Distance`, `HitGroup`, `ViewBlocked`, `HitCollider`, target `Colider_Field`.
 
----
-
-## 5. Directory & File Matrix
-
-```text
-Kernel/Kernel/
-├── .github/workflows/
-│   └── build.yml                            # GitHub Actions CI for ARM64 NDK compilation
-├── .gitignore                               # Ignores obj/, libs/, logs, and temporary artifacts
-├── CMakeLists.txt                           # Modern CMake build configuration
-├── DOCS.md                                  # Enterprise architecture and technical documentation
-└── src/
-    ├── main.cpp                             # Process lifecycle, driver loop, license gating
-    ├── ui/
-    │   ├── theme.hpp & .cpp                 # Dynamic theme_orchid palette, color swatches & vector icons
-    │   ├── floating_logo.hpp & .cpp         # Floating 'N' logo, clamped dragging, /dev/.nin_logo_pos.txt
-    │   ├── menu.hpp & .cpp                  # Dual-column glass menu, scaled header/tabs, touch scroll
-    │   └── cfg.hpp                          # Unified feature configuration & state storage
-    ├── func/                                # Kernel ESP, Aimbot, and Speed modules
-    └── other/                               # Display manager, crash guard, and driver interfaces
-```
+`start_silent_writer()` is empty. There is no second writer thread.
 
 ---
 
-## 6. Dedicated Server Download Specifications (Strict Subfolders)
+## 8. Overlay state
 
-All mod packages and drivers MUST be downloaded exclusively from the backend server (`https://ninmods.smmtor.com`).
+Display size is cached by `src/other/display_manager.cpp` (framebuffer sysfs, then properties). The render loop does not re-query it per frame.
 
-### 6.1 Production Download URL Matrix
-- **External Mod:** `https://ninmods.smmtor.com/downloads/external/gemini-cli.zip`
-  - Local path: `app_backend/downloads/external/gemini-cli.zip`
-  - Content: `gemini-cli` (pure native ARM64 ELF executable)
-- **Kernel Mod:** `https://ninmods.smmtor.com/downloads/kernel/ninmods-kernel.zip`
-  - Local path: `app_backend/downloads/kernel/ninmods-kernel.zip`
-  - Content: `ninmods-kernel` (pure native ARM64 ELF executable)
-- **Kernel Drivers:** `https://ninmods.smmtor.com/downloads/Kernel_Drivers.zip`
-  - Local path: `app_backend/downloads/Kernel_Drivers.zip`
-  - Content: Compiled `.ko` kernel modules and driver assets
-- **App Release APK:** `https://ninmods.smmtor.com/downloads/app-release.apk`
-  - Local path: `app_backend/downloads/app-release.apk`
+Logo position is a static `ImVec2` in `src/ui/floating_logo.cpp`. `save_pos()` clamps that point. `load_pos()` does not read a file. `/dev/.nin_logo_pos.txt` is not used.
 
-### 6.2 Prohibited Actions (Never Deviate)
-- **NO GITHUB DOWNLOAD LINKS:** Never use GitHub releases or raw GitHub URLs for mod/driver downloads in the app.
-- **NO BUNDLED ASSETS IN APK:** Mod packages must never be bundled into the APK `assets/` folder. All mods are downloaded on demand.
-- **NO FLAT ROOT DOWNLOAD PATHS:** Never store or request mod packages at the root of downloads (e.g. `/downloads/gemini-cli.zip` or `/downloads/ninmods-kernel.zip` are strictly FORBIDDEN). Subdirectories (`external/` and `kernel/`) are mandatory.
+Fonts: `LoadCustomFonts` in `main.cpp` sets `FontDataOwnedByAtlas = false` because the TTF bytes live in `.rodata` (`src/FONTS/MAIN_FONT.h`).
 
 ---
 
-## 7. Zero Local Build Policy — Strict GitHub Actions CI/CD Only
+## 9. Download layout
 
-> [!IMPORTANT]
-> **MANDATORY INVARIANT: NO LOCAL MACHINE COMPILATION**
-> - **আমাদের লোকাল কম্পিউটার দিয়ে কোনো কিছু বিল্ড করা যাবে না (Zero Local Builds):**
->   - লোকাল পিসি/ওয়ার্কস্টেশনে NDK, `ndk-build`, বা Clang দিয়ে কোনো নেটিভ কার্নেল বাইনারি বা লাইব্রেরি বিল্ড করা সম্পূর্ণ নিষিদ্ধ ও অপ্রয়োজনীয়।
->   - লোকাল মেশিনে কোনো অ্যান্ড্রয়েড NDK বা বিল্ড টুলচেইন কনফিগার করার প্রয়োজন নেই।
-> - **বিল্ড সবসময় ১০০% GitHub Actions ক্লাউড CI/CD দিয়ে হবে (Always Build on GitHub):**
->   - কার্নেল ওভারলে ইঞ্জিনের সম্পূর্ণ কম্পাইলেশন, অপ্টিমাইজেশন (`-Oz`), বাইনারি স্ট্রিপিং (`llvm-strip`), এবং প্যাকেজিং ক্লাউডে GitHub Actions উবুন্টু ভার্চুয়াল মেশিনে সম্পন্ন হবে।
-> - **অটোমেটেড ওয়ার্কফ্লো (Automated CI Pipeline):**
->   1. **Trigger:** `main` ব্রাঞ্চে যেকোনো `git push` বা `pull_request` করার সাথে সাথে `.github/workflows/build.yml` অটোমেটিক রান হবে।
->   2. **Build Toolchain:** GitHub ভার্চুয়াল মেশিনে Android NDK `r25c` দিয়ে `ndk-build NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=jni/Android.mk` এক্সিকিউট হবে।
->   3. **Artifact Output:** তৈরি হওয়া ফ্রেশ `ninmods-kernel` বাইনারিকে `ninmods-kernel.zip` ফাইলে জিপ করে GitHub Actions Artifacts-এ আপলোড করা হবে।
->   4. রিলিজ বাইনারি সেখান থেকে সরাসরি সার্ভার মিররে (`app_backend/downloads/kernel/ninmods-kernel.zip`) প্লেস করা হবে।
+Mod and driver zips are served from `https://ninmods.smmtor.com`, in subfolders:
+
+- `downloads/external/gemini-cli.zip`
+- `downloads/kernel/ninmods-kernel.zip`
+- `downloads/Kernel_Drivers.zip`
+- `downloads/app-release.apk`
+
+Flat paths such as `downloads/ninmods-kernel.zip` are not the layout. Packages are not stored in the APK `assets/` directory.
 
 ---
 
-## 9. Menu & UI Behavioral Invariants
+## 10. Source rules
 
-> [!IMPORTANT]
-> **FLOATING LOGO FIRST — ZERO UNINTENDED MENU POPUP**
-> 1. **Default State on Binary Launch (`g_ShowMenu = false`):**
->    - When `ninmods-kernel` starts, the main menu window MUST NOT be visible or pop up automatically.
->    - Only the small, unobtrusive floating circular 'N' logo pill appears on the screen margin.
-> 2. **Explicit User Activation Only:**
->    - The main settings/features menu window opens **strictly** when the user taps on the floating circular 'N' logo.
->    - When the close button (`X`) is pressed inside the menu, the menu collapses back to the floating logo pill.
-> 3. **Zero Disk Storage (Pure RAM State):**
->    - Floating logo position, menu coordinates, and active toggle states must remain 100% in RAM memory. No `.pill_pos`, `.nin_drv_cfg`, or `.nin_license.dat` files may ever be created or read from disk.
->    - Never set `g_ShowMenu = true` by default in source code.
-
----
-
-## 10. Codebase Style & Commenting Invariants
-
-1. **Strict Prohibition of Decorative Box-Drawing Comment Banners:**
-   - Decorative unicode box-drawing banners (e.g. `// ══════════════...`, `// ──────────────...`, or fancy ASCII separators) are strictly prohibited.
-   - All comments must be minimal, clean, standard single-line (`// Comment`) without decorative ASCII borders or box art.
-2. **Language Invariant:**
-   - All source code, symbols, logging, comments, and strings must be written strictly in professional English.
-   - Regional or non-English scripts (such as Bengali) must never be added to code comments or source files.
-3. **Clean Code & Zero Clutter Policy:**
-   - Backup files (`.bak`, `.old`), uncommitted binaries (`libs/`), intermediate object folders (`obj/`), and empty directories must never be checked into the repository.
-
+- Comments and logs in source files are English.
+- No box-drawing comment banners in new code.
+- Do not commit `obj/`, `libs/`, `.bak`, or built binaries.

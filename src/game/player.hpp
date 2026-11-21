@@ -25,7 +25,7 @@
 //    - Combat (Kernel Trajectory Subsystem):
 //      * src/func/aim/target.hpp -> trajectory::acquire_target(): Evaluates FOV angle and target hysteresis.
 //      * src/func/aim/silent.hpp -> trajectory::apply_trajectory(): Computes bullet vector to headWorld.
-//      * src/func/aim/headshot.hpp -> trajectory::evaluate_headshot(): Manages 100% headshot locking.
+//      * src/func/aim/headshot.hpp -> evaluate_headshot_rate(): distance-aware headshot rate controller.
 //
 // MEMORY LAYOUT & CACHE-LINE ALIGNMENT:
 // ----------------------------------------------------------------------------------------------

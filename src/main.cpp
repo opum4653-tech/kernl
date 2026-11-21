@@ -45,11 +45,14 @@
 //    - Builds ImGui font atlas with Roboto and Inter Bold/Medium TTF fonts.
 //
 // 3. TARGET PROCESS WATCHDOG (1000ms periodic tick):
-//    - Invokes get_pid() (in memory.hpp) using raw direct assembly syscalls (/proc scan).
+//    - Invokes get_pid() using raw direct assembly syscalls (/proc scan).
+//      MAX-ONLY: matches com.dts.freefiremax exclusively (Global not supported).
 //    - Attaches kernel driver module (c_driver in driver.h) to target game PID.
 //    - Resolves libil2cpp.so module base address via get_lib().
 //    - Launches data::thread_start() (in data.cpp) and trajectory::thread_start() (in aim.hpp).
-//    - Detects game exit/crash via /proc/<pid> access test; cleans up and halts workers gracefully.
+//    - Detects game exit via /proc/<pid>. Publishes pid 0 and drops the player
+//      cache without joining worker threads (a join here freezes the frame).
+//    - Joins workers only when the overlay itself shuts down.
 //
 // 4. MAIN RENDER LOOP (Native hardware display refresh rate / VSYNC):
 //    - Rebuilds touchable UI rectangle hit-boxes (Touch_ClearUiRects / Touch_CommitUiRects).
@@ -103,8 +106,7 @@ static void print_dashboard() {
         snprintf(exp_buf, sizeof(exp_buf), "Active / Dynamic Subscription");
     }
 
-    const char* dName = driver ? driver->get_driver_name() : "ARMED";
-    const int   dOpt  = driver ? driver->getDriverSelectionCached() : 0;
+    const proc::DriverStatus dstat = proc::driver_status();
 
     printf("====================================================\n");
     printf("   Kernel Service Overlay Engine v2.0 (ARM64)\n");
@@ -112,8 +114,8 @@ static void print_dashboard() {
     printf("Environment    : Android Linux aarch64 (Kernel Driver Safe)\n");
     printf("API Key Status : Valid / Active (%s)\n", lic::status_text());
     printf("Token Expiry   : %s\n", exp_buf);
-    printf("Driver Mode    : %s (Option %d)\n", dName, dOpt);
-    printf("Driver Status  : %s\n", (driver && driver->is_driver_loaded()) ? "Loaded / Active" : "Armed (Awaiting Node)");
+    printf("Driver Mode    : %s (Option %d)\n", dstat.name, dstat.option);
+    printf("Driver Status  : %s\n", dstat.loaded ? "Loaded / Active" : "Armed (Awaiting Node)");
     printf("Runtime Status : Ready | Kernel DMA Pipeline\n");
     printf("====================================================\n\n");
     fflush(stdout);
@@ -249,38 +251,34 @@ static int start_overlay() {
             lastProcessCheck = currentCheckTime;
             int curPid = proc::pid.load(std::memory_order_acquire);
 
-            // Phase A: Search for Game Process PID if not currently attached
+            // Phase A: Search for Game Process PID if not currently attached.
+            // MAX-ONLY build: get_pid() matches com.dts.freefiremax exclusively.
             if (curPid <= 0) {
                 curPid = get_pid();
                 if (curPid > 0) {
-                    proc::lib.store(0, std::memory_order_release);
-                    proc::pid.store(curPid, std::memory_order_release);
-                    if (driver) {
-                        driver->initialize((pid_t)curPid);
-                        driver->init_key((char*)oxorany("ninmods_kernel"));
-                        driver->hide_process();
-                    }
+                    proc::publish_attachment(curPid, 0);
+                    // Serialized with the data/aim worker RPM/WPM paths — the
+                    // driver singleton holds mutable PID/handle state.
+                    proc::driver_setup(curPid, oxorany("ninmods_kernel"));
                 }
             }
-            // Phase B: Watchdog check: verify process remains alive
+            // Phase B: Watchdog check: verify process remains alive.
+            // Workers stay running and observe pid 0. Joining them here stalls the render loop.
             else {
                 char pPath[64];
                 snprintf(pPath, sizeof(pPath), "/proc/%d", curPid);
                 if (access(pPath, F_OK) != 0) {
-                    // Clear lib before pid so worker threads never pair live pid with dead base
-                    proc::lib.store(0, std::memory_order_release);
-                    proc::pid.store(0, std::memory_order_release);
-                    data::thread_stop();
-                    trajectory::thread_stop();
+                    proc::publish_attachment(0, 0);
+                    data::note_detached();
                     curPid = 0;
                 }
             }
 
-            // Phase C: Resolve libil2cpp.so base address and spawn worker threads
+            // Phase C: Resolve libil2cpp.so base address and spawn worker threads once
             if (curPid > 0 && proc::lib.load(std::memory_order_acquire) == 0) {
                 uint64_t base = get_lib("libil2cpp.so");
                 if (base > 0) {
-                    proc::lib.store(base, std::memory_order_release);
+                    proc::publish_attachment(curPid, base);
                     data::thread_start();
                     trajectory::thread_start();
                 }

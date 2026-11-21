@@ -3,14 +3,22 @@
 #include <atomic>
 #include <cstdlib>
 #include <cmath>
+#include <chrono>
 
 // ==============================================================================================
 // FILE: src/func/aim/silent.hpp
 // ARCHITECTURE: Kernel Service Overlay Engine (ARM64 / Out-of-Process Native Surface)
 // PURPOSE: 3D Silent Aim & Bullet Trajectory Steering Engine with Humanized Telemetry.
 //
-// ANTI-BAN ARCHITECTURAL PRINCIPLES (Phase 1 — Hardened):
+// ANTI-BAN ARCHITECTURAL PRINCIPLES (Phase 2 — Hardened):
 // ----------------------------------------------------------------------------------------------
+// 0. NEW IN PHASE 2:
+//    - Jitter applied to ALL shots (head included) with a tighter head sigma.
+//    - ~12% of bullet windows skipped entirely so bursts are not 100% perfect.
+//    - Cadence jitter (±3ms) on the aim loop breaks machine-periodic timing.
+//    - Cone tightened 12° -> 8°, plus a stale-camera guard on viewMatrix_stamp.
+//    - Final jittered vector re-validated against the cone before the write.
+//
 // 1. ANGULAR DEVIATION CONE GUARD:
 //    - Camera forward is extracted from data::viewMatrix_pub (already-resolved, no extra RPM).
 //      Unity row-major matrix: third ROW = m31,m32,m33 = indices [8],[9],[10] in flat array.
@@ -93,16 +101,34 @@ namespace silent {
 
         float lenSq = fx * fx + fy * fy + fz * fz;
         if (lenSq < 1e-6f || !std::isfinite(lenSq)) {
-            return Vector3(0.0f, 0.0f, 1.0f); // neutral fallback — cone will pass
+            return Vector3::Zero();
         }
         float invLen = 1.0f / sqrtf(lenSq);
         return Vector3(fx * invLen, fy * invLen, fz * invLen);
     }
 
     // ── Maximum safe angular deviation ───────────────────────────────────────────
-    // 12.0° — conservative threshold matching weapon cone spread.
-    // cos(12°) = 0.97815 (precomputed, avoids per-call cosf()).
-    static constexpr float MAX_AIM_COS = 0.97815f;
+    // 8.0° — tightened from 12°. A tighter cone means the steered bullet stays
+    // close to where the camera actually points, so server-side trajectory
+    // validation sees a natural shot. cos(8°) = 0.99027 (precomputed).
+    static constexpr float MAX_AIM_COS = 0.99027f;
+
+    // ── Per-shot steering skip probability ───────────────────────────────────────
+    // ~12% of bullet windows are deliberately left unsteered so a full-auto burst
+    // is not 100% perfect. A human misses; an always-perfect hit ratio is a flag.
+    // NOTE: the ~12% per-bullet steering skip lives in aim.hpp update(), beside
+    // the held-trigger steering gate (keeps the skip policy next to its trigger).
+
+    // ── Fresh-seed helper (per-shot, thread-local) ───────────────────────────────
+    // Mixes a monotonic counter into the seed so consecutive shots never share
+    // the same PRNG stream state even if timing is identical.
+    static inline unsigned int fresh_seed() {
+        static thread_local uint64_t call_counter = 0;
+        call_counter++;
+        unsigned int mixed = s_jitter_seed ^
+            (unsigned int)(call_counter * 2654435761ULL); // Knuth multiplicative hash
+        return mixed ? mixed : 1u;
+    }
 
     // ── Stub lifecycle functions ──────────────────────────────────────────────────
     inline void clear_silent_data() {}
@@ -110,8 +136,9 @@ namespace silent {
     inline void stop_silent_writer() { clear_silent_data(); }
 
     // ── Core trajectory steering ──────────────────────────────────────────────────
+    // headRate = effective headshot probability [0..100] from the rate controller.
     inline void apply_trajectory(uint64_t localPlayer, const PlayerData& target,
-                                 bool lockToHead, bool shouldApply) {
+                                 float headRate, bool shouldApply) {
         if (!shouldApply) return;
         if (!is_valid_ptr(localPlayer) || !is_valid_ptr(target.addr)) return;
 
@@ -152,19 +179,21 @@ namespace silent {
         }
         if (!is_valid_vec3(ammoBase)) return;
 
-        // ── 3. Probabilistic headshot rate decision ───────────────────────────────
-        bool targetIsHead = true;
-        if (cfg::aim::auto_headshot.load(std::memory_order_relaxed) || lockToHead) {
+        // ── 3. Rate-controller headshot decision ──────────────────────────────────
+        // headRate is the DISTANCE-AWARE effective rate from evaluate_headshot_rate().
+        // One 0-100 roll decides head vs body — the user controls frequency via the
+        // slider, and distance naturally reduces headshots at range.
+        // NO hard 100% force remains: even Auto Headshot ON obeys the slider.
+        // rate 0 -> targetIsHead=false -> steers to CHEST (body), never skips the shot.
+        bool targetIsHead;
+        if (headRate >= 100.0f) {
             targetIsHead = true;
+        } else if (headRate <= 0.0f) {
+            targetIsHead = false;
         } else {
-            int hsRate = cfg::aim::headshot_rate.load(std::memory_order_relaxed);
-            if (hsRate >= 100) {
-                targetIsHead = true;
-            } else if (hsRate <= 0) {
-                targetIsHead = false;
-            } else {
-                targetIsHead = ((rand_r(&s_jitter_seed) % 100) < (unsigned)hsRate);
-            }
+            // Sub-percentage precision using 0..1000 roll for fine rate control.
+            unsigned int roll = (unsigned int)(rand_r(&s_jitter_seed) % 1000);
+            targetIsHead = (roll < (unsigned int)(headRate * 10.0f));
         }
 
         float headBias = cfg::aim::head_bias.load(std::memory_order_relaxed);
@@ -185,48 +214,70 @@ namespace silent {
         Vector3 normDir = SafeNormalize(dir);
         if (!std::isfinite(normDir.x) || !std::isfinite(normDir.y) || !std::isfinite(normDir.z) || normDir == Vector3::Zero()) return;
 
-        // Micro-jitter: subtle spray only when targeting body
-        Vector3 finalDir = normDir;
-        if (!targetIsHead) {
-            float jitterSigma = 0.008f + (dist3D * 0.0002f);
-            finalDir = jitter_direction(normDir, jitterSigma);
-            if (!std::isfinite(finalDir.x) || finalDir == Vector3::Zero()) {
-                finalDir = normDir;
-            }
+        matrix vm{};
+        uint64_t stamp = 0;
+        {
+            std::lock_guard<std::mutex> lk(data::viewMatrix_mutex);
+            vm = data::viewMatrix_pub;
+            stamp = data::viewMatrix_stamp.load(std::memory_order_acquire);
+        }
+        // ── Staleness guard (time-based) ──────────────────────────────────────────
+        // Abort when the camera matrix stamp has not advanced for 150ms. A
+        // repeat count would be cadence-dependent: at an 8ms aim tick three
+        // repeats are only 24ms (normal, data thread runs at 33ms), but at a
+        // slower tick they could mean a genuine stall. Elapsed wall time is
+        // the same signal at every polling rate.
+        static thread_local uint64_t s_lastStamp = 0;
+        static thread_local std::chrono::steady_clock::time_point s_stampChangedAt{};
+        if (stamp != 0 && stamp == s_lastStamp) {
+            auto staleMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - s_stampChangedAt).count();
+            if (staleMs > 150) return;
+        } else {
+            s_lastStamp = stamp;
+            s_stampChangedAt = std::chrono::steady_clock::now();
         }
 
-        // ── 5. Free Fire CGKJLKPMGDJ (HitInfo) Synchronization ────────────────────
-        int32_t targetHitGroup = targetIsHead ? Offsets::Aim::HitGroup_Head : Offsets::Aim::HitGroup_Body;
+        Vector3 camFwd = get_camera_forward_from_matrix(vm);
+        if (camFwd == Vector3::Zero()) return;
+        float align = Vector3::Dot(camFwd, normDir);
+        if (!std::isfinite(align) || align < MAX_AIM_COS) return;
 
-        // Direction / Raycast vector (0x40)
+        // ── Jitter on ALL shots (headshots included) ──────────────────────────────
+        // A 100% headshot config previously wrote identical perfect vectors.
+        // Headshots get a TIGHTER sigma so they still land on the head node,
+        // while body shots use slightly wider natural-spread-scale noise.
+        // Sigma is an ANGULAR offset on the unit vector (radians-ish), kept small
+        // on purpose: large values at long range caused lateral misses.
+        float span = dist3D - 10.0f;
+        if (span < 0.0f) span = 0.0f;
+        if (span > 90.0f) span = 90.0f;
+        float t = span / 90.0f; // 0..1
+
+        float jitterSigma = targetIsHead
+            ? (0.0015f + t * 0.0015f)  // head: ~0.09°..0.17° — stays on head node
+            : (0.0050f + t * 0.0050f); // body: ~0.29°..0.57° — natural spread
+
+        // Per-shot seed refresh so consecutive vectors always differ.
+        unsigned int shotSeed = fresh_seed();
+        unsigned int savedSeed = s_jitter_seed;
+        s_jitter_seed = shotSeed;
+        Vector3 finalDir = jitter_direction(normDir, jitterSigma);
+        s_jitter_seed = savedSeed;
+
+        if (!std::isfinite(finalDir.x) || !std::isfinite(finalDir.y) ||
+            !std::isfinite(finalDir.z) || finalDir == Vector3::Zero()) {
+            finalDir = normDir; // safe fallback — never write garbage
+        }
+
+        // Re-validate cone on the JITTERED vector — jitter must not push the
+        // final shot outside the safe deviation cone.
+        float finalAlign = Vector3::Dot(camFwd, finalDir);
+        if (!std::isfinite(finalAlign) || finalAlign < MAX_AIM_COS) {
+            finalDir = normDir; // fall back to clean vector (already cone-validated)
+        }
+
         wpm<Vector3>(hitObjAddress + Offsets::Aim::Direction, finalDir);
-
-        // HitNormal vector (0x34)
-        wpm<Vector3>(hitObjAddress + Offsets::Aim::HitNormal, finalDir);
-
-        // HitPoint (0x28) - Exact 3D world impact position
-        wpm<Vector3>(hitObjAddress + Offsets::Aim::HitPoint, targetWorld);
-
-        // Distance (0x5C)
-        wpm<float>(hitObjAddress + Offsets::Aim::Distance, dist3D);
-
-        // HitGroup (0x64): 1 = Headshot (guaranteed red damage numbers!), 2 = Body
-        wpm<int32_t>(hitObjAddress + Offsets::Aim::HitGroup, targetHitGroup);
-
-        // ViewBlocked (0x71): false ensures physics raycast is not culled
-        wpm<bool>(hitObjAddress + Offsets::Aim::ViewBlocked, false);
-
-        // ── 6. Target Collider Override ───────────────────────────────────────────
-        uint64_t headCol = rpm<uint64_t>(target.addr + Offsets::HedColider); // 0x740
-        if (is_valid_ptr(headCol)) {
-            // Write HitCollider (0x20) in AimInfo
-            wpm<uint64_t>(hitObjAddress + Offsets::Aim::HitCollider, headCol);
-
-            // If targeting head, bind LockedAimingCollider on target entity (0x80)
-            if (targetIsHead) {
-                wpm<uint64_t>(target.addr + Offsets::Colider_Field, headCol);
-            }
-        }
     }
 
 } // namespace silent

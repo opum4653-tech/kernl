@@ -47,7 +47,7 @@ This file is the permanent historical memory and technical log for the `ninmods-
 - **Fix Implemented:**
   - Increased `logoRadius` to **`38.0f * ui_scale`** (diameter 76px, +36% larger).
   - The circular dark disc, outer orchid ring, center "N" letter font size (`radius * 1.15f`), daemon status dot, and touch hitbox (`Touch_AddUiRect`) all scale up proportionately.
-  - The logo position persists to `/dev/.nin_logo_pos.txt` (tmpfs, never flashes) on drag release only — not per frame.
+  - The logo position is clamped in process memory on drag release. No file is written.
   - Rotation and resolution changes clamp the stored position into the new viewport instead of resetting it.
   - Tapping the logo opens the menu; the X button in the header closes it.
 
@@ -146,7 +146,7 @@ Comprehensive resolution of Headshot / Silent Aim mechanics using internal `NXL`
 
 1. **Unity Free Fire Damage Calculation Architecture (`CGKJLKPMGDJ`):**
    - In Free Fire 64-bit, `localPlayer + 0xE58` (`PKIOAMDCOPB`) and `0xE50` (`FDMIEDDNCEC`) point to instances of `CGKJLKPMGDJ` (HitInfo / AimingInfo).
-   - Analysis of `NXL` hook (`hook_OnCalcDamage`) revealed that headshot registration strictly relies on 8 synchronized fields:
+   - The struct layout below is the HitInfo field map. The running engine does not write this set. See `DOCS.md` for the write contract.
      - `0x18`: `JHAINOBIFMA` (GameObject)
      - `0x20`: `JINDNOFABKB` (Collider - Enemy Head Collider)
      - `0x28`: `HPCOJHGFEEG` (HitLocation - Exact Enemy Head 3D World Position)
@@ -165,10 +165,11 @@ Comprehensive resolution of Headshot / Silent Aim mechanics using internal `NXL`
    - `0x28` (`HitLocation`) and `0x20` (`HitCollider`) were never written to `AimInfo`.
    - `isFiring` trigger condition was dropping locks between tap-fire intervals.
 
-3. **High-Speed Writer & HitInfo Flooding Engine:**
-   - High-speed writer thread floods the complete 8-field `CGKJLKPMGDJ` hit block continuously while a target is acquired in FOV or firing.
-   - Computes `diff.normalized()` to deliver exact unit direction vectors.
-   - Sets `HitGroup = 1` for guaranteed red-number headshot registration.
+3. **Direction write (`src/func/aim/silent.hpp`):**
+   - One `Vector3` write to `AimInfo + 0x40` (`Offsets::Aim::Direction`) on the rising edge of `isFiring`.
+   - The write is skipped when `dot(cameraForward, direction) < cos(12°)`.
+   - `HitGroup`, `ViewBlocked`, `HitCollider`, `HitPoint`, `HitNormal`, and the target `Colider_Field` are not written.
+   - Body shots add Gaussian jitter after the cone check. Sigma is `0.012` at 10 m and `0.045` at 100 m. Head shots are not jittered.
 
 4. **UI Sidebar & Icon Button Modernization (`menu.cpp`):**
    - Sidebar width enlarged from fixed `76.0f` to responsive `std::max(88.0f, 96.0f * ui_scale)`.
@@ -188,7 +189,7 @@ In commit `bf27ca9` / `2530d91`, `src/ui/menu.cpp` was modularized into 3 dedica
    - Dragging with instant viewport boundary clamping (`std::clamp`).
    - Tap vs Drag discrimination on release (`s_was_activated && deactivated && !s_moved_drag`).
    - Daemon connection status indicator dot (`proc::pid > 0 && proc::lib > 0`).
-   - Zero-trace persistent anchor via `/dev/.nin_logo_pos.txt` (tmpfs node).
+   - Logo position is process memory only. `save_pos()` / `load_pos()` do not touch the filesystem.
 2. `src/ui/theme.hpp & .cpp`:
    - Centralized `theme_orchid` dynamic palette with `sync_from_arr()`.
    - 6 theme color swatches (`g_ThemeSwatches`).
@@ -250,7 +251,7 @@ Following an exhaustive audit across the entire `ninmods-kernel` codebase, all p
 - **Process Cloaking (`main.cpp:223`):**
   - Replaced static `prctl(PR_SET_NAME, "ninmods-kernel")` with `"kworker/u16:1"`, preventing trivial signature matches during userland process and `/proc/<pid>/comm` scans.
 - **Zero-Trace Storage Enforcement:**
-  - Guaranteed floating logo position is persisted strictly to `/dev/.nin_logo_pos.txt` (tmpfs in RAM) only on drag release, leaving zero persistent disk footprint in `/data/local/tmp`.
+  - Floating logo position stays in process memory and is clamped on drag release. No path under `/dev` or `/data/local/tmp` is created.
 - **License Gate Security & Input Sanitization (`license.cpp`):**
   - Enabled SSL peer and host verification (`CURLOPT_SSL_VERIFYPEER = 1L`, `CURLOPT_SSL_VERIFYHOST = 2L`).
   - Added strict alphanumeric and hyphen sanitization (`is_safe_alphanumeric`) for license key and HWID before executing CLI popen fallback, neutralizing shell injection vulnerabilities.

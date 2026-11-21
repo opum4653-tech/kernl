@@ -179,20 +179,23 @@ public:
     }
 
     bool read(uintptr_t addr, void *buffer, size_t size) {
-        if (m_selection == 2 && m_rt_dev.read(addr, buffer, size)) return true;
-        if (m_selection == 4 && m_qx_driver.read(addr, buffer, size)) return true;
-        if (m_selection == 5 && m_kpm_driver.read(addr, buffer, size)) return true;
-        if (m_selection == 3 && m_dev_compat.read(addr, buffer, size)) return true;
-        if (m_selection == 1 && m_rt_hook.read(addr, buffer, size)) return true;
+        // A chosen engine stays on that engine. Walking every loaded driver after a
+        // failed read hits a second device node for the same address.
+        switch (m_selection) {
+            case 1: return m_rt_hook.read(addr, buffer, size);
+            case 2: return m_rt_dev.read(addr, buffer, size);
+            case 3: return m_dev_compat.read(addr, buffer, size);
+            case 4: return m_qx_driver.read(addr, buffer, size);
+            case 5: return m_kpm_driver.read(addr, buffer, size);
+            default: break;
+        }
 
-        // Dynamic multi-engine fallback if active selection fails:
-        if (m_kpm_driver.is_loaded() && m_kpm_driver.read(addr, buffer, size)) return true;
         if (m_rt_dev.is_loaded() && m_rt_dev.read(addr, buffer, size)) return true;
         if (m_qx_driver.is_loaded() && m_qx_driver.read(addr, buffer, size)) return true;
         if (m_dev_compat.is_loaded() && m_dev_compat.read(addr, buffer, size)) return true;
+        if (m_kpm_driver.is_loaded() && m_kpm_driver.read(addr, buffer, size)) return true;
         if (m_rt_hook.is_loaded() && m_rt_hook.read(addr, buffer, size)) return true;
 
-        // Lazy fallback to KPM if never initialized (e.g. KernelSU / APatch) - attempted only once to prevent overhead
         static bool s_kpm_read_lazy_attempted = false;
         if (!s_kpm_read_lazy_attempted && !m_kpm_driver.is_loaded()) {
             s_kpm_read_lazy_attempted = true;
@@ -206,16 +209,19 @@ public:
     }
 
     bool write(uintptr_t addr, const void *buffer, size_t size) {
-        if (m_selection == 2 && m_rt_dev.write(addr, buffer, size)) return true;
-        if (m_selection == 4 && m_qx_driver.write(addr, buffer, size)) return true;
-        if (m_selection == 5 && m_kpm_driver.write(addr, buffer, size)) return true;
-        if (m_selection == 3 && m_dev_compat.write(addr, buffer, size)) return true;
-        if (m_selection == 1 && m_rt_hook.write(addr, buffer, size)) return true;
+        switch (m_selection) {
+            case 1: return m_rt_hook.write(addr, buffer, size);
+            case 2: return m_rt_dev.write(addr, buffer, size);
+            case 3: return m_dev_compat.write(addr, buffer, size);
+            case 4: return m_qx_driver.write(addr, buffer, size);
+            case 5: return m_kpm_driver.write(addr, buffer, size);
+            default: break;
+        }
 
-        if (m_kpm_driver.is_loaded() && m_kpm_driver.write(addr, buffer, size)) return true;
         if (m_rt_dev.is_loaded() && m_rt_dev.write(addr, buffer, size)) return true;
         if (m_qx_driver.is_loaded() && m_qx_driver.write(addr, buffer, size)) return true;
         if (m_dev_compat.is_loaded() && m_dev_compat.write(addr, buffer, size)) return true;
+        if (m_kpm_driver.is_loaded() && m_kpm_driver.write(addr, buffer, size)) return true;
         if (m_rt_hook.is_loaded() && m_rt_hook.write(addr, buffer, size)) return true;
 
         static bool s_kpm_write_lazy_attempted = false;

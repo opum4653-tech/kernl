@@ -25,8 +25,8 @@ static float s_last_margin = 0.0f;
 
 // ----------------------------------------------------------------------------
 // POSITION PERSISTENCE
-// /dev is a tmpfs node, so this never touches flash and never leaves a trace
-// after reboot. Writes happen on drag release only, not per frame.
+// Position lives in this process only. save_pos() clamps the in-memory point.
+// Nothing is written to /dev or /data.
 // ----------------------------------------------------------------------------
 static bool pos_is_sane(float x, float y) {
     if (!std::isfinite(x) || !std::isfinite(y)) return false;

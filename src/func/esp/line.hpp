@@ -48,9 +48,8 @@ namespace func::esp {
 
         ImVec2 target = ImVec2(p.Head.x, p.Head.y);
 
-        // Distance-based alpha fade (closer enemies have more intense laser lines)
-        float maxR = (cfg::esp::max_range.load() > 0.0f) ? cfg::esp::max_range.load() : 500.0f;
-        float aa = ImClamp(1.f - p.distance / maxR, 0.25f, 1.f);
+        // Uniform alpha — no distance limit, camera frustum is the only range.
+        float aa = 1.0f;
         float tThick = cfg::esp::tracer_thickness;
 
         // Pass 1: Outer soft ambient glow

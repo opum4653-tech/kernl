@@ -23,7 +23,7 @@ A Kernel Driver operates at **Ring-0**. It successfully hides the cheat process 
   - **Fix:** `ViewBlocked` write completely removed. Only `Offsets::Aim::Direction` (0x40) is written — the physics engine validates raycast naturally.
 - [x] **Task 1.2: Angular Deviation Clamping (Camera Cone Guard) (`src/func/aim/silent.hpp`)**
   - **Forensic Cause:** Firing at targets far outside the crosshair creates a sharp angle between camera forward and bullet direction, easily flagged by server-side dot-product telemetry.
-  - **Fix:** Camera forward extracted live from published `data::viewMatrix_pub` row 2 (`-(m31, m32, m33)`). Zero extra RPM overhead. `dot(CameraFwd, BulletDir) < cos(12°)` → write aborted, bullet fires naturally. Constant `MAX_AIM_COS = 0.97815f`.
+  - **Fix:** Camera forward extracted live from published `data::viewMatrix_pub` row 2 (`-(m31, m32, m33)`). Zero extra RPM overhead. `dot(CameraFwd, BulletDir) < cos(cone)` → write aborted, bullet fires naturally. Constant tightened to `MAX_AIM_COS = 0.99027f` (8°) in Phase 2.5.4.
 - [x] **Task 1.3: Eliminate Hardcoded HitGroup Forcing (`src/func/aim/silent.hpp`)**
   - **Forensic Cause:** Overwriting `Offsets::Aim::HitGroup = 1` directly inside the game buffer desynchronizes client physics collider hits with reported hitgroup, causing mismatch telemetry flags.
   - **Fix:** `HitGroup` write completely removed. The steered Direction vector causes the physics engine to register the correct hitgroup from the actual raycast intersection.
@@ -43,6 +43,33 @@ A Kernel Driver operates at **Ring-0**. It successfully hides the cheat process 
 - [x] **Task 2.3: Cadence & Flood Rate Limiter (`src/func/aim/aim.hpp`)**
   - **Forensic Cause:** Over-flooding memory with rapid WPM cycles (500Hz) creates memory bus contention and can be captured by game watchdog sampling loops.
   - **Fix:** Synchronized writes strictly with active weapon discharge cadence (single write per shot cycle), eliminating high-frequency writer threads.
+
+---
+
+### Phase 2.5: Silent Aim Telemetry Humanization (Second Hardening Pass)
+- [x] **Task 2.5.1: Jitter on ALL Shots (`src/func/aim/silent.hpp`)**
+  - **Forensic Cause:** Jitter was applied only to body shots (`!targetIsHead`). A 100% headshot config wrote byte-identical perfect vectors every shot — a statistical signature.
+  - **Fix:** Jitter now applies to headshots too with a tighter sigma (head ~0.09°-0.17°, body ~0.29°-0.57°). Per-shot seed refresh via `fresh_seed()` guarantees consecutive vectors differ. Jittered vector is re-validated against the cone before the write.
+- [x] **Task 2.5.2: Probabilistic Per-Shot Steering Skip (`src/func/aim/aim.hpp`)**
+  - **Forensic Cause:** Every trigger edge was steered → full-auto burst had a 100% hit ratio, unnatural for a human.
+  - **Fix:** ~12% of trigger edges are deliberately left unsteered (thread-local PRNG), so the hit pattern includes natural misses.
+- [x] **Task 2.5.3: Fire-Cadence Timing Variation (`src/func/aim/aim.hpp`)**
+  - **Forensic Cause:** Fixed 16.000ms aim-loop interval is a machine-periodic signature.
+  - **Fix:** ±3ms thread-local jitter added to the loop sleep, breaking exact periodicity.
+- [x] **Task 2.5.4: Tighter Cone + Stale-Camera Guard (`src/func/aim/silent.hpp`, `src/game/data.cpp`)**
+  - **Forensic Cause:** 12° cone was loose; viewMatrix could be stale during fast flicks, letting an old orientation pass the guard.
+  - **Fix:** Cone tightened to 8° (`MAX_AIM_COS = 0.99027f`). Added `data::viewMatrix_stamp` atomic bumped on every matrix publish; steering aborts after 3 consecutive stale stamps.
+
+### Phase 2.6: Rate-Controlled Headshot (Auto Headshot redefined)
+- [x] **Task 2.6.1: Auto Headshot = Rate Controller, not 100% force (`src/func/aim/headshot.hpp`, `silent.hpp`)**
+  - **Forensic Cause:** `auto_headshot = true` hard-forced `targetIsHead = true` → 100% headshot pattern, a top ML ban signal.
+  - **Fix:** New `evaluate_headshot_rate(target, isScoping)` returns effective % [0..100]:
+    - Auto Headshot ON enables the controller using `headshot_rate` slider value (no 100% force).
+    - Scope Aim adds a 25% precision uplift, capped at 95%.
+    - Distance falloff beyond 40m: rate decays linearly to 60% at 140m (natural weapon behavior).
+    - `apply_trajectory()` now takes `float headRate` and rolls 0..1000 for sub-percent granularity.
+    - Rate 0 → body/chest shot (never skips fire). Auto OFF → body only.
+  - **Menu:** checkbox relabeled "Auto Headshot (Rate Control)", slider "Base Rate", live status text shows OFF/RISK/SAFE.
 
 ---
 
