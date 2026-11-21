@@ -50,13 +50,12 @@ namespace trajectory {
         }
 
         // 2. Firing state evaluation (Checks bool flag at 0x850 / 0x848)
-        bool isFiring = rpm<bool>(localPlayer + Offsets::Player::IsFiring);
+        bool isFiring = (rpm<uint8_t>(localPlayer + Offsets::Player::IsFiring) != 0) ||
+                        (rpm<uint8_t>(localPlayer + Offsets::Player::IsFiring_Alt) != 0);
         if (!isFiring) {
-            isFiring = rpm<bool>(localPlayer + Offsets::Player::IsFiring_Alt);
-        }
-        if (!isFiring) {
-            int fireVal = rpm<int>(localPlayer + Offsets::Player::IsFiring);
-            if (fireVal > 0) isFiring = true;
+            int f1 = rpm<int>(localPlayer + Offsets::Player::IsFiring);
+            int f2 = rpm<int>(localPlayer + Offsets::Player::IsFiring_Alt);
+            if (f1 > 0 || f2 > 0) isFiring = true;
         }
         result.isFiring = isFiring;
 
@@ -79,15 +78,18 @@ namespace trajectory {
             }
         }
 
-        // 4. Trigger state coordination (Scope Aim triggers trajectory on scope without firing)
+        // 4. Trigger state coordination
         bool triggerActive = isFiring;
         if (cfg::aim::scope_aim && result.isScoping) {
             triggerActive = true;
         }
+        if (cfg::aim::silent || cfg::aim::auto_headshot) {
+            triggerActive = true; // Pre-arms trajectory for active target in FOV
+        }
         result.triggerActive = triggerActive;
 
         // Lease management: grant 30 grace ticks during firing bursts
-        if (triggerActive) {
+        if (isFiring || triggerActive) {
             s_lockTimeoutTicks = 30; // Active trigger: refresh lock lease
         } else if (s_lockTimeoutTicks > 0) {
             s_lockTimeoutTicks--;    // Grace period across rapid-fire intervals

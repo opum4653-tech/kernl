@@ -117,9 +117,12 @@ namespace trajectory {
                 clear_silent_data();
             }
 
-            // Natural game frame cadence (steady natural pacing, zero artificial millisecond forcing)
+            // High-responsiveness cadence during active combat (4ms = 250Hz), idle throttled to save power
             int interval = cfg::aim::read_interval_ms.load(std::memory_order_relaxed);
             int sleepMs = (interval >= 8 && interval <= 33) ? interval : 16;
+            if (combatActive && data::inMatch.load(std::memory_order_relaxed)) {
+                sleepMs = 4;
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
         }
     }

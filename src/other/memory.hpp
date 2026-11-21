@@ -154,10 +154,10 @@ inline bool mem_write(uint64_t a, const void* b, size_t l) {
     if (!proc::wpm_allowed.load(std::memory_order_acquire)) return false;
 
     // 3. Strict Payload Size Limit & Alignment Quarantine:
-    // Only small scalar (1, 2, 4 bytes) or 3D Vector (12 bytes = 3 * sizeof(float)) writes are permitted.
+    // Only small scalar (1, 2, 4, 8 bytes) or 3D Vector (12 bytes = 3 * sizeof(float)) writes are permitted.
     // Blocks any bulk memory corruption, binary patching, or shellcode injection attempts.
     constexpr size_t kMaxPermittedWriteBytes = 12; // Exactly sizeof(Vector3)
-    if (l > kMaxPermittedWriteBytes || (l != 1 && l != 2 && l != 4 && l != kMaxPermittedWriteBytes)) return false;
+    if (l > kMaxPermittedWriteBytes || (l != 1 && l != 2 && l != 4 && l != 8 && l != kMaxPermittedWriteBytes)) return false;
     if (l >= 4 && (a & 3) != 0) return false; // Strict 4-byte alignment enforcement
 
     // 4. Universal Anti-Cheat Memory Quarantine:

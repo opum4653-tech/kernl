@@ -92,7 +92,7 @@ namespace Offsets {
         constexpr uintptr_t Camera_Alt           = Offsets::FollowCamera;
         constexpr uintptr_t FollowCamera_Sub     = Offsets::FollowCamera;
         constexpr uintptr_t IsFiring             = Offsets::isFiring; // 0x850
-        constexpr uintptr_t IsFiring_Alt         = Offsets::isFiring;
+        constexpr uintptr_t IsFiring_Alt         = 0x848; // Alternative weapon firing flag
         constexpr uintptr_t HP                   = Offsets::Player_Data; // 0x70
         constexpr uintptr_t Armor                = 0x74;
         constexpr uintptr_t HP_MaxEntry          = 0x28;
