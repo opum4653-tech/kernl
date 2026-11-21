@@ -214,4 +214,40 @@ When active trigger is detected (`isFiring > 0` or scoping trigger):
 * **Include Directories:** Must include `src/FONTS` along with all active feature and driver directories.
 * **Submodules:** `libevdev` builds exclusively `source/libevdev/libevdev.c`.
 
+---
+
+## 10. Verified Ring-0 Memory & Infallible ESP Pipeline (Battle-Tested Record)
+
+> [!IMPORTANT]
+> **VERIFICATION CONFIRMED BY MASTER DJ (November 21, 2026):**
+> Live in-game telemetry verified with `DRIVER: DEV COMPAT`, `MATCH: ACTIVE`, `PID: 12483`, `LIB BASE: 0x7BF1E80000`, with user confirming: *"esp akhon onike shundor vabe kaj kortece"* (ESP is now working very nicely).
+
+### 1. Infallible Driver Handshake & Node Validation (`verify_test_read`)
+* **Problem Solved:** On Android, `/dev/pmsg0` (logger) or `/dev/ashmem` match loose length filters (`5-12 chars`) and open with `O_RDWR` under root, causing false-positive driver attachments that silently return `-1` on memory IOCTLs.
+* **Verified Solution:** Every candidate `/dev/` node MUST execute `verify_test_read()` before attachment:
+  1. Write stack canary magic `test_magic = 0x5A5A1234`.
+  2. Issue IOCTL read across candidate opcodes (`0x801`, `0x8001`, `601`, `0xC01`, `0x400`) against `getpid()`.
+  3. Reject any node where read buffer does not bit-for-bit equal `0x5A5A1234`.
+* **PID Binding:** Dispatch `RT_IOCTL_INIT (0x8004)` and `DEV_OP_INIT_KEY` with target PID (both as value and pointer) upon PID acquisition to ungate kernel page copying.
+
+### 2. Multi-Engine Runtime Fallback Topology
+* **Auto-Probe Sequence:** `RT DEV` -> `QX 10-11` -> `DEV COMPAT` -> `KPM Dual Engine` (`prctl 0x63687501` / `0x4E41`) -> `RT HOOK`.
+* **Hot Fallback in RPM/WPM:** If the primary driver fails an address, `c_driver::read()` and `c_driver::write()` immediately attempt other loaded engines without frame drops.
+* **Lazy KPM Probe:** A single-execution lazy check ensures devices running pure KernelSU/APatch without `/dev` nodes seamlessly bind KPM on the fly.
+
+### 3. In-Game Entity Memory Chain (Unity IL2CPP ARM64)
+* **Base Resolution:**
+  - `Offsets::GameFacade`: Primary `0xAD68E18` (Offsetsmax.h), Alt `0xAD6DC18`, Global `0xA72E4E0`, supported by dynamic ARM64 `ADRP + LDR` instruction scanner (`resolve_gamefacade_dynamic`).
+  - `Staticfield` (`0xB8`): Evaluates both `GfCell + 0xB8` and `classPtr + 0xB8` to extract `curGame` / `BaseGame`.
+* **Match & Camera Resolution:**
+  - `CurrentMatch` (`0x90`) & `localPlayer` (`0xD8`).
+  - `inMatch`: Evaluates `(matchState == 1) || is_valid_ptr(localPlayer) || is_valid_ptr(BaseGame)` -> Transitions to `ACTIVE`.
+  - Camera ViewMatrix (`0x100`): Evaluates `FollowCamera (0x698) -> Camera (0x20) -> IntPtrCam (0x10) -> Matrix (0x100)` or `BaseGame + CameraBase (0xD8)`.
+* **Entity Extraction & Culling Doctrine:**
+  - `Dictionary` (`0xC0`), `entryAddr` (`0x18`), `enemyList` (`0x10`).
+  - Dead check: `Player_IsDead` (`0x7C`) must be 0.
+  - Team check: `Avatar_Data_IsTeam` (`0x81`) must be 0.
+  - Knocked check: `PhyXdata` (`0x1D60`) -> `maybeDead` (`0x20`) -> `isKnocked` (`0x10`).
+  - **Frustum Culling Separation:** Never drop entities with `headScreen.z < 0.05f` inside `data::update()`; store all valid in-range living enemies in `data::players` so the global enemy count tile (`PLAYERS: X ENEMY`) remains accurate. Frustum near-plane clipping (`headScreen.z < 0.05f`) is handled exclusively in rendering (`esp.hpp`) and aim targeting (`target.hpp`).
+
 

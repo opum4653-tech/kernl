@@ -342,8 +342,6 @@ namespace data {
             if (maxTrackingDist > 0.0f && dist > maxTrackingDist) return;
 
             Vector3 headScreen = WorldToScreenPoint(viewMatrix, headWorld);
-            if (headScreen.z < 0.05f) return;
-
             Vector3 toeScreen = WorldToScreenPoint(viewMatrix, feetWorld);
 
             // 5. PhyXdata & Knocked check (Offsetsmax.h: PhyXdata 0x1D60 -> maybeDead 0x20 -> isKnocked 0x10)
