@@ -11,6 +11,7 @@
 class c_driver {
 private:
     int m_selection = 0;
+    pid_t m_current_pid = 0;
     c_rt_hook    m_rt_hook;
     c_rt_dev     m_rt_dev;
     c_dev_compat m_dev_compat;
@@ -153,6 +154,7 @@ public:
     }
 
     void initialize(pid_t p) {
+        m_current_pid = p;
         m_rt_hook.set_pid(p);
         m_rt_dev.set_pid(p);
         m_dev_compat.set_pid(p);
@@ -195,8 +197,7 @@ public:
         if (!s_kpm_read_lazy_attempted && !m_kpm_driver.is_loaded()) {
             s_kpm_read_lazy_attempted = true;
             if (m_kpm_driver.init(false)) {
-                int curPid = proc::pid.load(std::memory_order_relaxed);
-                if (curPid > 0) m_kpm_driver.set_pid(curPid);
+                if (m_current_pid > 0) m_kpm_driver.set_pid(m_current_pid);
                 if (m_kpm_driver.read(addr, buffer, size)) return true;
             }
         }
@@ -221,8 +222,7 @@ public:
         if (!s_kpm_write_lazy_attempted && !m_kpm_driver.is_loaded()) {
             s_kpm_write_lazy_attempted = true;
             if (m_kpm_driver.init(false)) {
-                int curPid = proc::pid.load(std::memory_order_relaxed);
-                if (curPid > 0) m_kpm_driver.set_pid(curPid);
+                if (m_current_pid > 0) m_kpm_driver.set_pid(m_current_pid);
                 if (m_kpm_driver.write(addr, buffer, size)) return true;
             }
         }
